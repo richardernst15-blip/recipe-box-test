@@ -11,6 +11,7 @@
 //   POST /api/recipe/visibility  -> private <-> shared with friends
 //   POST /api/recipe/delete      -> delete one recipe and its cook log
 //   POST /api/recipe/merge       -> copy a friend's recipe into your cookbook
+//   POST /api/recipe/claim       -> act on a scanned recipe code (preview or commit)
 //   POST /api/comment/add        -> log a cook (rating required)
 //   POST /api/comment/delete     -> remove your own cook log entry
 //   POST /api/friend/request     -> ask someone to be friends
@@ -129,11 +130,18 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .hidden{ display:none !important; }
 
 /* header */
-.header{ display:flex; align-items:center; gap:12px; padding:26px 0 18px; }
-.header h1{ font-size:26px; margin:0; }
-.header p{ margin:2px 0 0; font-size:13px; color:var(--ink-muted); }
-.header .icon-wrap{ color:var(--accent); flex-shrink:0; }
-.header-btns{ margin-left:auto; display:flex; gap:8px; align-items:center; }
+/* Three things, stacked: what the app is, who you are, what you can do.
+   The name gets its own line so the icon can be the real app icon at a size
+   worth looking at, and the buttons drop to the row below where they have
+   room for a word rather than just a glyph. */
+.header{ padding:22px 0 16px; }
+.header-brand{ display:flex; align-items:center; gap:11px; }
+.header-brand h1{ font-size:26px; margin:0; }
+.app-icon{ width:34px; height:34px; border-radius:8px; flex-shrink:0; display:block; }
+.header-row2{ display:flex; align-items:center; gap:10px; margin-top:9px; }
+.header-who{ margin:0; font-size:13px; color:var(--ink-muted); min-width:0; }
+.header-who b{ color:var(--ink); font-weight:600; }
+.header-btns{ margin-left:auto; display:flex; gap:8px; align-items:center; flex-shrink:0; }
 .bell{ position:relative; }
 .dot-badge{ position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--accent); color:#fff; font-size:10px; line-height:16px; text-align:center; }
 
@@ -350,6 +358,15 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 
 .search-wrap { display:flex; gap:8px; align-items:center; }
 .search-wrap input { flex:1; }
+/* The field is its own positioning context so the clear button can sit
+   inside the input's right edge rather than the row's. */
+.search-field{ position:relative; flex:1; display:flex; align-items:center; }
+.search-field input{ padding-right:40px; }
+.search-clear{ position:absolute; right:7px; top:50%; transform:translateY(-50%);
+  display:none; align-items:center; justify-content:center; width:26px; height:26px; padding:0;
+  border:0; border-radius:50%; background:var(--border-light); color:var(--ink-muted); cursor:pointer; }
+.search-clear.on{ display:flex; }
+.search-clear:active{ background:var(--border); }
 .search-filter { flex-shrink:0; display:flex; align-items:center; gap:5px; }
 .search-filter.on { background:var(--accent); color:#fff; border-color:var(--accent); }
 .fcount { display:inline-block; flex-shrink:0; min-width:17px; padding:0 5px; border-radius:9px; background:var(--accent);
@@ -358,6 +375,47 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .fcount.zero { visibility:hidden; }
 .search-filter.on .fcount { background:#fff; color:var(--accent); }
 .chip-clear { border-style:dashed; }
+
+/* A code and the thing it says, side by side. Stacks on a narrow screen so
+   the code never shrinks below scanning size. */
+.qr-side{ display:flex; gap:14px; align-items:center; background:var(--card);
+  border:1px solid var(--border-light); border-radius:12px; padding:14px; }
+.qr-holder{ flex-shrink:0; line-height:0; background:#fff; border-radius:6px; }
+.qr-side-text{ min-width:0; flex:1; }
+.qr-side-text .code-box{ font-size:12.5px; letter-spacing:0; padding:9px; margin-bottom:8px; text-align:left; }
+@media (max-width: 430px){ .qr-side{ flex-direction:column; align-items:stretch; } .qr-holder{ align-self:center; } }
+
+/* tabs */
+.tabs{ display:flex; gap:6px; border-bottom:1px solid var(--border); margin:4px 0 18px; }
+.tabs button{ position:relative; background:none; border:0; padding:10px 4px; margin-right:14px;
+  font-size:14.5px; color:var(--ink-muted); cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
+.tabs button.active{ color:var(--ink); font-weight:600; box-shadow:inset 0 -2px 0 var(--accent); }
+.tab-count{ min-width:18px; padding:0 5px; border-radius:9px; background:var(--accent); color:#fff;
+  font-size:10.5px; line-height:18px; text-align:center; }
+
+/* notifications */
+.notif-tools{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+.notif{ display:flex; gap:11px; align-items:flex-start; background:var(--card);
+  border:1px solid var(--border-light); border-left:3px solid var(--accent);
+  border-radius:10px; padding:12px 13px; margin-bottom:9px; }
+.notif.read{ background:var(--card-alt); border-left-color:var(--border); }
+.notif-dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex-shrink:0; margin-top:5px; }
+.notif.read .notif-dot{ background:transparent; border:1px solid var(--border); }
+.notif-body{ flex:1; min-width:0; }
+.notif-line{ font-size:14px; margin:0 0 3px; }
+.notif.read .notif-line{ color:var(--ink-muted); }
+.notif-when{ font-size:11.5px; color:var(--ink-muted); font-variant-numeric:tabular-nums; }
+.notif-acts{ display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
+
+/* The tag strip on a recipe, three rows then a scroll - the same rule the
+   library's chip row follows. Both caps are the row height times three plus
+   the gaps between, so "three rows" is exact rather than about right:
+   .chips is 3*32 + 2*8 = 112, and a tag is 16 + 3 + 3 = 22 high, giving
+   3*22 + 2*7 = 80. The line-height is pinned here for that reason - left to
+   the font it drifts and the cap stops meaning three rows. */
+.detail-tags{ display:flex; flex-wrap:wrap; align-content:flex-start; gap:7px;
+  max-height:80px; overflow-y:auto; padding-right:2px; margin:0 0 18px; }
+.detail-tags .tag{ line-height:16px; }
 /* iOS draws its scroll indicator itself and only while a scroll is in
    flight, so nothing we do to the scrollbar shows up when a tree expands.
    A fade along the bottom edge is drawn by us instead: it appears the
@@ -517,7 +575,12 @@ const ICONS = {
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/>',
   logout: '<path d="M14 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8"/><polyline points="16 8 20 12 16 16"/><line x1="20" y1="12" x2="10" y2="12"/>',
   merge: '<path d="M7 21V9a5 5 0 0 1 5-5h6"/><polyline points="15 1 19 4 15 7"/><path d="M17 21v-6"/>',
-  chain: '<path d="M10 13.5a4 4 0 0 0 5.7.4l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.6 1.6"/><path d="M14 10.5a4 4 0 0 0-5.7-.4l-2.8 2.8a4 4 0 0 0 5.7 5.7l1.6-1.6"/>'
+  chain: '<path d="M10 13.5a4 4 0 0 0 5.7.4l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.6 1.6"/><path d="M14 10.5a4 4 0 0 0-5.7-.4l-2.8 2.8a4 4 0 0 0 5.7 5.7l1.6-1.6"/>',
+  clipboard: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9.5 4V2.8h5V4"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/>',
+  qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="14" y1="18" x2="14" y2="21"/><line x1="18" y1="18" x2="18" y2="21"/><line x1="21" y1="18" x2="21" y2="21"/>',
+  bell: '<path d="M18 15V10a6 6 0 0 0-12 0v5l-2 3h16z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
+  share: '<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><line x1="8.3" y1="10.8" x2="15.7" y2="6.2"/><line x1="8.3" y1="13.2" x2="15.7" y2="17.8"/>',
+  inbox: '<path d="M3 12h4l2 3h6l2-3h4"/><path d="M5 5h14l2 7v7H3v-7z"/>'
 };
 function icon(name, size, extra) {
   size = size || 18;
@@ -665,31 +728,42 @@ function tagVocabularyText() {
 
 const IMPORT_SOURCES = {
   url: {
-    label: "URL to Recipe", icon: "link",
+    label: "From URL", icon: "link",
     intro: "Read the recipe at the URL at the end of this message.",
     tail: "Recipe to convert:" + String.fromCharCode(10)
   },
+  text: {
+    label: "From Pasted Text", icon: "clipboard",
+    intro: "Read the recipe in the text at the end of this message. Transcribe what is written " +
+      "there; do not substitute a similar recipe you already know, and do not fetch anything. If " +
+      "something is missing from the text, leave that field empty rather than inventing it.",
+    tail: "Recipe to convert:" + String.fromCharCode(10)
+  },
   photo: {
-    label: "Photo to Recipe", icon: "camera",
+    label: "From Photo", icon: "camera",
     intro: "Read the recipe in the photo attached to this message. Transcribe what is written there; " +
       "do not substitute a similar recipe you already know. If part of the photo is unreadable, leave " +
       "that field empty rather than inventing it.",
     tail: "Recipe to convert: the attached photo."
   },
   chat: {
-    label: "Chat to Recipe", icon: "chat",
+    label: "From AI Chat", icon: "chat",
     intro: "Use the recipe we have worked out in this conversation. Do not fetch anything and do not " +
       "start over; convert what we already agreed on, including any changes I asked for along the way.",
     tail: "Recipe to convert: the recipe from our conversation above."
   }
 };
 
-function buildImportPrompt(mode, url) {
+/* url and text both carry something the AI has to be handed; photo and chat
+   point at what is already in front of it. Same prompt either way, so the
+   payload just goes on the end. */
+const IMPORT_CARRIES_PAYLOAD = { url: true, text: true };
+function buildImportPrompt(mode, payload) {
   const src = IMPORT_SOURCES[mode] || IMPORT_SOURCES.url;
   return document.getElementById("import-prompt-template").textContent
     .replace("{{SOURCE}}", src.intro)
     .replace("{{TAG_LIST}}", tagVocabularyText())
-    .replace("{{TAIL}}", src.tail) + (mode === "url" ? (url || "") : "");
+    .replace("{{TAIL}}", src.tail) + (IMPORT_CARRIES_PAYLOAD[mode] ? (payload || "") : "");
 }
 
 const COOKBOOK_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -720,6 +794,7 @@ const state = {
   activeTags: [],
   _fopen: {},
   ownerFilter: "all",
+  friendsTab: "friends",
   myHousehold: "",
   marks: { pin: [], star: [], later: [] },
   shares: {},
@@ -738,12 +813,13 @@ const state = {
   lockedInfo: null,
   modal: null,
   modalError: "",
+  intent: null,
   logRating: 0,
   importParsed: [],
   importErrors: [],
   importVisibility: "",
   importFileName: null,
-  urlToRecipe: { mode: "url", url: "", prompt: "", generated: false },
+  urlToRecipe: { mode: "url", url: "", text: "", prompt: "", generated: false },
   busy: false,
   _tagList: [],
   _showAllLogs: false
@@ -767,6 +843,40 @@ function toast(msg) {
 /* ====================================================================== */
 /* Session + API                                                           */
 /* ====================================================================== */
+/* ====================================================================== */
+/* Scanned links                                                           */
+/* ====================================================================== */
+/* Both codes land on the ordinary front door with one parameter on the end.
+   Nothing happens on arrival: the parameter is read, the address bar is
+   tidied so a refresh cannot fire it twice, and then we ask. If there is no
+   cookbook on the device yet the intent waits in storage until there is, so
+   scanning a code and signing up in one go still ends where it meant to. */
+const INTENT_KEY = "recipeBoxPendingIntent";
+function readIntentFromUrl() {
+  if (typeof window === "undefined" || !window.location) return null;
+  let intent = null;
+  try {
+    const q = new URLSearchParams(window.location.search || "");
+    const r = q.get("r"), f = q.get("f");
+    if (r) intent = { type: "recipe", recipeId: String(r).slice(0, 64) };
+    else if (f) intent = { type: "friend", name: String(f).slice(0, 40) };
+  } catch (e) { return null; }
+  if (intent && window.history && window.history.replaceState) {
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
+  }
+  return intent;
+}
+function stashIntent(intent) {
+  try { localStorage.setItem(INTENT_KEY, JSON.stringify(intent)); } catch (e) {}
+}
+function takeStashedIntent() {
+  try {
+    const raw = localStorage.getItem(INTENT_KEY);
+    localStorage.removeItem(INTENT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
 const SESSION_KEY = "recipeBoxSession";
 function loadSession() {
   try { const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; }
@@ -842,6 +952,9 @@ function WelcomeViewHTML() {
       '<span style="color:var(--accent)">' + icon("book", 34) + '</span>' +
       '<h1 class="font-display">The Recipe Box</h1>' +
       '<p class="lede">Pick a name your friends will see on your ratings and comments, then start a cookbook — or enter an existing Cookbook ID to open it on this device or join a household cookbook.</p>' +
+      (state._arrivedByScan
+        ? '<div class="import-summary">Someone shared something with you. Set up a cookbook here and it will pick up where the code left off.</div>'
+        : "") +
       (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
       '<div class="field"><label>Username</label>' +
         '<input type="text" id="w-username" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wUsername || "") + '" />' +
@@ -856,7 +969,6 @@ function WelcomeViewHTML() {
       '<div class="warn-box"><b>Your Cookbook ID is your password.</b> Anyone who has it can read, edit and delete every recipe in the cookbook, and is linked to all of its friends. Share it only with people you cook with, or to open the same cookbook on another one of your devices. It cannot be reset or recovered, so save it somewhere safe.</div>' +
       '<button class="btn btn-primary btn-block" onclick="Actions.submitSession()">Open my recipe box</button>' +
       '<p class="helper-text" style="margin-top:14px">Coming back? Use the same username and Cookbook ID as before. Sharing a kitchen? Use your own username with the household\\'s Cookbook ID.</p>' +
-      AppLinkFieldHTML("Send this to a friend so they can set up their own recipe box. It is safe to share with anyone - it carries nothing about your account.") +
     '</div>';
 }
 
@@ -879,24 +991,336 @@ function starsOnly(rating) {
 /* In a shared cookbook, "private" would be a lie: everyone in the cookbook
    can already see and edit it. */
 function privateLabel() { return state.mates.length ? "Just us" : "Private"; }
-var QR_BITS = "111111100100111011111101001111111100000100010011101001010101000001101110101000010011100100101011101101110101000001010011000001011101101110101000000100100101001011101100000101011110111101110001000001111111101010101010101010101111111000000001111101100000110000000000101111100001111101000000001111100010000001010001010111001001101101001000111111000100100010010010100001010010111101000010110110011110101000110000000100100101110111010011000000100101111001001011001011010001101000101000110110111010010101110011001000010111110011111100010000100111000011011010110111001111010011000001011111001011101111001011110001011111000010000110100000001011100101111111001101111110000111110111110110011110110111000101110000001010100100101011001101100110111111001110101000100111010100001000100010100000101001101101111010111110001101000011111110011000000001110011010010100100010111111111100101100100100101101010100100000101010011110000111100011100101110101011011100110100111111010101110101001000110001011110011001101110101001111001110011101101000100000100100000010111110000011100111111101000101001011010111101010";
-/* The share QR is fixed: it points at this app, nothing account-specific,
-   so it is safe to show anyone. 33x33 modules, run-length drawn. */
-function QRSvgHTML(px) {
-  var n = 33, q = 2, span = n + q * 2, rects = "";
-  for (var y = 0; y < n; y++) {
-    var x = 0;
+/* ====================================================================== */
+/* QR codes                                                                */
+/* ====================================================================== */
+/* Written out here rather than stored: a code is a pure function of the URL
+   it carries, and the URL is a pure function of the recipe id we already
+   have. Keeping the SVG in the recipe body would put ~16KB per recipe into
+   the blob the library endpoint returns in full on every refresh, to save
+   about four milliseconds of arithmetic that only happens once per code.
+   Byte mode, versions 1-10, spec mask selection. Verified against the
+   fixed app code this replaces: identical on every data and function
+   module. */
+var QR_TOTAL = [26, 44, 70, 100, 134, 172, 196, 242, 292, 346];
+/* [ecPerBlock, blocks1, dataPerBlock1, blocks2, dataPerBlock2] */
+var QR_EC = {
+  L: [[7,1,19,0,0],[10,1,34,0,0],[15,1,55,0,0],[20,1,80,0,0],[26,1,108,0,0],
+      [18,2,68,0,0],[20,2,78,0,0],[24,2,97,0,0],[30,2,116,0,0],[18,2,68,2,69]],
+  M: [[10,1,16,0,0],[16,1,28,0,0],[26,1,44,0,0],[18,2,32,0,0],[24,2,43,0,0],
+      [16,4,27,0,0],[18,4,31,0,0],[22,2,38,2,39],[22,3,36,2,37],[26,4,43,1,44]],
+  Q: [[13,1,13,0,0],[22,1,22,0,0],[18,2,17,0,0],[26,2,24,0,0],[18,2,15,2,16],
+      [24,4,19,0,0],[18,2,14,4,15],[22,4,18,2,19],[20,4,16,4,17],[24,6,19,2,20]],
+  H: [[17,1,9,0,0],[28,1,16,0,0],[22,2,13,0,0],[16,4,9,0,0],[22,2,11,2,12],
+      [28,4,15,0,0],[26,4,13,1,14],[26,4,14,2,15],[24,4,12,4,13],[28,6,15,2,16]]
+};
+var QR_ALIGN = [[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
+var QR_LEVEL_BITS = { L: 1, M: 0, Q: 3, H: 2 };
+
+var GF_EXP = new Uint8Array(512), GF_LOG = new Uint8Array(256);
+(function () {
+  var x = 1;
+  for (var i = 0; i < 255; i++) {
+    GF_EXP[i] = x; GF_LOG[x] = i;
+    x <<= 1; if (x & 256) x ^= 0x11d;
+  }
+  for (var j = 255; j < 512; j++) GF_EXP[j] = GF_EXP[j - 255];
+})();
+function gfMul(a, b) { return (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]]; }
+
+/* Descending coefficient order, which is what the division below wants. */
+function rsGenerator(n) {
+  var poly = [1], i, j;
+  for (i = 0; i < n; i++) {
+    var next = [];
+    for (j = 0; j <= poly.length; j++) next.push(0);
+    for (j = 0; j < poly.length; j++) {
+      next[j] ^= gfMul(poly[j], GF_EXP[i]);
+      next[j + 1] ^= poly[j];
+    }
+    poly = next;
+  }
+  return poly.reverse();
+}
+function rsEncode(data, n) {
+  var gen = rsGenerator(n), res = [], i, j;
+  for (i = 0; i < data.length; i++) res.push(data[i]);
+  for (i = 0; i < n; i++) res.push(0);
+  for (i = 0; i < data.length; i++) {
+    var lead = res[i];
+    if (!lead) continue;
+    for (j = 0; j < gen.length; j++) res[i + j] ^= gfMul(gen[j], lead);
+  }
+  return res.slice(data.length);
+}
+
+function bchDigit(v) { var n = 0; while (v !== 0) { n++; v >>>= 1; } return n; }
+function qrFormatBits(level, mask) {
+  var d = (QR_LEVEL_BITS[level] << 3) | mask, v = d << 10;
+  while (bchDigit(v) - bchDigit(0x537) >= 0) v ^= 0x537 << (bchDigit(v) - bchDigit(0x537));
+  return ((d << 10) | v) ^ 0x5412;
+}
+function qrVersionBits(version) {
+  var v = version << 12;
+  while (bchDigit(v) - bchDigit(0x1f25) >= 0) v ^= 0x1f25 << (bchDigit(v) - bchDigit(0x1f25));
+  return (version << 12) | v;
+}
+
+function qrUtf8(str) {
+  var out = [], i, c;
+  for (i = 0; i < str.length; i++) {
+    c = str.charCodeAt(i);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c >= 0xd800 && c < 0xdc00 && i + 1 < str.length) {
+      var c2 = str.charCodeAt(++i);
+      var cp = 0x10000 + ((c & 0x3ff) << 10) + (c2 & 0x3ff);
+      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return out;
+}
+
+function qrCodewords(bytes, version, level) {
+  var e = QR_EC[level][version - 1];
+  var cap = e[1] * e[2] + e[3] * e[4];
+  var bits = [], i, j, k;
+  function push(val, len) { for (var b = len - 1; b >= 0; b--) bits.push((val >> b) & 1); }
+  push(4, 4);
+  push(bytes.length, version < 10 ? 8 : 16);
+  for (i = 0; i < bytes.length; i++) push(bytes[i], 8);
+  var room = cap * 8;
+  if (bits.length > room) return null;
+  for (i = 0; i < 4 && bits.length < room; i++) bits.push(0);
+  while (bits.length % 8 !== 0) bits.push(0);
+  var words = [];
+  for (i = 0; i < bits.length; i += 8) {
+    var v = 0;
+    for (k = 0; k < 8; k++) v = (v << 1) | bits[i + k];
+    words.push(v);
+  }
+  var pad = [0xec, 0x11], p = 0;
+  while (words.length < cap) words.push(pad[p++ % 2]);
+
+  var spec = [], blocks = [], at = 0;
+  for (i = 0; i < e[1]; i++) spec.push(e[2]);
+  for (i = 0; i < e[3]; i++) spec.push(e[4]);
+  for (i = 0; i < spec.length; i++) {
+    var d = words.slice(at, at + spec[i]); at += spec[i];
+    blocks.push({ data: d, ec: rsEncode(d, e[0]) });
+  }
+  var out = [], maxData = 0;
+  for (i = 0; i < spec.length; i++) if (spec[i] > maxData) maxData = spec[i];
+  for (i = 0; i < maxData; i++) {
+    for (j = 0; j < blocks.length; j++) if (i < blocks[j].data.length) out.push(blocks[j].data[i]);
+  }
+  for (i = 0; i < e[0]; i++) {
+    for (j = 0; j < blocks.length; j++) out.push(blocks[j].ec[i]);
+  }
+  return out;
+}
+
+function qrMaskAt(mask, r, c) {
+  switch (mask) {
+    case 0: return (r + c) % 2 === 0;
+    case 1: return r % 2 === 0;
+    case 2: return c % 3 === 0;
+    case 3: return (r + c) % 3 === 0;
+    case 4: return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0;
+    case 5: return ((r * c) % 2) + ((r * c) % 3) === 0;
+    case 6: return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0;
+    default: return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0;
+  }
+}
+
+function qrBuildMatrix(version, level, words, mask) {
+  var n = version * 4 + 17, m = [], res = [], i, j, dr, dc;
+  for (i = 0; i < n; i++) {
+    var rowA = [], rowB = [];
+    for (j = 0; j < n; j++) { rowA.push(false); rowB.push(false); }
+    m.push(rowA); res.push(rowB);
+  }
+  function finder(r0, c0) {
+    for (dr = -1; dr <= 7; dr++) {
+      for (dc = -1; dc <= 7; dc++) {
+        var rr = r0 + dr, cc = c0 + dc;
+        if (rr < 0 || cc < 0 || rr >= n || cc >= n) continue;
+        var on = (dr >= 0 && dr <= 6 && (dc === 0 || dc === 6)) ||
+                 (dc >= 0 && dc <= 6 && (dr === 0 || dr === 6)) ||
+                 (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4);
+        m[rr][cc] = on; res[rr][cc] = true;
+      }
+    }
+  }
+  finder(0, 0); finder(0, n - 7); finder(n - 7, 0);
+  for (i = 8; i < n - 8; i++) {
+    m[6][i] = i % 2 === 0; res[6][i] = true;
+    m[i][6] = i % 2 === 0; res[i][6] = true;
+  }
+  var ac = QR_ALIGN[version - 1];
+  for (i = 0; i < ac.length; i++) {
+    for (j = 0; j < ac.length; j++) {
+      var r1 = ac[i], c1 = ac[j];
+      if (res[r1][c1]) continue;
+      for (dr = -2; dr <= 2; dr++) {
+        for (dc = -2; dc <= 2; dc++) {
+          var far = Math.abs(dr) > Math.abs(dc) ? Math.abs(dr) : Math.abs(dc);
+          m[r1 + dr][c1 + dc] = far !== 1; res[r1 + dr][c1 + dc] = true;
+        }
+      }
+    }
+  }
+  for (i = 0; i <= 8; i++) {
+    if (!res[8][i]) { res[8][i] = true; m[8][i] = false; }
+    if (!res[i][8]) { res[i][8] = true; m[i][8] = false; }
+  }
+  for (i = 0; i < 8; i++) {
+    res[8][n - 1 - i] = true; m[8][n - 1 - i] = false;
+    res[n - 1 - i][8] = true; m[n - 1 - i][8] = false;
+  }
+  m[n - 8][8] = true; res[n - 8][8] = true;
+  if (version >= 7) {
+    var vb = qrVersionBits(version);
+    for (i = 0; i < 18; i++) {
+      var vbit = ((vb >> i) & 1) === 1, vr = Math.floor(i / 3), vc = i % 3;
+      m[n - 11 + vc][vr] = vbit; res[n - 11 + vc][vr] = true;
+      m[vr][n - 11 + vc] = vbit; res[vr][n - 11 + vc] = true;
+    }
+  }
+  var bitIdx = 0, total = words.length * 8;
+  function nextBit() {
+    if (bitIdx >= total) return false;
+    var v = (words[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1;
+    bitIdx++;
+    return v === 1;
+  }
+  var up = true;
+  for (var col = n - 1; col > 0; col -= 2) {
+    if (col === 6) col--;
+    for (var k = 0; k < n; k++) {
+      var row = up ? n - 1 - k : k;
+      for (var s = 0; s < 2; s++) {
+        var cc2 = col - s;
+        if (res[row][cc2]) continue;
+        var v2 = nextBit();
+        if (qrMaskAt(mask, row, cc2)) v2 = !v2;
+        m[row][cc2] = v2; res[row][cc2] = true;
+      }
+    }
+    up = !up;
+  }
+  var fb = qrFormatBits(level, mask);
+  for (i = 0; i < 15; i++) {
+    var b2 = ((fb >> i) & 1) === 1;
+    if (i < 6) m[i][8] = b2;
+    else if (i < 8) m[i + 1][8] = b2;
+    else if (i === 8) m[8][7] = b2;
+    else m[8][14 - i] = b2;
+    if (i < 8) m[8][n - 1 - i] = b2;
+    else m[n - 15 + i][8] = b2;
+  }
+  return m;
+}
+
+/* The spec's four penalties. Choosing the mask this way rather than fixing
+   one is what keeps a code readable against an awkward payload. */
+function qrPenalty(m) {
+  var n = m.length, score = 0, i, j, run, dark = 0;
+  for (i = 0; i < n; i++) {
+    run = 1;
+    for (j = 1; j < n; j++) {
+      if (m[i][j] === m[i][j - 1]) run++;
+      else { if (run >= 5) score += 3 + (run - 5); run = 1; }
+    }
+    if (run >= 5) score += 3 + (run - 5);
+    run = 1;
+    for (j = 1; j < n; j++) {
+      if (m[j][i] === m[j - 1][i]) run++;
+      else { if (run >= 5) score += 3 + (run - 5); run = 1; }
+    }
+    if (run >= 5) score += 3 + (run - 5);
+  }
+  for (i = 0; i < n - 1; i++) {
+    for (j = 0; j < n - 1; j++) {
+      var a = m[i][j];
+      if (a === m[i][j + 1] && a === m[i + 1][j] && a === m[i + 1][j + 1]) score += 3;
+    }
+  }
+  var p1 = [true, false, true, true, true, false, true, false, false, false, false];
+  var p2 = [false, false, false, false, true, false, true, true, true, false, true];
+  for (i = 0; i < n; i++) {
+    for (j = 0; j + 11 <= n; j++) {
+      var h1 = true, h2 = true, v1 = true, v2 = true;
+      for (var k = 0; k < 11; k++) {
+        if (m[i][j + k] !== p1[k]) h1 = false;
+        if (m[i][j + k] !== p2[k]) h2 = false;
+        if (m[j + k][i] !== p1[k]) v1 = false;
+        if (m[j + k][i] !== p2[k]) v2 = false;
+      }
+      if (h1 || h2) score += 40;
+      if (v1 || v2) score += 40;
+    }
+  }
+  for (i = 0; i < n; i++) for (j = 0; j < n; j++) if (m[i][j]) dark++;
+  score += Math.floor(Math.abs((dark * 100) / (n * n) - 50) / 5) * 10;
+  return score;
+}
+
+function qrMatrix(text, level) {
+  level = level || "M";
+  var bytes = qrUtf8(text), words = null, version = 0;
+  for (var v = 1; v <= 10; v++) {
+    words = qrCodewords(bytes, v, level);
+    if (words) { version = v; break; }
+  }
+  if (!words) return null;
+  var best = null, bestScore = -1;
+  for (var mk = 0; mk < 8; mk++) {
+    var m = qrBuildMatrix(version, level, words, mk);
+    var s = qrPenalty(m);
+    if (bestScore < 0 || s < bestScore) { bestScore = s; best = m; }
+  }
+  return best;
+}
+
+/* One cache for the life of the page. A code is only ever asked for again
+   with the same text, so every view after the first is free. */
+var QR_CACHE = {};
+function qrSvgHTML(text, px, label) {
+  var key = text + "|" + px;
+  if (QR_CACHE[key]) return QR_CACHE[key];
+  var m = qrMatrix(text, "M");
+  if (!m) return '<span class="helper-text">That link is too long for a QR code.</span>';
+  var n = m.length, q = 2, span = n + q * 2, rects = "", y, x, w;
+  for (y = 0; y < n; y++) {
+    x = 0;
     while (x < n) {
-      if (QR_BITS.charCodeAt(y * n + x) === 49) {
-        var w = 1;
-        while (x + w < n && QR_BITS.charCodeAt(y * n + x + w) === 49) w++;
+      if (m[y][x]) {
+        w = 1;
+        while (x + w < n && m[y][x + w]) w++;
         rects += '<rect x="' + (x + q) + '" y="' + (y + q) + '" width="' + w + '" height="1"/>';
         x += w;
       } else x++;
     }
   }
-  return '<svg viewBox="0 0 ' + span + ' ' + span + '" width="' + px + '" height="' + px + '" shape-rendering="crispEdges" role="img" aria-label="QR code linking to The Recipe Box">' +
+  var svg = '<svg viewBox="0 0 ' + span + ' ' + span + '" width="' + px + '" height="' + px +
+    '" shape-rendering="crispEdges" role="img" aria-label="' + esc(label || "QR code") + '">' +
     '<rect width="' + span + '" height="' + span + '" fill="#fff"/><g fill="#111">' + rects + '</g></svg>';
+  QR_CACHE[key] = svg;
+  return svg;
+}
+
+/* The three things a code can point at. Only the app link is anonymous; the
+   other two name something, so they are built where they are shown rather
+   than kept anywhere. */
+function appQrHTML(px) { return qrSvgHTML(appUrl(), px, "QR code linking to The Recipe Box"); }
+function recipeQrUrl(recipeId) { return appUrl() + "?r=" + encodeURIComponent(recipeId); }
+function recipeQrHTML(recipeId, px) {
+  return qrSvgHTML(recipeQrUrl(recipeId), px, "QR code linking to this recipe");
+}
+function friendQrUrl(username) { return appUrl() + "?f=" + encodeURIComponent(username); }
+function friendQrHTML(username, px) {
+  return qrSvgHTML(friendQrUrl(username), px, "QR code that adds " + username + " as a friend");
 }
 
 const TAG_TREE = ${JSON.stringify(TAG_TREE)};
@@ -924,6 +1348,94 @@ function recipeHasTag(r, label) {
   const kids = TAG_INDEX.kids[k] || [];
   for (let i = 0; i < kids.length; i++) if (own.indexOf(kids[i]) >= 0) return true;
   return false;
+}
+
+/* ====================================================================== */
+/* Notifications                                                           */
+/* ====================================================================== */
+/* Worked out from the library rather than kept in a table: every event we
+   want to report is already implied by what the server just sent. Only the
+   read and cleared marks are ours alone, and those live on the device, keyed
+   by username - two people sharing a cookbook read their own post.
+   The cost of that choice: read state does not follow you between devices,
+   and a cleared item stays cleared only here. */
+function notifKey(kind) {
+  const who = (state.session && state.session.username) ? state.session.username.toLowerCase() : "";
+  return "recipeBoxNotif" + kind + ":" + who;
+}
+function loadNotifSet(kind) {
+  try {
+    const raw = localStorage.getItem(notifKey(kind));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function saveNotifSet(kind, obj) {
+  try { localStorage.setItem(notifKey(kind), JSON.stringify(obj)); } catch (e) {}
+}
+
+function rawNotifications() {
+  if (!state.session) return [];
+  const out = [], ours = {};
+  const meLc = state.session.username.toLowerCase();
+  state.recipes.forEach(function (r) {
+    if (r.ours) { ours[r.recipeId] = r; return; }
+    /* A friend has put a recipe somewhere we can see it. */
+    if (r.visibility !== "friends") return;
+    out.push({
+      id: "recipe:" + r.recipeId, kind: "recipe", at: r.createdAt,
+      who: r.household, title: r.title, recipeId: r.recipeId
+    });
+  });
+  Object.keys(state.comments).forEach(function (rid) {
+    const mine = ours[rid];
+    if (!mine) return;                       /* only cooks of our own recipes */
+    commentsFor(rid).forEach(function (c) {
+      if (String(c.username).toLowerCase() === meLc) return;   /* our own log */
+      out.push({
+        id: "cook:" + c.commentId, kind: "cook", at: c.createdAt || c.cookedOn,
+        who: c.username, title: mine.title, recipeId: rid,
+        rating: c.rating, comment: c.comment, cookedOn: c.cookedOn
+      });
+    });
+  });
+  return out;
+}
+
+function allNotifications() {
+  const raw = rawNotifications();
+  let read = loadNotifSet("Read");
+  /* First run for this username: everything that already happened counts as
+     read. Otherwise a new device opens on a wall of old news. */
+  if (read === null) {
+    read = {};
+    raw.forEach(function (n) { read[n.id] = 1; });
+    saveNotifSet("Read", read);
+  }
+  const cleared = loadNotifSet("Cleared") || {};
+  return raw
+    .filter(function (n) { return !cleared[n.id]; })
+    .map(function (n) { n.read = !!read[n.id]; return n; })
+    .sort(function (a, b) { return String(b.at || "").localeCompare(String(a.at || "")); });
+}
+function unreadNotifications() {
+  return allNotifications().filter(function (n) { return !n.read; });
+}
+
+function fmtWhen(iso) {
+  if (!iso) return "";
+  const d = new Date(String(iso).length === 10 ? iso + "T12:00:00" : iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  let rel;
+  if (mins < 1) rel = "just now";
+  else if (mins < 60) rel = mins + (mins === 1 ? " minute ago" : " minutes ago");
+  else if (mins < 1440) { const h = Math.floor(mins / 60); rel = h + (h === 1 ? " hour ago" : " hours ago"); }
+  else if (mins < 43200) { const dd = Math.floor(mins / 1440); rel = dd + (dd === 1 ? " day ago" : " days ago"); }
+  else rel = "";
+  const abs = d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
+  return rel ? rel + " · " + abs : abs;
 }
 
 function friendLabels() { return state.friends.map(f => f.label); }
@@ -1079,23 +1591,32 @@ function ResultsSectionHTML() {
 }
 
 function LibraryViewHTML() {
-  const pending = state.incoming.length;
+  const alerts = state.incoming.length + unreadNotifications().length;
   const sortOptions = [["newest", "Newest first"], ["oldest", "Oldest first"], ["cooked", "Most cooked"],
     ["rated", "Highest rated"], ["az", "Title A–Z"], ["za", "Title Z–A"]]
     .map(o => '<option value="' + o[0] + '"' + (state.sort === o[0] ? " selected" : "") + '>' + o[1] + '</option>').join("");
   return '' +
     '<div class="wrap">' +
-      '<div class="header"><span class="icon-wrap">' + icon("book", 30) + '</span>' +
-        '<div><h1 class="font-display">The Recipe Box</h1>' +
-          '<p>' + state.recipes.length + ' recipe' + (state.recipes.length === 1 ? "" : "s") + ' on the shelf · ' + esc(state.session.username) + '</p></div>' +
-        '<div class="header-btns">' +
-          '<button class="btn bell" onclick="Actions.openFriends()">' + icon("users", 16) +
-            (pending ? '<span class="dot-badge">' + pending + '</span>' : "") + '</button>' +
-          '<button class="btn" onclick="Actions.openModal(\\'actions\\')">Actions</button>' +
+      '<div class="header">' +
+        '<div class="header-brand">' +
+          '<img class="app-icon" src="/icon.png" alt="" />' +
+          '<h1 class="font-display">The Recipe Box</h1>' +
+        '</div>' +
+        '<div class="header-row2">' +
+          '<p class="header-who"><b>' + esc(state.session.username) + '</b> · ' +
+            state.recipes.length + ' recipe' + (state.recipes.length === 1 ? "" : "s") + ' on the shelf</p>' +
+          '<div class="header-btns">' +
+            '<button class="btn bell" title="Friends and notifications" onclick="Actions.openFriends()">' + icon("users", 16) +
+              (alerts ? '<span class="dot-badge">' + alerts + '</span>' : "") + '</button>' +
+            '<button class="btn" onclick="Actions.openModal(\\'actions\\')">Actions</button>' +
+          '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="search-wrap"><span class="icon">' + icon("search", 18) + '</span>' +
-        '<input id="search-input" type="text" placeholder="Search recipes, ingredients, tags..." value="' + esc(state.search) + '" oninput="Actions.onSearchInput(this.value)" />' +
+      '<div class="search-wrap">' +
+        '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
+          '<input id="search-input" type="text" placeholder="Search recipes, ingredients, tags..." value="' + esc(state.search) + '" oninput="Actions.onSearchInput(this.value)" />' +
+          '<button id="search-clear" class="search-clear' + (state.search ? " on" : "") + '" title="Clear search" onclick="Actions.clearSearch()">' + icon("x", 15) + '</button>' +
+        '</div>' +
         '<button id="filter-btn" class="btn search-filter' + (state.activeTags.length ? " on" : "") + '" onclick="Actions.openFilters()">' +
           FilterButtonInnerHTML() +
         '</button></div>' +
@@ -1123,7 +1644,11 @@ function updateFilterButton() {
   el.className = "btn search-filter" + (state.activeTags.length ? " on" : "");
   el.innerHTML = FilterButtonInnerHTML();
 }
-function updateLibraryChrome() { updateResultsSection(); updateFilterButton(); }
+function updateSearchClear() {
+  const el = document.getElementById("search-clear");
+  if (el) el.classList.toggle("on", !!state.search);
+}
+function updateLibraryChrome() { updateResultsSection(); updateFilterButton(); updateSearchClear(); }
 
 /* ====================================================================== */
 /* Render: Friends                                                         */
@@ -1165,29 +1690,88 @@ function FriendsViewHTML() {
         '<button class="btn btn-sm btn-ghost" onclick="Actions.allowFriend(\\'' + f.by + '\\')">Allow again</button>')).join("")
     : "";
 
+  const unread = unreadNotifications().length;
+  const tab = state.friendsTab === "notifications" ? "notifications" : "friends";
+
+  const friendsPanel =
+    '<p class="helper-text">Friendships link whole cookbooks. Add one person and you are linked to everyone who shares their cookbook, and they to everyone in yours. Recipes set to ' +
+      esc(privateLabel()) + ' stay hidden either way.</p>' +
+    '<div class="add-friend-row">' +
+      '<input type="text" id="friend-name" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Their username" />' +
+      '<button class="btn btn-primary" onclick="Actions.sendFriendRequest()">' + icon("userPlus", 16) + ' Add</button>' +
+    '</div>' +
+    '<div class="section-label">Or have them scan this</div>' +
+    '<div class="qr-side">' +
+      '<div class="qr-holder">' + friendQrHTML(state.session.username, 126) + '</div>' +
+      '<div class="qr-side-text">' +
+        '<p class="helper-text" style="margin:0">Opens The Recipe Box, sets them up with a cookbook if they need one, and then asks them to confirm sending <b>' +
+          esc(state.session.username) + '</b> a friend request. You still have to accept it.</p>' +
+      '</div>' +
+    '</div>' +
+    (mates ? '<div class="section-label">In your cookbook</div>' + mates : "") +
+    '<div class="section-label">Requests for you</div>' + incoming +
+    '<div class="section-label">Your friends</div>' + friends +
+    (outgoing ? '<div class="section-label">Requests you sent</div>' + outgoing : "") +
+    (declined ? '<div class="section-label">Declined</div>' + declined : "");
+
   return '' +
     '<div class="wrap">' +
       '<div class="detail-top">' +
         '<button class="back-link" onclick="Actions.backToLibrary()">' + icon("chevronLeft", 18) + ' Recipe box</button>' +
       '</div>' +
       '<h1 class="detail-title font-display" style="font-size:26px">Friends</h1>' +
-      '<p class="helper-text">Friendships link whole cookbooks. Add one person and you are linked to everyone who shares their cookbook, and they to everyone in yours. Recipes set to ' +
-        esc(privateLabel()) + ' stay hidden either way.</p>' +
-      '<div class="add-friend-row">' +
-        '<input type="text" id="friend-name" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Their username" />' +
-        '<button class="btn btn-primary" onclick="Actions.sendFriendRequest()">' + icon("userPlus", 16) + ' Add</button>' +
+      '<div class="tabs">' +
+        '<button class="' + (tab === "friends" ? "active" : "") + '" onclick="Actions.setFriendsTab(\\'friends\\')">' +
+          icon("users", 16) + ' Friends' +
+          (state.incoming.length ? '<span class="tab-count">' + state.incoming.length + '</span>' : "") + '</button>' +
+        '<button class="' + (tab === "notifications" ? "active" : "") + '" onclick="Actions.setFriendsTab(\\'notifications\\')">' +
+          icon("bell", 16) + ' Notifications' +
+          (unread ? '<span class="tab-count">' + unread + '</span>' : "") + '</button>' +
       '</div>' +
-      (mates ? '<div class="section-label">In your cookbook</div>' + mates : "") +
-      '<div class="section-label">Requests for you</div>' + incoming +
-      '<div class="section-label">Your friends</div>' + friends +
-      (outgoing ? '<div class="section-label">Requests you sent</div>' + outgoing : "") +
-      (declined ? '<div class="section-label">Declined</div>' + declined : "") +
-      '<div class="section-label">Share the app</div>' +
-      '<div style="display:flex;gap:14px;align-items:center;background:var(--card);border-radius:12px;padding:14px">' +
-        '<div style="flex-shrink:0;line-height:0">' + QRSvgHTML(120) + '</div>' +
-        '<p class="helper-text" style="margin:0">Have them point a camera here to open The Recipe Box. They make their own cookbook, then you add each other by username.</p>' +
+      (tab === "notifications" ? NotificationsPanelHTML() : friendsPanel) +
+    '</div>';
+}
+
+/* Two things get reported: a friend putting up a recipe you can now see, and
+   somebody cooking one of yours. Each carries when it happened and a way
+   straight to the thing it is about. */
+function NotificationsPanelHTML() {
+  const list = allNotifications();
+  if (!list.length) {
+    return '<p class="helper-text">Nothing new. When a friend shares a recipe, or somebody logs a cook of one of yours, it turns up here.</p>';
+  }
+  const unread = list.filter(function (n) { return !n.read; }).length;
+  const tools =
+    '<div class="notif-tools">' +
+      '<button class="btn btn-sm" ' + (unread ? "" : "disabled") + ' onclick="Actions.markAllNotificationsRead()">' +
+        icon("check", 14) + ' Mark all read</button>' +
+      '<button class="btn btn-sm btn-ghost" onclick="Actions.clearNotifications()">' +
+        icon("trash", 14) + ' Clear all</button>' +
+    '</div>';
+  const rows = list.map(function (n) {
+    let line, open;
+    if (n.kind === "recipe") {
+      line = '<b>' + esc(n.who) + '</b> shared a recipe: <b>' + esc(n.title) + '</b>';
+      open = '<button class="btn btn-sm" onclick="Actions.openNotification(\\'' + esc(n.id) + '\\')">Open recipe</button>';
+    } else {
+      line = '<b>' + esc(n.who) + '</b> cooked your <b>' + esc(n.title) + '</b>' +
+        (n.rating ? ' ' + starsOnly(n.rating) : "") +
+        (n.comment ? '<br><span style="color:var(--ink-muted)">' + esc(n.comment) + '</span>' : "");
+      open = '<button class="btn btn-sm" onclick="Actions.openNotification(\\'' + esc(n.id) + '\\')">Open cook log</button>';
+    }
+    return '<div class="notif' + (n.read ? " read" : "") + '">' +
+      '<span class="notif-dot"></span>' +
+      '<div class="notif-body">' +
+        '<p class="notif-line">' + line + '</p>' +
+        '<div class="notif-when">' + esc(fmtWhen(n.at)) + '</div>' +
+      '</div>' +
+      '<div class="notif-acts">' + open +
+        '<button class="btn btn-sm btn-ghost" onclick="Actions.toggleNotificationRead(\\'' + esc(n.id) + '\\')">' +
+          (n.read ? "Unread" : "Read") + '</button>' +
       '</div>' +
     '</div>';
+  }).join("");
+  return tools + rows;
 }
 
 /* ====================================================================== */
@@ -1384,11 +1968,38 @@ function DetailViewHTML(r) {
   if (!r) return '<div class="wrap"><p style="padding-top:30px">That recipe is no longer in your box.</p>' +
     '<button class="btn" onclick="Actions.backToLibrary()">Back to the recipe box</button></div>';
   const st = statsFor(r.recipeId);
-  const tags = r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join(" ");
   const action = r.ours
     ? '<button class="btn btn-sm" onclick="Actions.openEdit(\\'' + r.recipeId + '\\')">' + icon("pencil", 14) + ' Edit</button>'
     : "";
-  const markRow = '<div class="detail-marks">' + MarkButtonsHTML(r, true) + '</div>';
+  /* Who and how well it went, straight under the name. */
+  const credit = r.ours
+    ? (r.owner === state.session.username ? "" : '<span class="owner-badge">' + icon("chain", 11) + ' ' + esc(r.owner) + '</span>')
+    : '<span class="owner-badge">from ' + esc(r.household) + '</span>';
+  const creditRow = '<div class="detail-meta" style="margin-bottom:10px">' + credit +
+    ratingHTML(st.avg, st.count) +
+    (st.count ? '<span class="cooked-count">cooked ' + st.count + '×</span>' : "") +
+  '</div>';
+  /* Who can see it sits with the other things you can do to the recipe. It
+     and Pin are never both there: one is for a recipe of yours, the other
+     for somebody else's. */
+  const markRow = '<div class="detail-marks">' + MarkButtonsHTML(r, true) +
+    (r.ours ? visibilityPill(r, true) : "") + '</div>';
+  /* The code carries a link to this recipe and nothing else. Scanning it
+     asks its owner to be friends and queues the pin. */
+  const qrBlock =
+    '<div class="qr-side" style="margin:14px 0 16px">' +
+      '<div class="qr-holder">' + recipeQrHTML(r.recipeId, 112) + '</div>' +
+      '<div class="qr-side-text">' +
+        (r.description ? '<p class="detail-desc" style="margin:0 0 6px">' + esc(r.description) + '</p>' : "") +
+        '<p class="helper-text" style="margin:0">Point a friend\\'s camera here to send them this recipe.' +
+        (r.ours && r.visibility !== "friends"
+          ? ' It is ' + esc(privateLabel().toLowerCase()) + ' at the moment, so they will not see it until you share it with them.'
+          : "") + '</p>' +
+      '</div>' +
+    '</div>';
+  const tags = r.tags.length
+    ? '<div class="detail-tags">' + r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join("") + '</div>'
+    : "";
   const prov = r.mergedFrom
     ? '<div class="provenance">Copied from ' + esc(r.mergedFrom.username) + '\\'s cookbook on ' + esc(fmtDate(r.mergedFrom.date)) + '. Their ratings and comments stayed with the original.</div>'
     : "";
@@ -1400,16 +2011,10 @@ function DetailViewHTML(r) {
       '</div>' +
       '<div id="change-banner">' + ChangeBannerHTML() + '</div>' +
       '<h1 class="detail-title font-display">' + esc(r.title) + '</h1>' +
+      creditRow +
       markRow +
-      (r.description ? '<p class="detail-desc">' + esc(r.description) + '</p>' : "") +
-      '<div class="detail-meta">' +
-        (r.ours ? visibilityPill(r, true) : "") +
-        (r.ours
-          ? (r.owner === state.session.username ? "" : '<span class="owner-badge">' + icon("chain", 11) + ' ' + esc(r.owner) + '</span>')
-          : '<span class="owner-badge">from ' + esc(r.household) + '</span>') +
-        tags + (r.tags.length ? '<span class="dot">·</span>' : "") + ratingHTML(st.avg, st.count) +
-        (st.count ? '<span class="cooked-count">cooked ' + st.count + '×</span>' : "") +
-      '</div>' +
+      qrBlock +
+      tags +
       prov +
       '<div id="recipe-body">' + RecipeBodyHTML(r) + '</div>' +
     '</div>';
@@ -1463,6 +2068,18 @@ function StepRowHTML(s, idx, total) {
     '</div>';
 }
 
+/* Four ways in, all the same shape: get a prompt, run it wherever you keep
+   your AI, paste the answer back. Named for where the recipe is coming from
+   rather than for the step you are about to do. */
+const IMPORT_ORDER = ["url", "text", "photo", "chat"];
+function ImportButtonsHTML() {
+  return IMPORT_ORDER.map(function (mode) {
+    const s = IMPORT_SOURCES[mode];
+    return '<button class="btn btn-sm" onclick="Actions.openImportPrompt(\\'' + mode + '\\')">' +
+      icon(s.icon, 14) + ' ' + s.label + '</button>';
+  }).join("");
+}
+
 function EditViewHTML() {
   const d = state.editDraft;
   const isNew = state.editIsNew;
@@ -1474,9 +2091,7 @@ function EditViewHTML() {
         '<button class="back-link" onclick="Actions.cancelEdit()">' + icon("chevronLeft", 18) + ' Cancel</button>' +
         '<div class="edit-actions">' +
           (isNew
-            ? '<button class="btn btn-sm" onclick="Actions.openImportPrompt(\\'url\\')">' + icon("link", 14) + ' URL</button>' +
-              '<button class="btn btn-sm" onclick="Actions.openImportPrompt(\\'photo\\')">' + icon("camera", 14) + ' Photo</button>' +
-              '<button class="btn btn-sm" onclick="Actions.openImportPrompt(\\'chat\\')">' + icon("chat", 14) + ' Chat</button>'
+            ? ImportButtonsHTML()
             : '<button class="btn btn-ghost btn-sm" onclick="Actions.deleteRecipe()">' + icon("trash", 14) + ' Delete</button>') +
           '<button class="btn btn-primary btn-sm" onclick="Actions.saveRecipeForm()">' + icon("check", 14) + ' Save recipe</button>' +
         '</div>' +
@@ -1717,12 +2332,26 @@ function appUrl() {
   const o = window.location && window.location.origin;
   return (o && o.indexOf("http") === 0 ? o : "https://recipe-box.richardernst15.workers.dev") + "/";
 }
-function AppLinkFieldHTML(note) {
-  return '<div class="field"><label>App link</label>' +
-    '<div class="code-box font-mono" style="word-break:break-all">' + esc(appUrl()) + '</div>' +
-    '<button class="btn btn-sm btn-block" onclick="Actions.copyAppUrl()">' + icon("copy", 14) + ' Copy link</button>' +
-    (note ? '<p class="helper-text">' + note + '</p>' : "") +
-  '</div>';
+/* One place to hand the app to somebody, in whichever of the two ways suits
+   the room: point a camera at the code, or send the link. Both land on the
+   plain front door and carry nothing about the account showing them. */
+function ShareAppModalHTML() {
+  return modalShell("Share App",
+    '<div class="field"><label>App link</label>' +
+      '<div class="qr-side">' +
+        '<div class="qr-holder">' + appQrHTML(126) + '</div>' +
+        '<div class="qr-side-text">' +
+          '<div class="code-box font-mono">' + esc(appUrl()) + '</div>' +
+          '<button class="btn btn-sm btn-block" onclick="Actions.copyAppUrl()">' + icon("copy", 14) + ' Copy link</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="helper-text">They open it, make their own cookbook, and then you add each other by username. ' +
+      'Safe to give to anyone: it opens the app and nothing more.</p>' +
+    '</div>' +
+    '<div class="field"><label>Add to a home screen</label>' +
+      '<p class="helper-text"><b>iPhone or iPad:</b> open the link in Safari, tap Share, then Add to Home Screen.<br>' +
+      '<b>Android:</b> open the link in Chrome, tap the three-dot menu, then Install app.</p>' +
+    '</div>');
 }
 
 /* A private recipe can still be handed to particular friends - the coveted
@@ -1810,14 +2439,21 @@ function ImportModalHTML() {
 function UrlToRecipeModalHTML() {
   const u = state.urlToRecipe;
   const src = IMPORT_SOURCES[u.mode] || IMPORT_SOURCES.url;
-  const step1 = u.mode === "url"
-    ? '<div class="step-label">1. Paste the recipe URL</div>' +
-      '<input type="url" id="utr-url" placeholder="https://..." value="' + esc(u.url) + '" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--border); font-size:14.5px" />'
-    : '<div class="step-label">1. Get the prompt</div>' +
+  let step1;
+  if (u.mode === "url") {
+    step1 = '<div class="step-label">1. Paste the recipe URL</div>' +
+      '<input type="url" id="utr-url" placeholder="https://..." value="' + esc(u.url) + '" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--border); font-size:14.5px" />';
+  } else if (u.mode === "text") {
+    step1 = '<div class="step-label">1. Paste the recipe text</div>' +
+      '<textarea class="response-box" id="utr-text" placeholder="Paste the whole recipe here - ingredients, steps, whatever you have...">' + esc(u.text) + '</textarea>' +
+      '<p class="helper-text">Anything readable will do: an email, a screenshot you have already transcribed, a note off a packet. It goes on the end of the prompt.</p>';
+  } else {
+    step1 = '<div class="step-label">1. Get the prompt</div>' +
       '<p class="helper-text">' + (u.mode === "photo"
         ? "Copy this prompt into Claude, ChatGPT or Grok and attach your photo of the recipe in the same message."
         : "Copy this prompt into the conversation where you have been working out the recipe, as your next message.") +
       '</p>';
+  }
   return modalShell(src.label,
     '<div class="step-block">' + step1 +
       '<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="Actions.generatePrompt()">Generate prompt</button>' +
@@ -1850,11 +2486,9 @@ function AccountModalHTML() {
       '<div class="code-box font-mono">' + esc(state.session.cookbookId) + '</div>' +
       '<button class="btn btn-sm btn-block" onclick="Actions.copyCookbookId()">' + icon("copy", 14) + ' Copy Cookbook ID</button>' +
     '</div>' +
-    '<div class="field"><label>Add to your home screen</label>' +
-      '<p class="helper-text"><b>iPhone or iPad:</b> open the app link in Safari, tap the Share button, then Add to Home Screen.<br>' +
-      '<b>Android:</b> open the app link in Chrome, tap the three-dot menu, then Install app or Add to Home screen.</p></div>' +
+
     '<div class="warn-box">Anyone with this Cookbook ID can read, edit and delete every recipe in it, and inherits every friendship it has. Give it only to someone you cook with, or use it to open this cookbook on another of your devices — to share recipes with anyone else, add them as a friend instead.</div>' +
-    AppLinkFieldHTML("Safe to share with anyone. It opens the app, nothing more.") +
+
     '<details class="adm"><summary>Maintenance</summary>' +
       '<p class="helper-text">One-time tag migration. It rewrites recipe tags in <b>every</b> cookbook into the ' +
         'current tag list. Check the dry run before applying.</p>' +
@@ -1899,14 +2533,56 @@ function ConflictModalHTML() {
     '</div>');
 }
 
+/* Neither code acts on its own. A recipe code asks its owner to be friends,
+   which is a thing done in somebody else's name, so it gets a yes first. */
+function ConfirmIntentModalHTML() {
+  const c = state.intent || {};
+  if (c.type === "friend") {
+    return modalShell("Add a friend",
+      (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
+      '<p style="margin:0 0 14px">Send <b>' + esc(c.name) + '</b> a friend request?</p>' +
+      '<p class="helper-text">They have to accept before either of you sees the other\\'s shared recipes. ' +
+      'Friendships link whole cookbooks, so anyone sharing theirs comes with them.</p>' +
+      '<div style="display:flex; gap:8px; margin-top:16px">' +
+        '<button class="btn btn-primary" style="flex:1" ' + (state.busy ? "disabled" : "") +
+          ' onclick="Actions.runIntent()">' + icon("userPlus", 15) + ' Send request</button>' +
+        '<button class="btn" onclick="Actions.dismissIntent()">Not now</button>' +
+      '</div>');
+  }
+  const p = c.preview || {};
+  return modalShell("A recipe was shared with you",
+    (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
+    (p.title
+      ? '<p style="margin:0 0 6px"><b>' + esc(p.title) + '</b></p>' +
+        '<p class="helper-text" style="margin:0 0 14px">From ' + esc(p.household || p.owner || "another cookbook") + '</p>'
+      : '<p style="margin:0 0 14px">Someone shared a recipe with you.</p>') +
+    (p.mine
+      ? '<p class="helper-text">This one is already in your own cookbook.</p>'
+      : p.friends
+        ? '<p class="helper-text">You are already friends, so this will pin it to your cookbook and open it. Pinning is a live view of their recipe, not a copy - their edits show, and it goes if they delete it.</p>'
+        : '<p class="helper-text">To see it you need to be friends. This sends ' +
+          esc(p.owner || "them") + ' a friend request and remembers the recipe - it pins itself to your cookbook the moment they accept.' +
+          (p.visibility && p.visibility !== "friends"
+            ? ' Note it is private at the moment, so they will also need to share it with you.' : "") +
+          '</p>') +
+    '<div style="display:flex; gap:8px; margin-top:16px">' +
+      '<button class="btn btn-primary" style="flex:1" ' + (state.busy ? "disabled" : "") +
+        ' onclick="Actions.runIntent()">' +
+        (p.mine ? "Open it" : p.friends ? "Pin and open" : icon("userPlus", 15) + " Ask and save it") + '</button>' +
+      '<button class="btn" onclick="Actions.dismissIntent()">Not now</button>' +
+    '</div>');
+}
+
 function ActionsModalHTML() {
+  const alerts = state.incoming.length + unreadNotifications().length;
   return modalShell("Actions",
     '<div style="display:flex; flex-direction:column; gap:8px;">' +
       '<button class="btn btn-primary btn-block" onclick="Actions.closeModal(); Actions.openNew();">' + icon("plus", 16) + ' New recipe</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openFriends();">' + icon("users", 16) + ' Friends' + (state.incoming.length ? " (" + state.incoming.length + " waiting)" : "") + '</button>' +
+      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openFriends();">' + icon("users", 16) + ' Friends/Notifications' + (alerts ? " (" + alerts + ")" : "") + '</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'import\\');">' + icon("upload", 16) + ' Import recipes</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.exportAll();">' + icon("download", 16) + ' Export ' + (hasActiveFilter() ? "selected" : "all") + '</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.reload();">' + icon("sync", 16) + ' Reload from server</button>' +
+      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'shareApp\\');">' + icon("share", 16) + ' Share App</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'account\\');">' + icon("lock", 16) + ' Settings</button>' +
     '</div>');
 }
@@ -1975,6 +2651,8 @@ function renderModal() {
   else if (state.modal === "import") root.innerHTML = ImportModalHTML();
   else if (state.modal === "urlToRecipe") root.innerHTML = UrlToRecipeModalHTML();
   else if (state.modal === "account") root.innerHTML = AccountModalHTML();
+  else if (state.modal === "shareApp") root.innerHTML = ShareAppModalHTML();
+  else if (state.modal === "confirmIntent") root.innerHTML = ConfirmIntentModalHTML();
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
   else if (state.modal === "filters") { root.innerHTML = FiltersModalHTML(); updateFilterScrollHint(); }
   else if (state.modal === "actions") root.innerHTML = ActionsModalHTML();
@@ -2035,6 +2713,9 @@ async function openSession(payload) {
     await refreshLibrary(true);
     if (data.created) toast("Cookbook created — save your Cookbook ID somewhere safe");
     else if (data.joined) toast("You joined a cookbook shared with " + (data.members - 1) + " other " + (data.members === 2 ? "person" : "people"));
+    /* They arrived by scanning something and have only now got a cookbook. */
+    const waiting = takeStashedIntent();
+    if (waiting) await Actions.beginIntent(waiting);
   } catch (e) {
     if (e.code === "CONFIRM_JOIN") {
       if (confirm(e.message + "\\n\\nJoin this cookbook?")) {
@@ -2062,14 +2743,59 @@ Actions.signOut = function() {
 };
 
 /* --- navigation --- */
-Actions.openDetail = function(id) {
+Actions.openDetail = function(id, showLogs) {
   state.activeId = id; state.view = "detail"; state.scale = 1;
-  state.customScaleOpen = false; state._showAllLogs = false;
+  state.customScaleOpen = false; state._showAllLogs = !!showLogs;
   setWatch(id);
   renderApp();
 };
 Actions.backToLibrary = function() { state.view = "library"; setWatch(null); renderApp(); };
-Actions.openFriends = function() { state.view = "friends"; setWatch(null); renderApp(); };
+Actions.openFriends = function() {
+  state.view = "friends";
+  state.friendsTab = "friends";           /* Friends is the default face of it */
+  setWatch(null);
+  renderApp();
+};
+Actions.setFriendsTab = function(which) { state.friendsTab = which; renderApp(); };
+Actions.toggleNotificationRead = function(id) {
+  const read = loadNotifSet("Read") || {};
+  if (read[id]) delete read[id]; else read[id] = 1;
+  saveNotifSet("Read", read);
+  renderApp();
+};
+Actions.markAllNotificationsRead = function() {
+  const read = loadNotifSet("Read") || {};
+  allNotifications().forEach(function (n) { read[n.id] = 1; });
+  saveNotifSet("Read", read);
+  renderApp();
+};
+Actions.clearNotifications = function() {
+  const list = allNotifications();
+  if (!list.length) return;
+  if (!confirm("Clear " + list.length + " notification" + (list.length === 1 ? "" : "s") + "? This only affects this device.")) return;
+  const cleared = loadNotifSet("Cleared") || {};
+  list.forEach(function (n) { cleared[n.id] = 1; });
+  saveNotifSet("Cleared", cleared);
+  toast("Notifications cleared");
+  renderApp();
+};
+/* Opening the thing marks it read, the way opening a mail does. A cook log
+   lands on the recipe with the log already unfolded. */
+Actions.openNotification = function(id) {
+  const n = allNotifications().filter(function (x) { return x.id === id; })[0];
+  if (!n) return;
+  const read = loadNotifSet("Read") || {};
+  read[id] = 1;
+  saveNotifSet("Read", read);
+  if (!state.recipes.some(function (r) { return r.recipeId === n.recipeId; })) {
+    toast("That recipe is no longer there");
+    renderApp();
+    return;
+  }
+  /* A logged cook is the point of the notification, so land with the log
+     already unfolded rather than four entries deep. */
+  Actions.openDetail(n.recipeId, n.kind === "cook");
+};
 Actions.refreshWatched = async function() {
   await refreshLibrary(false);
   setWatch(state.activeId);
@@ -2086,7 +2812,20 @@ Actions.loadTheirVersion = function() {
 };
 Actions.reload = function() { refreshLibrary(true); };
 
-Actions.onSearchInput = function(v) { state.search = v; updateResultsSection(); };
+/* Typing must not re-render the page or the field loses focus mid-word, so
+   the clear button is toggled by hand alongside the results. */
+Actions.onSearchInput = function(v) {
+  state.search = v;
+  updateSearchClear();
+  updateResultsSection();
+};
+Actions.clearSearch = function() {
+  state.search = "";
+  const el = document.getElementById("search-input");
+  if (el) { el.value = ""; el.focus(); }
+  updateSearchClear();
+  updateResultsSection();
+};
 Actions.saveUsername = async function() {
   const el = document.getElementById("set-name");
   const next = el ? el.value.trim() : "";
@@ -2271,7 +3010,7 @@ Actions.openModal = function(name) {
   state.modalError = "";
   if (name === "logCook") state.logRating = 0;
   if (name === "import") { state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = ""; }
-  if (name === "urlToRecipe") state.urlToRecipe = { mode: state._nextImportMode || "url", url: "", prompt: "", generated: false };
+  if (name === "urlToRecipe") state.urlToRecipe = { mode: state._nextImportMode || "url", url: "", text: "", prompt: "", generated: false };
   renderModal();
 };
 Actions.closeModal = function() { state.modal = null; state.modalError = ""; renderModal(); updateLibraryChrome(); };
@@ -2320,6 +3059,67 @@ Actions.sendFriendRequest = async function() {
     }
   } catch (e) { toast(e.message); }
 };
+/* Held until there is a cookbook to act with, then offered as a question. */
+Actions.beginIntent = async function(intent) {
+  if (!intent) return;
+  if (!state.session) { stashIntent(intent); return; }
+  state.intent = intent;
+  state.modalError = "";
+  if (intent.type === "recipe") {
+    try {
+      const p = await API("recipe/claim", { recipeId: intent.recipeId, preview: true });
+      state.intent.preview = p;
+    } catch (e) {
+      toast(e.message);
+      state.intent = null;
+      return;
+    }
+  }
+  Actions.openModal("confirmIntent");
+};
+Actions.dismissIntent = function() {
+  state.intent = null;
+  Actions.closeModal();
+};
+Actions.runIntent = async function() {
+  const c = state.intent;
+  if (!c || state.busy) return;
+  state.busy = true;
+  renderModal();
+  try {
+    if (c.type === "friend") {
+      const res = await API("friend/request", { name: c.name });
+      state.intent = null;
+      state.modal = null;
+      await refreshLibrary(false);
+      toast(res.accepted
+        ? "You are now linked with " + res.username
+        : "Request sent to " + res.username + " — you will see their shared recipes once they accept");
+      return;
+    }
+    const res = await API("recipe/claim", { recipeId: c.recipeId });
+    state.intent = null;
+    state.modal = null;
+    await refreshLibrary(false);
+    if (res.recipeId && state.recipes.some(function (r) { return r.recipeId === res.recipeId; })) {
+      state._showAllLogs = false;
+      Actions.openDetail(res.recipeId);
+      toast(res.pinned ? "Pinned to your cookbook" : "Opened");
+      return;
+    }
+    renderApp();
+    toast(res.requested
+      ? "Asked " + (res.owner || "them") + " to be friends — the recipe pins itself when they accept"
+      : "Saved. It will appear once they share it with you.");
+  } catch (e) {
+    state.modalError = e.message;
+    renderModal();
+  } finally {
+    state.busy = false;
+    if (state.modal) renderModal();
+  }
+};
+
 Actions.respondFriend = async function(name, action) {
   try {
     const res = await API("friend/respond", { name, action });
@@ -2415,13 +3215,21 @@ Actions.openImportPrompt = function(mode) {
 };
 Actions.generatePrompt = function() {
   const u = state.urlToRecipe;
+  let payload = "";
   if (u.mode === "url") {
     const el = document.getElementById("utr-url");
     const url = el ? el.value.trim() : "";
     if (!url) { toast("Paste a URL first"); return; }
     u.url = url;
+    payload = url;
+  } else if (u.mode === "text") {
+    const el2 = document.getElementById("utr-text");
+    const body = el2 ? el2.value.trim() : "";
+    if (!body) { toast("Paste the recipe text first"); return; }
+    u.text = body;
+    payload = body;
   }
-  u.prompt = buildImportPrompt(u.mode, u.url);
+  u.prompt = buildImportPrompt(u.mode, payload);
   u.generated = true;
   renderModal();
 };
@@ -2725,9 +3533,18 @@ if (typeof window !== "undefined" && window.addEventListener) {
 }
 
 (async function init() {
+  const scanned = readIntentFromUrl();
   state.session = loadSession();
-  if (!state.session) { state.loading = false; renderApp(); return; }
+  if (!state.session) {
+    if (scanned) { stashIntent(scanned); state._arrivedByScan = true; }
+    state.loading = false;
+    renderApp();
+    return;
+  }
   await refreshLibrary(true);
+  /* A code scanned just now wins over one left over from an abandoned visit. */
+  const intent = scanned || takeStashedIntent();
+  if (intent) await Actions.beginIntent(intent);
 })();
 </script>
 </body>
@@ -2933,7 +3750,13 @@ const LATER_TABLES = [
   "CREATE INDEX IF NOT EXISTS idx_marks_recipe ON recipe_marks(recipe_id)",
   "CREATE TABLE IF NOT EXISTS recipe_shares ( recipe_id TEXT NOT NULL, cookbook_id TEXT NOT NULL, " +
     "created_at TEXT NOT NULL, PRIMARY KEY (recipe_id, cookbook_id) )",
-  "CREATE INDEX IF NOT EXISTS idx_shares_cookbook ON recipe_shares(cookbook_id)"
+  "CREATE INDEX IF NOT EXISTS idx_shares_cookbook ON recipe_shares(cookbook_id)",
+  /* A pin that is waiting on a friendship. Scanning a recipe code from
+     outside somebody's circle cannot pin anything yet, so the wish is kept
+     here and settled the moment the link exists. */
+  "CREATE TABLE IF NOT EXISTS pending_pins ( cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, " +
+    "created_at TEXT NOT NULL, PRIMARY KEY (cookbook_id, recipe_id) )",
+  "CREATE INDEX IF NOT EXISTS idx_pending_pins_recipe ON pending_pins(recipe_id)"
 ];
 let schemaReady = false;
 async function ensureSchema(env) {
@@ -2943,6 +3766,85 @@ async function ensureSchema(env) {
 }
 
 const MARK_KINDS = ["pin", "star", "later"];
+
+/* Is a recipe actually readable by this cookbook? Shared with friends and
+   linked, or handed over individually. Mirrors what recipe/mark allows. */
+async function pinIsAllowed(env, cookbookId, recipeId) {
+  const row = await env.DB.prepare(
+    "SELECT cookbook_id, visibility FROM recipes WHERE recipe_id = ?"
+  ).bind(recipeId).first();
+  if (!row) return false;
+  if (row.cookbook_id === cookbookId) return false;      /* already theirs */
+  const handed = await env.DB.prepare(
+    "SELECT recipe_id FROM recipe_shares WHERE recipe_id = ? AND cookbook_id = ?"
+  ).bind(recipeId, cookbookId).first();
+  if (handed) return true;
+  if (row.visibility !== "friends") return false;
+  const friends = await friendCookbooks(env, cookbookId);
+  return friends.indexOf(row.cookbook_id) >= 0;
+}
+
+/* Called whenever two cookbooks become linked. Any pin either of them was
+   waiting on becomes real if the recipe is now visible; either way the wish
+   is spent, so it does not sit around forever. */
+async function resolvePendingPins(env, cbA, cbB) {
+  const now = new Date().toISOString();
+  const pairs = [[cbA, cbB], [cbB, cbA]];
+  for (const pair of pairs) {
+    const waiting = pair[0], owner = pair[1];
+    const rows = (await env.DB.prepare(
+      "SELECT p.recipe_id FROM pending_pins p JOIN recipes r ON r.recipe_id = p.recipe_id " +
+      "WHERE p.cookbook_id = ? AND r.cookbook_id = ?"
+    ).bind(waiting, owner).all()).results || [];
+    for (const row of rows) {
+      if (await pinIsAllowed(env, waiting, row.recipe_id)) {
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
+          "VALUES (?, ?, 'pin', ?, ?)"
+        ).bind(waiting, row.recipe_id, "shared link", now).run();
+        await env.DB.prepare(
+          "DELETE FROM pending_pins WHERE cookbook_id = ? AND recipe_id = ?"
+        ).bind(waiting, row.recipe_id).run();
+      }
+    }
+  }
+}
+
+/* The friendship half of a scanned link. Same rules as friend/request, but
+   reached with a cookbook rather than a username, and it reports back what
+   it found rather than throwing at the caller. */
+async function ensureFriendLink(env, me, theirCb) {
+  if (theirCb === me.cookbookId) return { already: true };
+  const now = new Date().toISOString();
+  const rows = (await env.DB.prepare(
+    "SELECT requester_cb, addressee_cb, status FROM friendships " +
+    "WHERE (requester_cb = ? AND addressee_cb = ?) OR (requester_cb = ? AND addressee_cb = ?)"
+  ).bind(me.cookbookId, theirCb, theirCb, me.cookbookId).all()).results || [];
+  for (const row of rows) {
+    if (row.status === "accepted") return { accepted: true };
+    if (row.status === "pending" && row.requester_cb === me.cookbookId) return { requested: true };
+    if (row.status === "pending" && row.requester_cb === theirCb) {
+      /* They had already asked us, so scanning their code answers it. */
+      await env.DB.prepare(
+        "UPDATE friendships SET status = 'accepted', responded_by = ?, updated_at = ? " +
+        "WHERE requester_cb = ? AND addressee_cb = ?"
+      ).bind(me.username, now, theirCb, me.cookbookId).run();
+      await resolvePendingPins(env, me.cookbookId, theirCb);
+      return { accepted: true };
+    }
+    /* We were turned down once; nothing about that is worth spelling out. */
+    if (row.status === "declined" && row.requester_cb === me.cookbookId) return { blocked: true };
+    if (row.status === "declined" && row.requester_cb === theirCb) {
+      await env.DB.prepare("DELETE FROM friendships WHERE requester_cb = ? AND addressee_cb = ?")
+        .bind(theirCb, me.cookbookId).run();
+    }
+  }
+  await env.DB.prepare(
+    "INSERT INTO friendships (requester_cb, addressee_cb, status, requested_by, created_at, updated_at) " +
+    "VALUES (?, ?, 'pending', ?, ?, ?)"
+  ).bind(me.cookbookId, theirCb, me.username, now, now).run();
+  return { requested: true };
+}
 
 async function handleApi(route, body, env, request) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
@@ -3052,7 +3954,7 @@ async function handleApi(route, body, env, request) {
     /* Comments are visible between linked cookbooks, so a new member of a
        cookbook can see everything that cookbook could already see. */
     const voices = [me.cookbookId].concat(friendCbs);
-    const csql = "SELECT c.comment_id, c.recipe_id, c.username, c.rating, c.comment, c.cooked_on " +
+    const csql = "SELECT c.comment_id, c.recipe_id, c.username, c.rating, c.comment, c.cooked_on, c.created_at " +
       "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
       "JOIN users u ON u.username_lc = c.username_lc " +
       "WHERE (r.cookbook_id = ?" +
@@ -3064,7 +3966,7 @@ async function handleApi(route, body, env, request) {
     for (const c of commentRows) {
       (comments[c.recipe_id] = comments[c.recipe_id] || []).push({
         commentId: c.comment_id, username: c.username, rating: c.rating,
-        comment: c.comment, cookedOn: c.cooked_on
+        comment: c.comment, cookedOn: c.cooked_on, createdAt: c.created_at
       });
     }
 
@@ -3422,6 +4324,7 @@ async function handleApi(route, body, env, request) {
   }
 
   if (route === "recipe/delete") {
+    /* Any pin waiting on this recipe goes with it. */
     const recipeId = String(body.recipeId || "");
     const owned = await env.DB.prepare(
       "SELECT recipe_id, locked_by, locked_at FROM recipes WHERE recipe_id = ? AND cookbook_id = ?"
@@ -3435,9 +4338,67 @@ async function handleApi(route, body, env, request) {
     }
     await env.DB.batch([
       env.DB.prepare("DELETE FROM comments WHERE recipe_id = ?").bind(recipeId),
+      env.DB.prepare("DELETE FROM recipe_marks WHERE recipe_id = ?").bind(recipeId),
+      env.DB.prepare("DELETE FROM pending_pins WHERE recipe_id = ?").bind(recipeId),
+      env.DB.prepare("DELETE FROM recipe_shares WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM recipes WHERE recipe_id = ?").bind(recipeId)
     ]);
     return jsonResponse({ ok: true });
+  }
+
+  /* ---- a scanned recipe code ----
+     Two passes. preview answers "what is this and what will happen", so the
+     app can ask before acting in somebody's name; the real call then does
+     whichever of the three things applies: open it, pin it, or ask to be
+     friends and remember the pin for when they say yes. */
+  if (route === "recipe/claim") {
+    const recipeId = cleanString(body.recipeId, 64);
+    const row = await env.DB.prepare(
+      "SELECT recipe_id, cookbook_id, owner_username, visibility, title FROM recipes WHERE recipe_id = ?"
+    ).bind(recipeId).first();
+    if (!row) throw new ApiError(404, "That link points at a recipe that is no longer there.");
+
+    const mine = row.cookbook_id === me.cookbookId;
+    const friendCbs = await friendCookbooks(env, me.cookbookId);
+    const linked = friendCbs.indexOf(row.cookbook_id) >= 0;
+    const map = await membersOf(env, [row.cookbook_id]);
+    const household = householdLabel(map[row.cookbook_id] || [row.owner_username]);
+
+    if (body.preview) {
+      return jsonResponse({
+        recipeId, title: row.title, owner: row.owner_username, household,
+        visibility: row.visibility, mine, friends: linked,
+        canSee: mine || (await pinIsAllowed(env, me.cookbookId, recipeId))
+      });
+    }
+
+    if (mine) return jsonResponse({ recipeId, mine: true, owner: row.owner_username });
+
+    if (await pinIsAllowed(env, me.cookbookId, recipeId)) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
+        "VALUES (?, ?, 'pin', ?, ?)"
+      ).bind(me.cookbookId, recipeId, me.username, new Date().toISOString()).run();
+      return jsonResponse({ recipeId, pinned: true, owner: row.owner_username });
+    }
+
+    /* Not visible yet. Ask, and keep the wish. */
+    await throttleGuard(env, ["cb:" + me.cookbookId, "ip:" + ip]);
+    const link = await ensureFriendLink(env, me, row.cookbook_id);
+    if (link.blocked) throw new ApiError(403, "That recipe cannot be added.");
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO pending_pins (cookbook_id, recipe_id, created_at) VALUES (?, ?, ?)"
+    ).bind(me.cookbookId, recipeId, new Date().toISOString()).run();
+    /* Accepting an outstanding request can make it visible straight away. */
+    if (link.accepted) await resolvePendingPins(env, me.cookbookId, row.cookbook_id);
+    const nowVisible = await pinIsAllowed(env, me.cookbookId, recipeId);
+    return jsonResponse({
+      recipeId: nowVisible ? recipeId : null,
+      pinned: nowVisible, requested: !nowVisible,
+      owner: row.owner_username, household,
+      accepted: !!link.accepted,
+      needsSharing: row.visibility !== "friends"
+    });
   }
 
   /* ---- copy a friend's recipe into my cookbook ---- */
@@ -3516,6 +4477,7 @@ async function handleApi(route, body, env, request) {
           "UPDATE friendships SET status = 'accepted', responded_by = ?, updated_at = ? " +
           "WHERE requester_cb = ? AND addressee_cb = ?"
         ).bind(me.username, now, them.cookbook_id, me.cookbookId).run();
+        await resolvePendingPins(env, me.cookbookId, them.cookbook_id);
         return jsonResponse({ ok: true, accepted: true, username: them.username, members: theirMembers });
       }
       if (row.status === "declined" && row.requester_cb === me.cookbookId) {
@@ -3547,6 +4509,8 @@ async function handleApi(route, body, env, request) {
       "WHERE requester_cb = ? AND addressee_cb = ? AND status = 'pending'"
     ).bind(action, me.username, new Date().toISOString(), them.cookbook_id, me.cookbookId).run();
     if (!res.meta || res.meta.changes === 0) throw new ApiError(404, "That request is no longer waiting.");
+    /* Anything either side scanned while waiting can be settled now. */
+    if (action === "accepted") await resolvePendingPins(env, me.cookbookId, them.cookbook_id);
     const map = await membersOf(env, [them.cookbook_id]);
     return jsonResponse({ ok: true, status: action, members: map[them.cookbook_id] || [them.username] });
   }
