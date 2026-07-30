@@ -1,0 +1,22 @@
+{
+  "name": "recipe-box",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-29",
+
+  // The D1 binding the Worker reads as env.DB.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "recipe-box-database",
+      "database_id": "d0e67d37-2047-4195-928b-05287a16cd54"
+    }
+  ],
+
+  // Logs and traces in the dashboard, for when a deploy misbehaves.
+  "observability": {
+    "enabled": true
+  }
+
+  // env.ADMIN_TOKEN is deliberately absent. It is a secret, so it stays in
+  // Settings -> Variables and Secrets, never in a file you commit.
+}
