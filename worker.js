@@ -13,10 +13,12 @@
 //   POST /api/recipe/merge       -> copy a friend's recipe into your cookbook
 //   POST /api/recipe/claim       -> act on a scanned recipe code (preview or commit)
 //   POST /api/schedule/add       -> put a recipe on the calendar for a day
+//   POST /api/schedule/update    -> move a booking, or change its servings
 //   POST /api/schedule/remove    -> take one off the calendar
 //   POST /api/grocery/create     -> build a shopping list from a date range
 //   POST /api/grocery/get        -> the items on one list
 //   POST /api/grocery/save       -> rewrite the items on one list
+//   POST /api/grocery/rename     -> rename a list
 //   POST /api/grocery/delete     -> delete a list
 //   POST /api/comment/add        -> log a cook (rating required)
 //   POST /api/comment/delete     -> remove your own cook log entry
@@ -443,6 +445,34 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
   padding:9px 12px; font-size:13px; color:var(--accent-dark); margin-bottom:10px;
   display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
+/* A line you have said you do not need. Still there, still recoverable,
+   plainly not part of the shop any more. */
+.groc-row.groc-gone{ background:#f7f4ed; border-style:dashed; }
+.groc-row.groc-gone .groc-name{ color:var(--ink-muted); }
+.groc-row.groc-gone .groc-qty input{ color:var(--ink-muted); background:transparent; }
+.groc-sep{ display:flex; align-items:center; gap:8px; margin:4px 2px 0;
+  font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-muted); }
+.groc-sep::after{ content:""; flex:1; height:1px; background:var(--border-light); }
+.groc-add{ width:100%; margin-top:10px; display:flex; align-items:center; justify-content:center; gap:6px; }
+.groc-counts{ display:flex; gap:10px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-muted); margin:0 0 10px; }
+
+/* One week visible, the rest a scroll away. Same idea as .cal-scroll, one
+   row instead of three. */
+.sched-strip{ height:74px; overflow-y:auto; overscroll-behavior:contain; margin-bottom:12px;
+  border:1px solid var(--border-light); border-radius:10px; padding:3px; background:var(--card-alt); }
+.sched-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.sched-cell{ height:68px; background:#fff; border:1px solid var(--border-light); border-radius:7px;
+  padding:3px 2px; display:flex; flex-direction:column; align-items:center; gap:1px;
+  cursor:pointer; overflow:hidden; font:inherit; }
+.sched-cell.sched-today{ border-color:var(--accent); }
+.sched-cell.on{ background:#fbf0ef; border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.sched-dow{ font-size:9px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); }
+.sched-num{ font-size:12.5px; font-weight:700; line-height:1; }
+.sched-cell.on .sched-num{ color:var(--accent); }
+.sched-chips{ display:flex; flex-direction:column; gap:1px; width:100%; overflow:hidden; }
+.sched-chip{ display:block; font-size:8.5px; line-height:1.3; padding:0 2px; border-radius:3px;
+  background:#fbf0ef; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
 /* toast / loading */
 .toast{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
 .loading{ display:flex; align-items:center; justify-content:center; height:75vh; color:var(--ink-muted); font-size:14.5px; }
@@ -688,6 +718,7 @@ const ICONS = {
   calGrid: '<rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="6"/><line x1="16" y1="3" x2="16" y2="6"/><line x1="9" y1="10" x2="9" y2="21"/><line x1="15" y1="10" x2="15" y2="21"/><line x1="3" y1="15.5" x2="21" y2="15.5"/>',
   checklist: '<rect x="3" y="3.5" width="5.5" height="5.5" rx="1.4"/><polyline points="4.4 6.3 5.5 7.4 7.4 4.9"/><rect x="3" y="9.25" width="5.5" height="5.5" rx="1.4"/><rect x="3" y="15" width="5.5" height="5.5" rx="1.4"/><line x1="11" y1="6.25" x2="21" y2="6.25"/><line x1="11" y1="12" x2="21" y2="12"/><line x1="11" y1="17.75" x2="21" y2="17.75"/>',
   /* The three dots you drag a shopping line by. */
+  undo: '<path d="M3 8h11a5.5 5.5 0 0 1 0 11h-6"/><polyline points="7 4 3 8 7 12"/>',
   grip: '<circle cx="12" cy="6" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="1.35" fill="currentColor" stroke="none"/>'
 };
 function icon(name, size, extra) {
@@ -949,9 +980,12 @@ const state = {
   groceryMergeFrom: null,
   calDay: null,
   _calTop: null,
+  schedWeekTop: null,
   calBack: 6,
   calFwd: 6,
-  pendingDeleteList: null
+  pendingDeleteList: null,
+  pendingRenameList: null,
+  daySearch: ""
 };
 
 /* ---- dates, in the calendar's terms ----------------------------------- */
@@ -1026,7 +1060,7 @@ function buildGroceryItems(start, end) {
       if (!name) return;
       const key = name.toLowerCase();
       if (!byName[key]) {
-        byName[key] = { id: "", name: name, checked: false, from: [], qty: [] };
+        byName[key] = { id: "", name: name, checked: false, removed: false, from: [], qty: [] };
         order.push(key);
       }
       const item = byName[key];
@@ -1089,6 +1123,27 @@ function segText(s) {
 }
 function qtyText(item) { return (item.qty || []).map(segText).join(" + "); }
 function groceryItemsFor(listId) { return state.groceryItems[listId] || []; }
+
+/* The list keeps itself in three bands: still to get, already in the basket,
+   and not needed. Within a band the stored order is left alone, so dragging
+   still works and only ever rearranges things inside their own band - a row
+   dragged across a boundary settles at the edge of the one it belongs to
+   rather than sitting in a section that contradicts its own checkbox. */
+function normalizeGroceryOrder(items) {
+  const live = items.filter(i => !i.removed);
+  return live.filter(i => !i.checked)
+    .concat(live.filter(i => i.checked))
+    .concat(items.filter(i => i.removed));
+}
+/* Anything added by hand needs an id that cannot collide with the g1..gN the
+   builder hands out, nor with another manual line added seconds later. */
+function nextGroceryId(items) {
+  const taken = {};
+  items.forEach(function (i) { taken[i.id] = true; });
+  let n = items.length + 1;
+  while (taken["u" + n]) n++;
+  return "u" + n;
+}
 function commentsFor(id) { return state.comments[id] || []; }
 function statsFor(id) {
   const list = commentsFor(id);
@@ -2015,6 +2070,8 @@ function GroceriesViewHTML() {
             '<div class="groc-entry-sub">' + (L.itemCount || 0) + ' item' +
               ((L.itemCount || 0) === 1 ? "" : "s") + '</div>' +
           '</button>' +
+          '<button class="icon-btn" title="Rename this list" ' +
+            'onclick="Actions.openRenameList(\\'' + L.listId + '\\')">' + icon("pencil", 15) + '</button>' +
           '<button class="icon-btn" title="Delete this list" ' +
             'onclick="Actions.deleteGroceryList(\\'' + L.listId + '\\')">' + icon("x", 16) + '</button>' +
         '</li>';
@@ -2029,9 +2086,11 @@ function GroceriesViewHTML() {
       '<div class="groc-range">' +
         '<div class="field"><label>First day</label>' +
           '<input type="date" id="groc-start" value="' + esc(rng.start) + '" ' +
+          (rng.end ? 'max="' + esc(rng.end) + '" ' : "") +
           'onchange="Actions.setGroceryRange(\\'start\\', this.value)" /></div>' +
         '<div class="field"><label>Last day</label>' +
           '<input type="date" id="groc-end" value="' + esc(rng.end) + '" ' +
+          (rng.start ? 'min="' + esc(rng.start) + '" ' : "") +
           'onchange="Actions.setGroceryRange(\\'end\\', this.value)" /></div>' +
         '<button class="btn btn-primary" ' + (ready ? "" : "disabled ") +
           'onclick="Actions.createGroceryList()">' + icon("plus", 15) + ' Build list</button>' +
@@ -2046,44 +2105,56 @@ function GroceriesViewHTML() {
    a bag of flour at home means half a bag on the list; the arrows fold two
    spellings of the same thing together; the dots reorder to match the aisles.  */
 function GroceryRowHTML(L, item, merging) {
+  const gone = !!item.removed;
   const isSrc = merging && state.groceryMergeFrom === item.id;
-  const isTarget = merging && !isSrc;
+  /* A line you have set aside is not a thing to merge into. */
+  const isTarget = merging && !isSrc && !gone;
   const qty = (item.qty || []).map(function (s, si) {
     const primary = (s.mv != null) ? s.mv : s.cv;
     const unit = (s.mv != null) ? (s.mu || "") : (s.cu || "");
     const alt = (s.mv != null && s.cv != null)
       ? '<span class="groc-alt">(' + esc(formatCustomary(s.cv, s.cu)) + ')</span>' : "";
     return (si ? '<span class="groc-plus">+</span>' : "") +
-      '<input type="number" step="any" min="0" ' +
+      '<input type="number" step="any" min="0" ' + (gone ? "disabled " : "") +
         'value="' + (primary == null ? "" : primary) + '" ' +
         'aria-label="Quantity for ' + esc(item.name) + '" ' +
         'onchange="Actions.setGroceryQty(\\'' + L + '\\',\\'' + item.id + '\\',' + si + ',this.value)" />' +
       (unit ? '<span class="groc-unit">' + esc(unit) + '</span>' : "") + alt;
   }).join("");
-  const cls = "groc-row" + (item.checked ? " groc-done" : "") +
+  const cls = "groc-row" + (item.checked && !gone ? " groc-done" : "") + (gone ? " groc-gone" : "") +
     (isSrc ? " merge-src" : "") + (isTarget ? " merge-target" : "");
   const rowClick = isTarget
     ? ' onclick="Actions.completeGroceryMerge(\\'' + L + '\\',\\'' + item.id + '\\')"'
     : "";
-  return '<li class="' + cls + '" data-id="' + item.id + '"' + rowClick + '>' +
-    '<button class="groc-tick' + (item.checked ? " on" : "") + '" ' +
-      'aria-pressed="' + (item.checked ? "true" : "false") + '" ' +
-      'onclick="event.stopPropagation(); Actions.toggleGroceryCheck(\\'' + L + '\\',\\'' + item.id + '\\')">' +
-      (item.checked ? icon("check", 14) : "") + '</button>' +
-    '<div class="groc-main">' +
-      '<div class="groc-name">' + esc(item.name) + '</div>' +
-      ((item.from && item.from.length) ? '<div class="groc-from">' + esc(item.from.join(", ")) + '</div>' : "") +
-      '<div class="groc-qty" onclick="event.stopPropagation()">' + qty + '</div>' +
-    '</div>' +
-    '<div class="groc-acts">' +
-      '<button title="Not needed — remove" onclick="event.stopPropagation(); Actions.removeGroceryItem(\\'' +
+  /* Set aside: put it back, or say for certain you never wanted it. Still
+     wanted: set it aside, fold it into another line, or drag it. */
+  const acts = gone
+    ? '<button title="Put this back on the list" onclick="event.stopPropagation(); Actions.restoreGroceryItem(\\'' +
+        L + '\\',\\'' + item.id + '\\')">' + icon("undo", 15) + '</button>' +
+      '<button title="Delete for good" onclick="event.stopPropagation(); Actions.purgeGroceryItem(\\'' +
+        L + '\\',\\'' + item.id + '\\')">' + icon("trash", 15) + '</button>'
+    : '<button title="Not needed — set aside" onclick="event.stopPropagation(); Actions.removeGroceryItem(\\'' +
         L + '\\',\\'' + item.id + '\\')">' + icon("x", 15) + '</button>' +
       '<button title="Merge with another line" onclick="event.stopPropagation(); Actions.beginGroceryMerge(\\'' +
         item.id + '\\')">' + icon("merge", 15) + '</button>' +
       '<span class="groc-grip" title="Drag to reorder" ' +
         'onpointerdown="Actions.gripDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
-        icon("grip", 16) + '</span>' +
+        icon("grip", 16) + '</span>';
+  /* The tick is inert on a line that is not being bought. */
+  const tick = gone
+    ? '<span class="groc-tick" aria-hidden="true"></span>'
+    : '<button class="groc-tick' + (item.checked ? " on" : "") + '" ' +
+        'aria-pressed="' + (item.checked ? "true" : "false") + '" ' +
+        'onclick="event.stopPropagation(); Actions.toggleGroceryCheck(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        (item.checked ? icon("check", 14) : "") + '</button>';
+  return '<li class="' + cls + '" data-id="' + item.id + '"' + rowClick + '>' +
+    tick +
+    '<div class="groc-main">' +
+      '<div class="groc-name">' + esc(item.name) + '</div>' +
+      ((item.from && item.from.length) ? '<div class="groc-from">' + esc(item.from.join(", ")) + '</div>' : "") +
+      '<div class="groc-qty" onclick="event.stopPropagation()">' + qty + '</div>' +
     '</div>' +
+    '<div class="groc-acts">' + acts + '</div>' +
   '</li>';
 }
 
@@ -2093,7 +2164,9 @@ function GroceryListViewHTML() {
   const items = groceryItemsFor(L);
   const merging = !!state.groceryMergeFrom;
   const src = merging ? items.filter(i => i.id === state.groceryMergeFrom)[0] : null;
-  const got = items.filter(i => i.checked).length;
+  const live = items.filter(i => !i.removed);
+  const got = live.filter(i => i.checked).length;
+  const gone = items.length - live.length;
   const hint = merging
     ? '<div class="groc-merge-hint">' + icon("merge", 15) +
         '<span>Pick the line to merge <b>' + esc(src ? src.name : "") + '</b> into. The quantities add up ' +
@@ -2101,22 +2174,39 @@ function GroceryListViewHTML() {
         '<button class="btn btn-sm" style="margin-left:auto" onclick="Actions.cancelGroceryMerge()">Cancel</button>' +
       '</div>'
     : "";
-  const body = items.length === 0
-    ? '<div class="empty-state"><p class="title font-display">Nothing on this list</p>' +
-      '<p class="sub">Either nothing was scheduled for those days, or you have crossed everything off.</p></div>'
-    : '<ul class="groc-list" id="groc-items">' +
-        items.map(i => GroceryRowHTML(L, i, merging)).join("") + '</ul>';
+  /* Rendered in stored order, which normalizeGroceryOrder keeps banded, with a
+     caption dropped in where the band changes. The captions are not .groc-row
+     elements, so the drag maths steps straight over them. */
+  let body;
+  if (items.length === 0) {
+    body = '<div class="empty-state"><p class="title font-display">Nothing on this list</p>' +
+      '<p class="sub">Either nothing was scheduled for those days, or you have taken everything off.</p></div>';
+  } else {
+    let seenChecked = false, seenGone = false;
+    body = '<ul class="groc-list" id="groc-items">' + items.map(function (i) {
+      let sep = "";
+      if (i.removed && !seenGone) { seenGone = true; sep = '<li class="groc-sep">Not needed</li>'; }
+      else if (!i.removed && i.checked && !seenChecked) { seenChecked = true; sep = '<li class="groc-sep">In the basket</li>'; }
+      return sep + GroceryRowHTML(L, i, merging);
+    }).join("") + '</ul>';
+  }
   return '' +
     '<div class="wrap">' +
       '<div class="detail-top">' +
         '<button class="back-link" onclick="Actions.backToGroceries()">' + icon("chevronLeft", 18) + ' Lists</button>' +
       '</div>' +
       '<h1 class="detail-title font-display" style="font-size:20px">' + esc(meta ? meta.label : "Shopping list") + '</h1>' +
-      '<p class="helper-text">' + got + ' of ' + items.length + ' in the basket. Tap a quantity to change it if ' +
-        'you already have some at home, the x to drop a line you do not need, the arrows to merge two ' +
-        'spellings of the same thing, and the dots to drag a line into aisle order.</p>' +
+      '<div class="groc-counts">' +
+        '<span>' + got + ' of ' + live.length + ' in the basket</span>' +
+        (gone ? '<span>' + gone + ' not needed</span>' : "") +
+      '</div>' +
+      '<p class="helper-text">Tap a quantity to change it if you already have some at home, the x to set a ' +
+        'line aside, the arrows to merge two spellings of the same thing, and the dots to drag a line into ' +
+        'aisle order. Anything set aside drops to the bottom and can be put back.</p>' +
       hint +
       body +
+      '<button class="btn groc-add" onclick="Actions.openAddGroceryItem()">' + icon("plus", 15) +
+        ' Add an item</button>' +
     '</div>';
 }
 
@@ -2199,9 +2289,8 @@ function CalDayModalHTML() {
   const key = state.calDay;
   if (!key) return modalShell("Day", "");
   const entries = scheduleOn(key);
-  const body = entries.length === 0
-    ? '<p class="helper-text">Nothing scheduled for this day. Open a recipe on the Recipes tab and ' +
-      'use Schedule this recipe to put something here.</p>'
+  const planned = entries.length === 0
+    ? '<p class="helper-text">Nothing scheduled yet. Find something below.</p>'
     : '<ul style="list-style:none;margin:0;padding:0" class="groc-list">' + entries.map(function (e) {
         const r = recipeById(e.recipeId);
         return '<li class="groc-entry">' +
@@ -2211,12 +2300,57 @@ function CalDayModalHTML() {
               esc(r ? r.servings.unit : "servings") +
               (r ? "" : " · no longer in your box") + '</div>' +
           '</button>' +
+          (r ? '<button class="icon-btn" title="Change the day or the servings" ' +
+            'onclick="Actions.openScheduleEdit(\\'' + e.entryId + '\\')">' + icon("pencil", 15) + '</button>' : "") +
           '<button class="icon-btn" title="Unschedule" onclick="Actions.unschedule(\\'' + e.entryId + '\\')">' +
             icon("x", 15) + '</button>' +
         '</li>';
       }).join("") + '</ul>';
-  return modalShell(shortDate(key), body +
+  return modalShell(shortDate(key),
+    planned +
+    '<div class="step-block"><div class="step-label">Add something to this day</div>' +
+      '<div class="search-wrap">' +
+        '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
+          '<input id="day-search" type="text" placeholder="Search everyone\\'s recipes..." ' +
+            'value="' + esc(state.daySearch) + '" oninput="Actions.onDaySearchInput(this.value)" />' +
+        '</div>' +
+      '</div>' +
+      '<div id="day-results">' + DayResultsHTML() + '</div>' +
+    '</div>' +
     '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Close</button></div>');
+}
+
+/* Always the whole box, never what the Recipes tab happens to be filtered to.
+   Someone looking for a dish to cook on Tuesday does not want yesterday's tag
+   selection standing between them and it. */
+const DAY_RESULT_MAX = 8;
+function daySearchMatches() {
+  const q = state.daySearch.trim().toLowerCase();
+  if (!q) return [];
+  return state.recipes.filter(function (r) {
+    const hay = [r.title, r.description, r.owner, r.household]
+      .concat(r.tags, r.ingredients.map(i => i.name)).join(" ").toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+}
+function DayResultsHTML() {
+  const q = state.daySearch.trim();
+  if (!q) return '<p class="no-rating">Type to search titles, ingredients, tags and cooks.</p>';
+  const all = daySearchMatches();
+  if (all.length === 0) return '<p class="no-rating">Nothing matches "' + esc(q) + '".</p>';
+  const shown = all.slice(0, DAY_RESULT_MAX);
+  const more = all.length > shown.length
+    ? '<p class="no-rating">' + (all.length - shown.length) + ' more — keep typing to narrow it down.</p>' : "";
+  return '<ul class="groc-list">' + shown.map(function (r) {
+    return '<li class="groc-entry">' +
+      '<button class="groc-entry-main" onclick="Actions.scheduleFromDay(\\'' + r.recipeId + '\\')">' +
+        '<div class="groc-entry-label">' + esc(r.title) + '</div>' +
+        '<div class="groc-entry-sub">' + esc(r.household) +
+          ' · ' + (r.servings.base || 1) + ' ' + esc(r.servings.unit) + '</div>' +
+      '</button>' +
+      '<span style="color:var(--ink-muted);flex-shrink:0">' + icon("plus", 16) + '</span>' +
+    '</li>';
+  }).join("") + '</ul>' + more;
 }
 
 /* ====================================================================== */
@@ -3013,15 +3147,59 @@ function LogCookModalHTML() {
    in ingredients. Portions here are a count rather than a multiplier - the
    recipe view asks "how many times this recipe", the calendar asks "how many
    people on Tuesday", and the second is the question you actually have. */
+/* One week at a time, scrolled the same way the calendar tab is: a box
+   exactly one row tall over a tall stack of weeks. Tapping a day sets the
+   date, and the chips already sitting in each square answer the question you
+   would otherwise have to close the dialog to check - is Tuesday free? */
+const SCHED_ROW = 74, SCHED_GAP = 3, SCHED_WEEKS = 26;
+function schedWeekStarts(around) {
+  const first = addDays(sundayOf(around), -7 * SCHED_WEEKS);
+  const weeks = [];
+  for (let i = 0; i < SCHED_WEEKS * 2 + 1; i++) weeks.push(addDays(first, 7 * i));
+  return weeks;
+}
+function SchedStripHTML(selected, skipEntryId) {
+  const today = localToday();
+  let cells = "";
+  schedWeekStarts(selected).forEach(function (ws) {
+    for (let i = 0; i < 7; i++) {
+      const key = addDays(ws, i);
+      const d = fromYmd(key);
+      /* The entry being edited is left out of its own week strip - showing it
+         as an obstacle to itself would be nonsense. */
+      const here = scheduleOn(key).filter(e => e.entryId !== skipEntryId);
+      const chips = here.slice(0, 2).map(function (e) {
+        const r = recipeById(e.recipeId);
+        return '<span class="sched-chip">' + esc(r ? r.title : e.title) + '</span>';
+      }).join("") + (here.length > 2 ? '<span class="cal-more">+' + (here.length - 2) + '</span>' : "");
+      cells += '<button type="button" class="sched-cell' +
+        (key === selected ? " on" : "") + (key === today ? " sched-today" : "") + '" ' +
+        'onclick="Actions.setScheduleField(\\'date\\',\\'' + key + '\\')">' +
+        '<span class="sched-dow">' + DOW[d.getDay()].charAt(0) + '</span>' +
+        '<span class="sched-num">' + d.getDate() + '</span>' +
+        '<span class="sched-chips">' + chips + '</span>' +
+      '</button>';
+    }
+  });
+  return '<div class="sched-strip" id="sched-strip" onscroll="Actions.onSchedScroll(this)">' +
+    '<div class="sched-grid">' + cells + '</div></div>';
+}
+
+/* The Schedule frame: a day, how many you are feeding, and what that comes to
+   in ingredients. Portions here are a count rather than a multiplier - the
+   recipe view asks "how many times this recipe", the calendar asks "how many
+   people on Tuesday", and the second is the question you actually have. */
 function ScheduleModalHTML() {
   const d = state.scheduleDraft || {};
+  const editing = !!d.entryId;
   const r = recipeById(d.recipeId);
-  if (!r) return modalShell("Schedule this recipe",
+  if (!r) return modalShell(editing ? "Edit this booking" : "Schedule this recipe",
     '<p class="helper-text">That recipe is no longer in your box.</p>' +
     '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Close</button></div>');
   const base = (Number(r.servings.base) > 0) ? Number(r.servings.base) : 1;
   const serv = Number(d.servings) > 0 ? Number(d.servings) : base;
   const f = serv / base;
+  const date = d.date || localToday();
   const ing = (r.ingredients || []).length === 0
     ? '<p class="no-rating">This recipe has no ingredients listed, so it will not add anything to a shopping list.</p>'
     : '<ul class="ing-list">' + r.ingredients.map(function (i) {
@@ -3031,12 +3209,13 @@ function ScheduleModalHTML() {
         return '<li><span class="ing-amt font-mono">' + formatMetric(mv, i.metricUnit) + alt + '</span>' +
           '<span>' + esc(i.name) + '</span></li>';
       }).join("") + '</ul>';
-  return modalShell("Schedule this recipe",
+  return modalShell(editing ? "Edit this booking" : "Schedule this recipe",
     '<p class="helper-text"><b>' + esc(r.title) + '</b> — normally makes ' + base + ' ' +
       esc(r.servings.unit) + '. Change the number below and the ingredients follow.</p>' +
+    SchedStripHTML(date, d.entryId || null) +
     '<div class="row2">' +
       '<div class="field"><label>Day</label>' +
-        '<input type="date" id="sched-date" value="' + esc(d.date || localToday()) + '" ' +
+        '<input type="date" id="sched-date" value="' + esc(date) + '" ' +
         'onchange="Actions.setScheduleField(\\'date\\', this.value)" /></div>' +
       '<div class="field"><label>' + esc(r.servings.unit.charAt(0).toUpperCase() + r.servings.unit.slice(1)) + '</label>' +
         '<input type="number" id="sched-servings" min="0.5" step="0.5" value="' + serv + '" ' +
@@ -3046,7 +3225,37 @@ function ScheduleModalHTML() {
       esc(r.servings.unit) + '</div>' + ing + '</div>' +
     '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" onclick="Actions.addToCalendar()">' + icon("calGrid", 15) +
-      ' Add to Calendar</button></div>');
+      (editing ? ' Save changes' : ' Add to Calendar') + '</button></div>');
+}
+
+function AddGroceryItemModalHTML() {
+  return modalShell("Add an item",
+    '<p class="helper-text">Anything you need that no recipe called for. The unit is free text — ' +
+      '"rolls", "bunches", "tins" are all fine.</p>' +
+    '<div class="field"><label>Item</label>' +
+      '<input type="text" id="add-groc-name" maxlength="200" placeholder="Paper towels" /></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Quantity (optional)</label>' +
+        '<input type="number" step="any" min="0" id="add-groc-qty" placeholder="2" /></div>' +
+      '<div class="field"><label>Unit (optional)</label>' +
+        '<input type="text" id="add-groc-unit" maxlength="24" placeholder="rolls" /></div>' +
+    '</div>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="Actions.addGroceryItem()">' + icon("plus", 15) +
+      ' Add to list</button></div>');
+}
+
+/* The generated name says when the list was made, which is the useful thing
+   until the day you have two on the go and one of them is Thanksgiving. */
+function RenameListModalHTML() {
+  const L = state.pendingRenameList;
+  const meta = state.groceryLists.filter(x => x.listId === L)[0];
+  return modalShell("Rename this list",
+    '<div class="field"><label>Name</label>' +
+      '<input type="text" id="rename-list" maxlength="120" value="' + esc(meta ? meta.label : "") + '" /></div>' +
+    '<p class="helper-text">Leave it empty to go back to the date-stamped name.</p>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="Actions.saveListName()">Save name</button></div>');
 }
 
 function ConfirmDeleteListModalHTML() {
@@ -3312,6 +3521,8 @@ function renderModal() {
   else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
   else if (state.modal === "calDay") root.innerHTML = CalDayModalHTML();
   else if (state.modal === "confirmDeleteList") root.innerHTML = ConfirmDeleteListModalHTML();
+  else if (state.modal === "addGroceryItem") root.innerHTML = AddGroceryItemModalHTML();
+  else if (state.modal === "renameList") root.innerHTML = RenameListModalHTML();
   else if (state.modal === "conflict") root.innerHTML = ConflictModalHTML();
   else if (state.modal === "locked") root.innerHTML = LockedModalHTML();
 }
@@ -3333,11 +3544,19 @@ function renderApp() {
   renderTabBar();
   renderModal();
   if (state.view === "calendar") placeCalendarScroll();
+  placeSchedStrip();
 }
 
 /* The three-week box opens on this week, which is row calBack of the window.
    Done after the markup lands rather than inside it, since it is a scroll
    position and there is no way to express one in HTML. */
+/* The strip opens on the week holding the selected day, and stays where it
+   was put once the person has scrolled it themselves. */
+function placeSchedStrip() {
+  const box = document.getElementById("sched-strip");
+  if (!box) return;
+  box.scrollTop = (state.schedWeekTop == null) ? SCHED_WEEKS * (SCHED_ROW + SCHED_GAP) : state.schedWeekTop;
+}
 function placeCalendarScroll() {
   const box = document.getElementById("cal-scroll");
   if (!box) return;
@@ -4196,12 +4415,23 @@ Actions.goTab = function(tab) {
   state.calDay = null;
   state.groceryMergeFrom = null;
   if (tab === "calendar") { state.view = "calendar"; state._calTop = null; }
-  else if (tab === "groceries") { state.view = "groceries"; state.activeListId = null; }
+  else if (tab === "groceries") {
+    state.view = "groceries";
+    state.activeListId = null;
+    /* Opening the tab with today in both boxes means the common case - a shop
+       for tonight - is already filled in. */
+    if (!state.groceryRange.start && !state.groceryRange.end) {
+      const t = localToday();
+      state.groceryRange = { start: t, end: t };
+    }
+  }
   else { state.view = "library"; state.scheduledFor = null; }
   renderApp();
 };
 
 /* --- calendar --- */
+Actions.onSchedScroll = function(el) { if (el) state.schedWeekTop = el.scrollTop; };
+
 Actions.calToday = function() {
   state._calTop = Math.max(0, (state.calBack - 1) * CAL_ROW);
   placeCalendarScroll();
@@ -4238,6 +4468,8 @@ function repaintCalendarGrid(el, shift) {
 }
 Actions.openCalDay = function(key) {
   state.calDay = key;
+  /* A query typed while looking at Monday has nothing to say about Tuesday. */
+  state.daySearch = "";
   state.modal = "calDay";
   state.modalError = "";
   renderApp();
@@ -4261,14 +4493,50 @@ Actions.openScheduled = function(entryId) {
   renderApp();
 };
 
-Actions.openSchedule = function(recipeId) {
+/* Same rule as the library search: repaint the results only, or the field
+   loses focus and the word is lost halfway through typing it. */
+Actions.onDaySearchInput = function(v) {
+  state.daySearch = v;
+  const box = document.getElementById("day-results");
+  if (box) box.innerHTML = DayResultsHTML();
+};
+/* Picked from the day sheet, so the day is already answered. Coming back here
+   afterwards is the point - a Tuesday usually needs more than one thing. */
+Actions.scheduleFromDay = function(recipeId) {
+  Actions.openSchedule(recipeId, state.calDay, true);
+};
+
+Actions.openSchedule = function(recipeId, onDate, backToDay) {
   const r = recipeById(recipeId);
   if (!r) { toast("That recipe is no longer in your box"); return; }
   state.scheduleDraft = {
+    entryId: null,
     recipeId: recipeId,
-    date: (state.calDay || localToday()),
-    servings: (Number(r.servings.base) > 0 ? Number(r.servings.base) : 1)
+    date: onDate || state.calDay || localToday(),
+    servings: (Number(r.servings.base) > 0 ? Number(r.servings.base) : 1),
+    backToDay: !!backToDay
   };
+  state.schedWeekTop = null;
+  state.modal = "schedule";
+  state.modalError = "";
+  renderApp();
+};
+/* The same frame doing the other half of its job. Because it carries a week
+   strip and a servings box, editing an entry covers both "make more of it"
+   and "actually, Thursday" without a second dialog for the second case. */
+Actions.openScheduleEdit = function(entryId) {
+  const e = entryById(entryId);
+  if (!e) return;
+  const r = recipeById(e.recipeId);
+  if (!r) { toast("That recipe is no longer in your box"); return; }
+  state.scheduleDraft = {
+    entryId: e.entryId,
+    recipeId: e.recipeId,
+    date: e.date,
+    servings: e.servings,
+    backToDay: !!state.calDay
+  };
+  state.schedWeekTop = null;
   state.modal = "schedule";
   state.modalError = "";
   renderApp();
@@ -4281,7 +4549,10 @@ Actions.setScheduleField = function(field, value) {
   } else {
     state.scheduleDraft.date = String(value || "").slice(0, 10) || state.scheduleDraft.date;
   }
+  const strip = document.getElementById("sched-strip");
+  if (strip) state.schedWeekTop = strip.scrollTop;
   renderModal();
+  placeSchedStrip();
 };
 Actions.addToCalendar = async function() {
   const d = state.scheduleDraft;
@@ -4294,16 +4565,39 @@ Actions.addToCalendar = async function() {
   const servRaw = servEl ? parseFloat(servEl.value) : d.servings;
   const servings = (isNaN(servRaw) || servRaw <= 0) ? d.servings : servRaw;
   if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) { state.modalError = "Pick a day."; renderModal(); return; }
+  const backToDay = !!d.backToDay;
   state.busy = true;
   try {
-    const res = await API("schedule/add", {
-      recipeId: d.recipeId, date: date, servings: servings, title: r.title
-    });
-    state.schedule.push(res.entry);
-    state.modal = null;
+    if (d.entryId) {
+      await API("schedule/update", { entryId: d.entryId, date: date, servings: servings });
+      state.schedule = state.schedule.map(function (e) {
+        return e.entryId === d.entryId ? Object.assign({}, e, { date: date, servings: servings }) : e;
+      });
+      /* The banner on an open recipe is looking at this same entry. */
+      if (state.scheduledFor && state.scheduledFor.entryId === d.entryId) {
+        state.scheduledFor = Object.assign({}, state.scheduledFor, { date: date, servings: servings });
+        state.scale = factorFor(r, servings);
+        state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+      }
+      toast(r.title + " moved to " + shortDate(date));
+    } else {
+      const res = await API("schedule/add", {
+        recipeId: d.recipeId, date: date, servings: servings, title: r.title
+      });
+      state.schedule.push(res.entry);
+      toast(r.title + " scheduled for " + shortDate(date));
+    }
     state.scheduleDraft = null;
     state.modalError = "";
-    toast(r.title + " scheduled for " + shortDate(date));
+    /* Straight back to the day sheet when that is where this started, so a
+       Tuesday needing three things does not mean opening it three times. */
+    if (backToDay) {
+      state.calDay = date;
+      state.daySearch = "";
+      state.modal = "calDay";
+    } else {
+      state.modal = null;
+    }
   } catch (e) {
     state.modalError = e.message;
   } finally {
@@ -4330,8 +4624,19 @@ Actions.unschedule = async function(entryId) {
 };
 
 /* --- groceries --- */
+/* The two dates cannot cross. Moving one past the other drags the other
+   along rather than refusing the input, so there is no way to sit looking at
+   a range that cannot be built. */
 Actions.setGroceryRange = function(which, value) {
-  state.groceryRange[which] = String(value || "").slice(0, 10);
+  const v = String(value || "").slice(0, 10);
+  state.groceryRange[which] = v;
+  if (v) {
+    if (which === "start" && state.groceryRange.end && v > state.groceryRange.end) {
+      state.groceryRange.end = v;
+    } else if (which === "end" && state.groceryRange.start && v < state.groceryRange.start) {
+      state.groceryRange.start = v;
+    }
+  }
   renderApp();
 };
 Actions.backToGroceries = function() {
@@ -4383,6 +4688,42 @@ Actions.openGroceryList = async function(listId) {
   state.view = "grocery";
   renderApp();
 };
+Actions.openRenameList = function(listId) {
+  state.pendingRenameList = listId;
+  state.modal = "renameList";
+  state.modalError = "";
+  renderApp();
+};
+Actions.saveListName = async function() {
+  const listId = state.pendingRenameList;
+  const meta = state.groceryLists.filter(L => L.listId === listId)[0];
+  if (!meta) { state.modal = null; renderApp(); return; }
+  const elm = document.getElementById("rename-list");
+  const next = elm ? elm.value.trim().slice(0, 120) : "";
+  const was = meta.label;
+  /* Painted immediately and put back if the server disagrees, so renaming
+     feels like renaming rather than like waiting. */
+  meta.label = next || defaultListLabel(meta);
+  state.modal = null;
+  state.pendingRenameList = null;
+  renderApp();
+  try {
+    await API("grocery/rename", { listId: listId, label: meta.label });
+  } catch (e) {
+    meta.label = was;
+    toast("Couldn't rename that — " + e.message);
+    renderApp();
+  }
+};
+/* What the name reverts to when you clear it: the same stamp the list was
+   born with, rebuilt from the dates it was made for. */
+function defaultListLabel(meta) {
+  const made = meta.createdAt ? new Date(meta.createdAt) : new Date();
+  return slashDate(meta.startDate) + " - " + slashDate(meta.endDate) + " made at " +
+    DOW[made.getDay()] + ", " + MON[made.getMonth()] + " " + made.getDate() + ", " + made.getFullYear() + ", " +
+    made.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 Actions.deleteGroceryList = function(listId) {
   state.pendingDeleteList = listId;
   state.modal = "confirmDeleteList";
@@ -4446,12 +4787,32 @@ Actions.toggleGroceryCheck = function(listId, itemId) {
   state.groceryItems[listId] = groceryItemsFor(listId).map(function (i) {
     return i.id === itemId ? Object.assign({}, i, { checked: !i.checked }) : i;
   });
+  state.groceryItems[listId] = normalizeGroceryOrder(state.groceryItems[listId]);
   saveGroceryItems(listId);
   renderKeepingScroll();
 };
+/* Set aside rather than delete. Nine times in ten "I have that already" is
+   the reason, and the tenth is a misfire - either way the line drops to the
+   bottom, greys out, and stays recoverable. */
 Actions.removeGroceryItem = function(listId, itemId) {
-  state.groceryItems[listId] = groceryItemsFor(listId).filter(i => i.id !== itemId);
+  state.groceryItems[listId] = normalizeGroceryOrder(groceryItemsFor(listId).map(function (i) {
+    return i.id === itemId ? Object.assign({}, i, { removed: true, checked: false }) : i;
+  }));
   if (state.groceryMergeFrom === itemId) state.groceryMergeFrom = null;
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+};
+Actions.restoreGroceryItem = function(listId, itemId) {
+  state.groceryItems[listId] = normalizeGroceryOrder(groceryItemsFor(listId).map(function (i) {
+    return i.id === itemId ? Object.assign({}, i, { removed: false }) : i;
+  }));
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+};
+/* The only irreversible one, and it is deliberately two steps: a line has to
+   be set aside first, so this button is never next to a line still in play. */
+Actions.purgeGroceryItem = function(listId, itemId) {
+  state.groceryItems[listId] = groceryItemsFor(listId).filter(i => i.id !== itemId);
   saveGroceryItems(listId);
   renderKeepingScroll();
 };
@@ -4481,6 +4842,43 @@ Actions.setGroceryQty = function(listId, itemId, segIdx, raw) {
   renderKeepingScroll();
 };
 
+/* Things no recipe asked for: paper towels, a bag of ice, the wine. Unit is
+   free text because "2 rolls" is a real quantity and no unit table has rolls
+   in it. Stored as an ordinary one-segment line, so it merges and reorders
+   like anything else - it simply has no recipe to credit. */
+Actions.openAddGroceryItem = function() {
+  state.modal = "addGroceryItem";
+  state.modalError = "";
+  renderApp();
+};
+Actions.addGroceryItem = function() {
+  const listId = state.activeListId;
+  if (!listId) return;
+  const nameEl = document.getElementById("add-groc-name");
+  const qtyEl = document.getElementById("add-groc-qty");
+  const unitEl = document.getElementById("add-groc-unit");
+  const name = nameEl ? nameEl.value.trim() : "";
+  if (!name) { state.modalError = "Give it a name."; renderModal(); return; }
+  const raw = qtyEl ? parseFloat(qtyEl.value) : NaN;
+  const qtyVal = (isNaN(raw) || raw < 0) ? null : raw;
+  const unit = unitEl ? unitEl.value.trim().slice(0, 24) : "";
+  const items = groceryItemsFor(listId);
+  const item = {
+    id: nextGroceryId(items),
+    name: name,
+    checked: false,
+    removed: false,
+    from: [],
+    qty: (qtyVal == null && !unit) ? [] : [{ mv: qtyVal, mu: unit, cv: null, cu: "" }]
+  };
+  state.groceryItems[listId] = normalizeGroceryOrder(items.concat([item]));
+  saveGroceryItems(listId);
+  state.modal = null;
+  state.modalError = "";
+  renderApp();
+  toast(name + " added");
+};
+
 Actions.beginGroceryMerge = function(itemId) {
   const items = groceryItemsFor(state.activeListId);
   if (items.length < 2) { toast("There is nothing to merge this with"); return; }
@@ -4493,7 +4891,7 @@ Actions.completeGroceryMerge = function(listId, targetId) {
   state.groceryMergeFrom = null;
   if (!fromId || fromId === targetId) { renderKeepingScroll(); return; }
   const before = groceryItemsFor(listId);
-  const after = mergeGroceryItems(before, fromId, targetId);
+  const after = normalizeGroceryOrder(mergeGroceryItems(before, fromId, targetId));
   state.groceryItems[listId] = after;
   const kept = after.filter(i => i.id === targetId)[0];
   saveGroceryItems(listId);
@@ -4541,7 +4939,8 @@ Actions.gripDown = function(ev, listId, itemId) {
     const order = Array.prototype.slice.call(ul.querySelectorAll(".groc-row"));
     const toIndex = order.indexOf(row);
     if (toIndex >= 0) {
-      state.groceryItems[listId] = reorderGroceryItems(groceryItemsFor(listId), itemId, toIndex);
+      state.groceryItems[listId] =
+        normalizeGroceryOrder(reorderGroceryItems(groceryItemsFor(listId), itemId, toIndex));
       saveGroceryItems(listId);
     }
     renderKeepingScroll();
@@ -4893,7 +5292,7 @@ function validateGroceryItems(raw) {
     if (Array.isArray(it.qty)) {
       it.qty.slice(0, MAX_GROCERY_SEGMENTS).forEach(function (s) {
         if (!s || typeof s !== "object") return;
-        qty.push({ mv: optNum(s.mv), mu: cleanString(s.mu, 12), cv: optNum(s.cv), cu: cleanString(s.cu, 12) });
+        qty.push({ mv: optNum(s.mv), mu: cleanString(s.mu, 24), cv: optNum(s.cv), cu: cleanString(s.cu, 24) });
       });
     }
     const from = [];
@@ -4907,6 +5306,7 @@ function validateGroceryItems(raw) {
       id: cleanString(it.id, 32) || ("g" + (i + 1)),
       name: name,
       checked: it.checked === true,
+      removed: it.removed === true,
       from: from,
       qty: qty
     });
@@ -5268,6 +5668,24 @@ async function handleApi(route, body, env, request) {
     });
   }
 
+  /* Move a booking, or change how many it is feeding. The recipe it points at
+     is fixed - swapping that would be a different dinner, not an edit. */
+  if (route === "schedule/update") {
+    const entryId = cleanString(body.entryId, 64);
+    const date = cleanString(body.date, 10);
+    if (!DATE_RE.test(date)) throw new ApiError(400, "That is not a day.");
+    const servings = Number(body.servings);
+    if (!(servings > 0) || servings > 999) throw new ApiError(400, "Servings has to be a number above zero.");
+    const row = await env.DB.prepare(
+      "SELECT entry_id FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
+    ).bind(entryId, me.cookbookId).first();
+    if (!row) throw new ApiError(404, "That booking is gone.");
+    await env.DB.prepare(
+      "UPDATE schedule_entries SET on_date = ?, servings = ? WHERE entry_id = ? AND cookbook_id = ?"
+    ).bind(date, servings, entryId, me.cookbookId).run();
+    return jsonResponse({ entryId, date, servings });
+  }
+
   if (route === "schedule/remove") {
     const entryId = cleanString(body.entryId, 64);
     await env.DB.prepare(
@@ -5333,6 +5751,21 @@ async function handleApi(route, body, env, request) {
       "UPDATE grocery_lists SET items = ?, item_count = ?, updated_at = ? WHERE list_id = ? AND cookbook_id = ?"
     ).bind(JSON.stringify(items), items.length, now, listId, me.cookbookId).run();
     return jsonResponse({ listId, itemCount: items.length, updatedAt: now });
+  }
+
+  if (route === "grocery/rename") {
+    const listId = cleanString(body.listId, 64);
+    const label = cleanString(body.label, 120);
+    if (!label) throw new ApiError(400, "A list needs a name.");
+    const row = await env.DB.prepare(
+      "SELECT list_id FROM grocery_lists WHERE list_id = ? AND cookbook_id = ?"
+    ).bind(listId, me.cookbookId).first();
+    if (!row) throw new ApiError(404, "That list is gone.");
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "UPDATE grocery_lists SET label = ?, updated_at = ? WHERE list_id = ? AND cookbook_id = ?"
+    ).bind(label, now, listId, me.cookbookId).run();
+    return jsonResponse({ listId, label, updatedAt: now });
   }
 
   if (route === "grocery/delete") {
