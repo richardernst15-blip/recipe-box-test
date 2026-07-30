@@ -3246,12 +3246,14 @@ function ScheduleModalHTML() {
     '<p class="helper-text"><b>' + esc(r.title) + '</b> — normally makes ' + base + ' ' +
       esc(r.servings.unit) + '. Change the number below and the ingredients follow.</p>' +
     SchedStripHTML(date, d.entryId || null) +
-    '<div class="row2">' +
+    '<div class="row2" id="sched-fields">' +
       '<div class="field"><label>Day</label>' +
         '<input type="date" id="sched-date" value="' + esc(date) + '" ' +
+        'onfocus="Actions.onSchedFieldFocus()" ' +
         'onchange="Actions.setScheduleField(\\'date\\', this.value)" /></div>' +
       '<div class="field"><label>' + esc(r.servings.unit.charAt(0).toUpperCase() + r.servings.unit.slice(1)) + '</label>' +
         '<input type="number" id="sched-servings" min="0.5" step="0.5" value="' + serv + '" ' +
+        'onfocus="Actions.onSchedFieldFocus()" ' +
         'onchange="Actions.setScheduleField(\\'servings\\', this.value)" /></div>' +
     '</div>' +
     '<div class="step-block"><div class="step-label">Ingredients at ' + serv + ' ' +
@@ -4537,10 +4539,10 @@ Actions.openScheduled = function(entryId) {
    instead of pushing themselves back off the end. Repeated because iOS
    raises the keyboard and re-lays out the viewport after the focus event,
    which undoes a single scroll set before it. */
-Actions.onDaySearchFocus = function() {
+function pinBlockIntoView(blockId) {
   const pin = function () {
     const box = document.querySelector(".modal-box");
-    const blk = document.getElementById("day-search-block");
+    const blk = document.getElementById(blockId);
     if (!box || !blk || !box.getBoundingClientRect) return;
     const b = box.getBoundingClientRect(), t = blk.getBoundingClientRect();
     box.scrollTop = box.scrollTop + (t.top - b.top) - 8;
@@ -4548,7 +4550,23 @@ Actions.onDaySearchFocus = function() {
   pin();
   setTimeout(pin, 200);
   setTimeout(pin, 500);
-};
+}
+/* A dialog rebuilt in place starts back at the top, which throws away
+   whatever the person had scrolled to. Changing the servings and being
+   returned to the top of the frame - away from the ingredient list you
+   changed it to look at - is the whole complaint. */
+function renderModalKeepingScroll() {
+  const before = document.querySelector(".modal-box");
+  const at = before ? before.scrollTop : 0;
+  renderModal();
+  const after = document.querySelector(".modal-box");
+  if (after) after.scrollTop = at;
+}
+Actions.onDaySearchFocus = function() { pinBlockIntoView("day-search-block"); };
+/* Same treatment for the day and servings row. Pinning that row to the top
+   puts the ingredient list directly beneath it, so the numbers can be watched
+   changing rather than hunted for after the keyboard has covered them. */
+Actions.onSchedFieldFocus = function() { pinBlockIntoView("sched-fields"); };
 Actions.onDaySearchInput = function(v) {
   state.daySearch = v;
   const box = document.getElementById("day-results");
@@ -4606,11 +4624,13 @@ Actions.setScheduleField = function(field, value) {
   if (field === "servings") {
     const strip = document.getElementById("sched-strip");
     if (strip) state.schedWeekTop = strip.scrollTop;
+    /* Only the ingredient numbers below have changed, so stay put. */
+    renderModalKeepingScroll();
   } else {
     /* A new day re-anchors the strip on that day's week. */
     state.schedWeekTop = null;
+    renderModal();
   }
-  renderModal();
   placeSchedStrip();
 };
 Actions.addToCalendar = async function() {
