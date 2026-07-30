@@ -454,6 +454,12 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
   font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-muted); }
 .groc-sep::after{ content:""; flex:1; height:1px; background:var(--border-light); }
 .groc-add{ width:100%; margin-top:10px; display:flex; align-items:center; justify-content:center; gap:6px; }
+/* The name of an open list is the name of the list, and tapping a title to
+   change it is the thing everyone tries first. */
+.title-edit{ display:flex; align-items:flex-start; gap:8px; width:100%; margin:0 0 4px;
+  padding:0; border:0; background:none; color:inherit; text-align:left; cursor:pointer; }
+.title-edit svg{ color:var(--border); flex-shrink:0; margin-top:7px; }
+.title-edit:active h1, .title-edit:active svg{ color:var(--accent); }
 .groc-counts{ display:flex; gap:10px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-muted); margin:0 0 10px; }
 
 /* One week visible, the rest a scroll away. Same idea as .cal-scroll, one
@@ -2195,7 +2201,12 @@ function GroceryListViewHTML() {
       '<div class="detail-top">' +
         '<button class="back-link" onclick="Actions.backToGroceries()">' + icon("chevronLeft", 18) + ' Lists</button>' +
       '</div>' +
-      '<h1 class="detail-title font-display" style="font-size:20px">' + esc(meta ? meta.label : "Shopping list") + '</h1>' +
+      '<button class="title-edit" title="Rename this list" ' +
+        'onclick="Actions.openRenameList(\\'' + L + '\\')">' +
+        '<h1 class="detail-title font-display" style="font-size:20px;margin:0">' +
+          esc(meta ? meta.label : "Shopping list") + '</h1>' +
+        icon("pencil", 14) +
+      '</button>' +
       '<div class="groc-counts">' +
         '<span>' + got + ' of ' + live.length + ' in the basket</span>' +
         (gone ? '<span>' + gone + ' not needed</span>' : "") +
@@ -2308,11 +2319,12 @@ function CalDayModalHTML() {
       }).join("") + '</ul>';
   return modalShell(shortDate(key),
     planned +
-    '<div class="step-block"><div class="step-label">Add something to this day</div>' +
+    '<div class="step-block" id="day-search-block"><div class="step-label">Add something to this day</div>' +
       '<div class="search-wrap">' +
         '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
           '<input id="day-search" type="text" placeholder="Search everyone\\'s recipes..." ' +
-            'value="' + esc(state.daySearch) + '" oninput="Actions.onDaySearchInput(this.value)" />' +
+            'value="' + esc(state.daySearch) + '" oninput="Actions.onDaySearchInput(this.value)" ' +
+            'onfocus="Actions.onDaySearchFocus()" />' +
         '</div>' +
       '</div>' +
       '<div id="day-results">' + DayResultsHTML() + '</div>' +
@@ -3151,12 +3163,33 @@ function LogCookModalHTML() {
    exactly one row tall over a tall stack of weeks. Tapping a day sets the
    date, and the chips already sitting in each square answer the question you
    would otherwise have to close the dialog to check - is Tuesday free? */
-const SCHED_ROW = 74, SCHED_GAP = 3, SCHED_WEEKS = 26;
+/* These have to agree with the stylesheet exactly: .sched-cell is 68px tall
+   and the grid gap is 3px, so one week is 71px. Anything else and the strip
+   opens on the wrong week, drifting further the more weeks are rendered. */
+const SCHED_CELL_H = 68, SCHED_GAP = 3;
+const SCHED_ROW = SCHED_CELL_H + SCHED_GAP;
+const SCHED_WEEKS_AHEAD = 52;
+/* The window starts at this week and runs forward. Scheduling is a
+   forward-looking act, and rendering a year of dead weeks above the fold was
+   what put the opening position in doubt in the first place. The one
+   exception is a booking already sitting in the past, which still has to be
+   reachable in order to be edited. */
+function schedAnchor(selected) {
+  const t = localToday();
+  return sundayOf(selected && selected < t ? selected : t);
+}
 function schedWeekStarts(around) {
-  const first = addDays(sundayOf(around), -7 * SCHED_WEEKS);
+  const first = schedAnchor(around);
   const weeks = [];
-  for (let i = 0; i < SCHED_WEEKS * 2 + 1; i++) weeks.push(addDays(first, 7 * i));
+  for (let i = 0; i <= SCHED_WEEKS_AHEAD; i++) weeks.push(addDays(first, 7 * i));
   return weeks;
+}
+/* How far down the window the selected week sits. Rounded because a week
+   spanning a daylight-saving change is an hour short of 7 x 86400s. */
+function schedWeekIndex(selected) {
+  const first = fromYmd(schedAnchor(selected));
+  const want = fromYmd(sundayOf(selected));
+  return Math.max(0, Math.round((want - first) / (7 * 86400000)));
 }
 function SchedStripHTML(selected, skipEntryId) {
   const today = localToday();
@@ -3555,7 +3588,10 @@ function renderApp() {
 function placeSchedStrip() {
   const box = document.getElementById("sched-strip");
   if (!box) return;
-  box.scrollTop = (state.schedWeekTop == null) ? SCHED_WEEKS * (SCHED_ROW + SCHED_GAP) : state.schedWeekTop;
+  const d = state.scheduleDraft;
+  box.scrollTop = (state.schedWeekTop == null)
+    ? schedWeekIndex((d && d.date) || localToday()) * SCHED_ROW
+    : state.schedWeekTop;
 }
 function placeCalendarScroll() {
   const box = document.getElementById("cal-scroll");
@@ -4495,6 +4531,24 @@ Actions.openScheduled = function(entryId) {
 
 /* Same rule as the library search: repaint the results only, or the field
    loses focus and the word is lost halfway through typing it. */
+/* Results render below the fold on a phone, so tapping the field brings the
+   search block up to the top of the dialog. Aligning the block rather than
+   scrolling to the very bottom means the results stay in view as they grow,
+   instead of pushing themselves back off the end. Repeated because iOS
+   raises the keyboard and re-lays out the viewport after the focus event,
+   which undoes a single scroll set before it. */
+Actions.onDaySearchFocus = function() {
+  const pin = function () {
+    const box = document.querySelector(".modal-box");
+    const blk = document.getElementById("day-search-block");
+    if (!box || !blk || !box.getBoundingClientRect) return;
+    const b = box.getBoundingClientRect(), t = blk.getBoundingClientRect();
+    box.scrollTop = box.scrollTop + (t.top - b.top) - 8;
+  };
+  pin();
+  setTimeout(pin, 200);
+  setTimeout(pin, 500);
+};
 Actions.onDaySearchInput = function(v) {
   state.daySearch = v;
   const box = document.getElementById("day-results");
@@ -4549,8 +4603,13 @@ Actions.setScheduleField = function(field, value) {
   } else {
     state.scheduleDraft.date = String(value || "").slice(0, 10) || state.scheduleDraft.date;
   }
-  const strip = document.getElementById("sched-strip");
-  if (strip) state.schedWeekTop = strip.scrollTop;
+  if (field === "servings") {
+    const strip = document.getElementById("sched-strip");
+    if (strip) state.schedWeekTop = strip.scrollTop;
+  } else {
+    /* A new day re-anchors the strip on that day's week. */
+    state.schedWeekTop = null;
+  }
   renderModal();
   placeSchedStrip();
 };
