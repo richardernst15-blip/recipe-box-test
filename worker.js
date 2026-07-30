@@ -397,7 +397,9 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .notif-tools{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
 .notif{ display:flex; gap:11px; align-items:flex-start; background:var(--card);
   border:1px solid var(--border-light); border-left:3px solid var(--accent);
-  border-radius:10px; padding:12px 13px; margin-bottom:9px; }
+  border-radius:10px; padding:12px 13px; margin-bottom:9px; cursor:pointer;
+  -webkit-tap-highlight-color:transparent; }
+.notif:active{ background:var(--card-alt); }
 .notif.read{ background:var(--card-alt); border-left-color:var(--border); }
 .notif-dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex-shrink:0; margin-top:5px; }
 .notif.read .notif-dot{ background:transparent; border:1px solid var(--border); }
@@ -793,7 +795,10 @@ const state = {
   search: "",
   activeTags: [],
   _fopen: {},
-  ownerFilter: "all",
+  /* The box opens on your own shelf. Everyone else's is a deliberate look
+     rather than the thing you land on. Note this counts as a filter, so the
+     export button offers what is actually on screen. */
+  ownerFilter: "ours",
   friendsTab: "friends",
   myHousehold: "",
   marks: { pin: [], star: [], later: [] },
@@ -1377,13 +1382,40 @@ function rawNotifications() {
   if (!state.session) return [];
   const out = [], ours = {};
   const meLc = state.session.username.toLowerCase();
+
+  /* When a friendship is made, everything the other cookbook had already
+     shared becomes visible at once. Reporting fifty recipes as fifty separate
+     pieces of news is not news, so anything that predates the handshake is
+     folded into the handshake itself and only what they add afterwards is
+     announced on its own. */
+  const since = {}, bundle = {};
+  state.friends.forEach(function (f) {
+    if (!f.label || !f.since) return;
+    since[f.label] = f.since;
+    bundle[f.label] = { count: 0, at: f.since };
+  });
+
   state.recipes.forEach(function (r) {
     if (r.ours) { ours[r.recipeId] = r; return; }
     /* A friend has put a recipe somewhere we can see it. */
     if (r.visibility !== "friends") return;
+    const cut = since[r.household];
+    if (cut && String(r.createdAt || "") <= String(cut)) {
+      bundle[r.household].count++;      /* already theirs when we linked up */
+      return;
+    }
     out.push({
       id: "recipe:" + r.recipeId, kind: "recipe", at: r.createdAt,
       who: r.household, title: r.title, recipeId: r.recipeId
+    });
+  });
+
+  Object.keys(bundle).forEach(function (label) {
+    /* The timestamp is in the id so a cleared handshake stays cleared while
+       a genuinely new one with the same friend still gets through. */
+    out.push({
+      id: "friend:" + label + ":" + bundle[label].at, kind: "friend",
+      at: bundle[label].at, who: label, count: bundle[label].count
     });
   });
   Object.keys(state.comments).forEach(function (rid) {
@@ -1583,7 +1615,12 @@ function ResultsSectionHTML() {
         '<p class="sub">Add your first recipe, import a file, or add a friend to see theirs.</p>' +
         '<div class="empty-actions"><button class="btn btn-primary" onclick="Actions.openNew()">Add a recipe</button>' +
         '<button class="btn" onclick="Actions.openModal(\\'import\\')">Import a file</button></div></div>'
-      : '<div class="empty-state"><p class="title font-display">Nothing matches</p><p class="sub">Try a different search, or clear the tag and cook filters.</p></div>';
+      : '<div class="empty-state"><p class="title font-display">Nothing matches</p>' +
+        '<p class="sub">Try a different search, or clear the tag and cook filters.</p>' +
+        (state.ownerFilter !== "all"
+          ? '<div class="empty-actions"><button class="btn" onclick="Actions.setOwnerFilter(\\'all\\')">' +
+            icon("users", 15) + ' Show everyone\\'s recipes</button></div>'
+          : "") + '</div>';
   } else {
     body = '<div class="grid-recipes">' + results.map(RecipeCardHTML).join("") + '</div>';
   }
@@ -1749,24 +1786,40 @@ function NotificationsPanelHTML() {
         icon("trash", 14) + ' Clear all</button>' +
     '</div>';
   const rows = list.map(function (n) {
-    let line, open;
-    if (n.kind === "recipe") {
+    /* Both buttons stop the click here: without that the row's own handler
+       fires too and the two toggles cancel each other out. */
+    const guard = 'event.stopPropagation(); ';
+    const openBtn = function (label) {
+      return '<button class="btn btn-sm" onclick="' + guard +
+        'Actions.openNotification(\\'' + esc(n.id) + '\\')">' + label + '</button>';
+    };
+    let line, open = "";
+    if (n.kind === "friend") {
+      line = 'You and <b>' + esc(n.who) + '</b> are now friends' +
+        (n.count
+          ? ' — you can see <b>' + n.count + '</b> of their recipe' + (n.count === 1 ? "" : "s")
+          : '. They have not shared any recipes yet.');
+      if (n.count) open = openBtn("Show recipes");
+    } else if (n.kind === "recipe") {
       line = '<b>' + esc(n.who) + '</b> shared a recipe: <b>' + esc(n.title) + '</b>';
-      open = '<button class="btn btn-sm" onclick="Actions.openNotification(\\'' + esc(n.id) + '\\')">Open recipe</button>';
+      open = openBtn("Open recipe");
     } else {
       line = '<b>' + esc(n.who) + '</b> cooked your <b>' + esc(n.title) + '</b>' +
         (n.rating ? ' ' + starsOnly(n.rating) : "") +
         (n.comment ? '<br><span style="color:var(--ink-muted)">' + esc(n.comment) + '</span>' : "");
-      open = '<button class="btn btn-sm" onclick="Actions.openNotification(\\'' + esc(n.id) + '\\')">Open cook log</button>';
+      open = openBtn("Open cook log");
     }
-    return '<div class="notif' + (n.read ? " read" : "") + '">' +
+    return '<div class="notif' + (n.read ? " read" : "") + '" role="button" tabindex="0" ' +
+      'title="' + (n.read ? "Mark unread" : "Mark read") + '" ' +
+      'onclick="Actions.toggleNotificationRead(\\'' + esc(n.id) + '\\')">' +
       '<span class="notif-dot"></span>' +
       '<div class="notif-body">' +
         '<p class="notif-line">' + line + '</p>' +
         '<div class="notif-when">' + esc(fmtWhen(n.at)) + '</div>' +
       '</div>' +
       '<div class="notif-acts">' + open +
-        '<button class="btn btn-sm btn-ghost" onclick="Actions.toggleNotificationRead(\\'' + esc(n.id) + '\\')">' +
+        '<button class="btn btn-sm btn-ghost" onclick="' + guard +
+          'Actions.toggleNotificationRead(\\'' + esc(n.id) + '\\')">' +
           (n.read ? "Unread" : "Read") + '</button>' +
       '</div>' +
     '</div>';
@@ -2787,6 +2840,15 @@ Actions.openNotification = function(id) {
   const read = loadNotifSet("Read") || {};
   read[id] = 1;
   saveNotifSet("Read", read);
+  if (n.kind === "friend") {
+    /* There is no one recipe to open, so show the shelf it just unlocked. */
+    state.ownerFilter = n.who;
+    state.activeTags = [];
+    state.search = "";
+    state.view = "library";
+    renderApp();
+    return;
+  }
   if (!state.recipes.some(function (r) { return r.recipeId === n.recipeId; })) {
     toast("That recipe is no longer there");
     renderApp();
@@ -2960,7 +3022,13 @@ Actions.toggleTagAt = function(i) {
   toggleActiveTag(t);
   updateLibraryChrome();
 };
-Actions.setOwnerFilter = function(v) { state.ownerFilter = v; state.activeTags = []; updateLibraryChrome(); };
+Actions.setOwnerFilter = function(v) {
+  state.ownerFilter = v;
+  state.activeTags = [];
+  /* Called from the results area itself, which updateLibraryChrome replaces
+     underneath us, so the label on the picker needs the full pass. */
+  renderApp();
+};
 Actions.pickSearch = function(v) {
   state.pickSearch = v;
   const box = document.querySelector(".pick-list");
@@ -3989,8 +4057,17 @@ async function handleApi(route, body, env, request) {
     }
 
     const mates = (memberMap[me.cookbookId] || []).filter(n => n.toLowerCase() !== me.usernameLc);
+    /* When each link was made. The app folds everything a friend had already
+       shared before that moment into a single piece of news. */
+    const sinceRows = (await env.DB.prepare(
+      "SELECT CASE WHEN requester_cb = ? THEN addressee_cb ELSE requester_cb END AS cb, updated_at " +
+      "FROM friendships WHERE status = 'accepted' AND (requester_cb = ? OR addressee_cb = ?)"
+    ).bind(me.cookbookId, me.cookbookId, me.cookbookId).all()).results || [];
+    const sinceFor = {};
+    for (const row of sinceRows) sinceFor[row.cb] = row.updated_at;
+
     const friends = friendCbs
-      .map(cb => ({ label: labelFor[cb], members: memberMap[cb] || [] }))
+      .map(cb => ({ label: labelFor[cb], members: memberMap[cb] || [], since: sinceFor[cb] || null }))
       .filter(f => f.label)
       .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
 
