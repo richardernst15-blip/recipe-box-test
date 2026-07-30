@@ -12,6 +12,12 @@
 //   POST /api/recipe/delete      -> delete one recipe and its cook log
 //   POST /api/recipe/merge       -> copy a friend's recipe into your cookbook
 //   POST /api/recipe/claim       -> act on a scanned recipe code (preview or commit)
+//   POST /api/schedule/add       -> put a recipe on the calendar for a day
+//   POST /api/schedule/remove    -> take one off the calendar
+//   POST /api/grocery/create     -> build a shopping list from a date range
+//   POST /api/grocery/get        -> the items on one list
+//   POST /api/grocery/save       -> rewrite the items on one list
+//   POST /api/grocery/delete     -> delete a list
 //   POST /api/comment/add        -> log a cook (rating required)
 //   POST /api/comment/delete     -> remove your own cook log entry
 //   POST /api/friend/request     -> ask someone to be friends
@@ -349,8 +355,96 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .import-summary{ background:var(--card-alt); border:1px solid var(--border-light); border-radius:10px; padding:12px; margin-bottom:12px; font-size:13.5px; }
 .import-summary ul{ margin:8px 0 0; padding-left:18px; max-height:130px; overflow-y:auto; color:var(--ink-muted); }
 
+/* ---- tab bar ---------------------------------------------------------- */
+/* A sibling of #app rather than a child. Fixed inside the scroller is the
+   thing that already went wrong once here: a drag carries a fixed child up
+   off the screen with the content. Outside it, the bar is nailed to the
+   window and the list slides underneath it, which is what it is for.
+   It sits below the modal overlay (z-index 80) on purpose - a dialog is
+   meant to cover the whole app, tabs included. */
+.tabbar{ position:fixed; left:0; right:0; bottom:0; z-index:60; display:flex;
+  background:rgba(242,237,225,.94); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  border-top:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom); }
+.tabbar .tab{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; padding:7px 0 6px; border:0; background:none; cursor:pointer;
+  color:var(--ink-muted); font-size:10.5px; letter-spacing:.01em; }
+.tabbar .tab span{ line-height:1.2; }
+.tabbar .tab.on{ color:var(--accent); font-weight:600; }
+.tabbar .tab:active{ background:rgba(0,0,0,.04); }
+
+/* ---- calendar --------------------------------------------------------- */
+.cal-head{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-bottom:3px; }
+.cal-head div{ text-align:center; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--ink-muted); padding:2px 0; }
+/* Exactly three rows tall, so the fourth week is the thing you scroll to
+   rather than something half-showing. */
+.cal-scroll{ height:calc(3 * 92px + 2 * 3px); overflow-y:auto; overscroll-behavior:contain;
+  border:1px solid var(--border-light); border-radius:12px; padding:3px; background:var(--card-alt); }
+.cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.cal-cell{ height:92px; background:#fff; border:1px solid var(--border-light); border-radius:8px;
+  padding:3px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; gap:2px; text-align:left; }
+.cal-cell:active{ background:var(--card-alt); }
+.cal-cell.cal-dim{ background:#f7f4ed; color:var(--ink-muted); }
+.cal-cell.cal-today{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.cal-num{ font-size:11.5px; font-weight:700; color:var(--ink-muted); display:flex; justify-content:space-between; gap:2px; }
+.cal-today .cal-num{ color:var(--accent); }
+.cal-mon{ font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--accent); }
+.cal-chips{ display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+.cal-chip{ display:block; width:100%; text-align:left; font-size:9.5px; line-height:1.25; padding:2px 3px;
+  border:0; border-radius:4px; background:#fbf0ef; color:var(--accent); cursor:pointer;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cal-chip.cal-chip-orphan{ background:var(--border-light); color:var(--ink-muted); }
+.cal-more{ font-size:9px; color:var(--ink-muted); padding-left:3px; }
+.cal-tools{ display:flex; align-items:center; gap:8px; margin:10px 0 0; }
+.sched-banner{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:#fbf0ef; border:1px solid #e3b3ae; border-radius:10px; padding:9px 12px;
+  font-size:13px; color:var(--accent-dark); margin-bottom:12px; }
+.sched-banner b{ font-weight:600; }
+
+/* ---- grocery ---------------------------------------------------------- */
+.groc-range{ display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+.groc-range .field{ flex:1; min-width:132px; margin:0; }
+.groc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.groc-entry{ display:flex; align-items:center; gap:10px; background:#fff;
+  border:1px solid var(--border-light); border-radius:11px; padding:12px 13px; }
+.groc-entry-main{ flex:1; min-width:0; text-align:left; border:0; background:none; cursor:pointer; padding:0; }
+.groc-entry-label{ font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.groc-entry-sub{ font-size:12px; color:var(--ink-muted); margin-top:2px; }
+/* One shopping line: tick, name and quantity, then the three controls. */
+.groc-row{ display:flex; align-items:flex-start; gap:9px; background:#fff;
+  border:1px solid var(--border-light); border-radius:11px; padding:10px 6px 10px 10px; }
+.groc-row.groc-done .groc-name{ text-decoration:line-through; color:var(--ink-muted); }
+.groc-row.groc-dragging{ opacity:.65; border-color:var(--accent); box-shadow:0 4px 14px rgba(0,0,0,.12); }
+.groc-row.merge-src{ border-color:var(--accent); background:#fbf0ef; }
+.groc-row.merge-target{ cursor:pointer; border-style:dashed; }
+.groc-tick{ flex-shrink:0; width:22px; height:22px; margin-top:1px; border-radius:6px;
+  border:1.5px solid var(--border); background:#fff; color:#fff; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0; }
+.groc-tick.on{ background:var(--green); border-color:var(--green); }
+.groc-main{ flex:1; min-width:0; }
+.groc-name{ font-size:14px; line-height:1.3; }
+.groc-from{ font-size:11px; color:var(--ink-muted); margin-top:1px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.groc-qty{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:5px; }
+.groc-qty input{ width:66px; padding:4px 6px; font-size:12.5px; border-radius:7px;
+  border:1px solid var(--border); background:var(--card-alt); text-align:right; }
+.groc-unit{ font-size:12px; color:var(--ink-muted); }
+.groc-alt{ font-size:11.5px; color:var(--ink-muted); }
+.groc-plus{ font-size:12px; color:var(--ink-muted); padding:0 1px; }
+.groc-acts{ flex-shrink:0; display:flex; align-items:center; gap:1px; }
+.groc-acts button{ border:0; background:none; color:var(--ink-muted); cursor:pointer; padding:5px; }
+.groc-acts button:active{ color:var(--accent); }
+/* touch-action is the whole trick on iOS: without it the first finger-move
+   is claimed by the scroller and the row never gets a pointermove. */
+.groc-grip{ flex-shrink:0; color:var(--border); cursor:grab; padding:5px 2px;
+  touch-action:none; -webkit-user-select:none; user-select:none; }
+.groc-merge-hint{ background:#fbf0ef; border:1px solid #e3b3ae; border-radius:10px;
+  padding:9px 12px; font-size:13px; color:var(--accent-dark); margin-bottom:10px;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+
 /* toast / loading */
-.toast{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
+.toast{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
 .loading{ display:flex; align-items:center; justify-content:center; height:75vh; color:var(--ink-muted); font-size:14.5px; }
 
 ::-webkit-scrollbar{ width:8px; height:8px; }
@@ -480,6 +574,9 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .mark-star.on{ color:var(--gold); border-color:var(--gold); background:rgba(200,133,15,.14); }
 .mark-later.on{ color:var(--green); border-color:var(--green); background:rgba(47,107,69,.14); }
 .mark-pin.on{ color:var(--accent); border-color:var(--accent); background:rgba(143,45,36,.14); }
+/* No on/off to it - the calendar button opens a frame rather than setting a
+   flag - so it only ever shows the pressed state its neighbours share. */
+.mark-cal:active{ color:var(--accent); border-color:var(--accent); background:rgba(143,45,36,.14); }
 .detail-marks{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 4px; }
 .owner-pick{ text-align:left; }
 .pick-list{ max-height:52vh; overflow-y:auto; margin-top:10px; }
@@ -492,6 +589,7 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 </head>
 <body>
 <div id="app"></div>
+<div id="tabbar-root"></div>
 <div id="modal-root"></div>
 <div id="toast-root"></div>
 
@@ -582,7 +680,15 @@ const ICONS = {
   qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="14" y1="18" x2="14" y2="21"/><line x1="18" y1="18" x2="18" y2="21"/><line x1="21" y1="18" x2="21" y2="21"/>',
   bell: '<path d="M18 15V10a6 6 0 0 0-12 0v5l-2 3h16z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
   share: '<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><line x1="8.3" y1="10.8" x2="15.7" y2="6.2"/><line x1="8.3" y1="13.2" x2="15.7" y2="17.8"/>',
-  inbox: '<path d="M3 12h4l2 3h6l2-3h4"/><path d="M5 5h14l2 7v7H3v-7z"/>'
+  inbox: '<path d="M3 12h4l2 3h6l2-3h4"/><path d="M5 5h14l2 7v7H3v-7z"/>',
+  /* The three tabs along the foot. A scroll for the recipes, a month grid for
+     the calendar, three boxes with the first ticked for the shopping. Drawn
+     to read at 22px, which is all they are ever shown at. */
+  scroll: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v13A2.5 2.5 0 0 1 16.5 21h-9A2.5 2.5 0 0 1 5 18.5z"/><path d="M5 7h14"/><path d="M5 17h14"/><line x1="9" y1="10.5" x2="15" y2="10.5"/><line x1="9" y1="13.5" x2="15" y2="13.5"/>',
+  calGrid: '<rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="6"/><line x1="16" y1="3" x2="16" y2="6"/><line x1="9" y1="10" x2="9" y2="21"/><line x1="15" y1="10" x2="15" y2="21"/><line x1="3" y1="15.5" x2="21" y2="15.5"/>',
+  checklist: '<rect x="3" y="3.5" width="5.5" height="5.5" rx="1.4"/><polyline points="4.4 6.3 5.5 7.4 7.4 4.9"/><rect x="3" y="9.25" width="5.5" height="5.5" rx="1.4"/><rect x="3" y="15" width="5.5" height="5.5" rx="1.4"/><line x1="11" y1="6.25" x2="21" y2="6.25"/><line x1="11" y1="12" x2="21" y2="12"/><line x1="11" y1="17.75" x2="21" y2="17.75"/>',
+  /* The three dots you drag a shopping line by. */
+  grip: '<circle cx="12" cy="6" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="1.35" fill="currentColor" stroke="none"/>'
 };
 function icon(name, size, extra) {
   size = size || 18;
@@ -827,10 +933,162 @@ const state = {
   urlToRecipe: { mode: "url", url: "", text: "", prompt: "", generated: false },
   busy: false,
   _tagList: [],
-  _showAllLogs: false
+  _showAllLogs: false,
+  /* --- meal plan and shopping ---
+     Both belong to the cookbook rather than the person, the same way marks
+     do: one household keeps one calendar and one shelf of lists. Items for a
+     list are fetched when the list is opened, so the sync payload stays the
+     size of an index however much shopping has piled up. */
+  schedule: [],
+  groceryLists: [],
+  groceryItems: {},
+  activeListId: null,
+  scheduleDraft: null,
+  scheduledFor: null,
+  groceryRange: { start: "", end: "" },
+  groceryMergeFrom: null,
+  calDay: null,
+  _calTop: null,
+  calBack: 6,
+  calFwd: 6,
+  pendingDeleteList: null
 };
 
+/* ---- dates, in the calendar's terms ----------------------------------- */
+/* todayStr() is UTC, which is right for a cook-log date the server also
+   reads and wrong for a grid where "today" has to be the square the person
+   is actually living in. Anything the calendar touches uses these instead:
+   the local Y-M-D, compared as plain strings because zero-padded dates sort
+   the way dates do. */
+function ymd(d) {
+  const p = n => (n < 10 ? "0" : "") + n;
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+function localToday() { return ymd(new Date()); }
+function fromYmd(k) {
+  const a = String(k || "").split("-");
+  return new Date(Number(a[0]), Number(a[1]) - 1, Number(a[2]));
+}
+function addDays(k, n) { const d = fromYmd(k); d.setDate(d.getDate() + n); return ymd(d); }
+/* The Sunday that starts the week a date falls in. */
+function sundayOf(k) { const d = fromYmd(k); d.setDate(d.getDate() - d.getDay()); return ymd(d); }
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function shortDate(k) {
+  const d = fromYmd(k);
+  return DOW[d.getDay()] + ", " + MON[d.getMonth()] + " " + d.getDate();
+}
+/* m/d/yy, for naming a list the way the person would say it out loud. */
+function slashDate(k) {
+  const d = fromYmd(k);
+  return (d.getMonth() + 1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(2);
+}
+
 function getActiveRecipe() { return state.recipes.find(r => r.recipeId === state.activeId) || null; }
+function recipeById(id) { return state.recipes.find(r => r.recipeId === id) || null; }
+function entryById(id) { return state.schedule.find(e => e.entryId === id) || null; }
+function scheduleOn(key) { return state.schedule.filter(e => e.date === key); }
+/* A scheduled portion count against the recipe's own base. The recipe view
+   works in multiples, the calendar works in mouths to feed, and this is the
+   one place the two meet. */
+function factorFor(r, servings) {
+  const base = (r && r.servings && Number(r.servings.base) > 0) ? Number(r.servings.base) : 1;
+  const want = Number(servings) > 0 ? Number(servings) : base;
+  return want / base;
+}
+
+/* ---- grocery arithmetic ----------------------------------------------- */
+/* One line per ingredient name. A name that turns up in two different units
+   keeps a segment for each: 250 g and 1 cup cannot be added without knowing
+   what the thing weighs, and guessing would be worse than showing both. */
+function segKey(s) { return (s.mu || "") + "|" + (s.cu || ""); }
+function addSeg(list, seg) {
+  for (const s of list) {
+    if (segKey(s) === segKey(seg)) {
+      if (seg.mv != null) s.mv = (s.mv == null ? 0 : s.mv) + seg.mv;
+      if (seg.cv != null) s.cv = (s.cv == null ? 0 : s.cv) + seg.cv;
+      return list;
+    }
+  }
+  list.push({ mv: seg.mv, mu: seg.mu || "", cv: seg.cv, cu: seg.cu || "" });
+  return list;
+}
+
+function buildGroceryItems(start, end) {
+  const byName = {}, order = [];
+  state.schedule.forEach(function (e) {
+    if (!e.date || e.date < start || e.date > end) return;
+    const r = recipeById(e.recipeId);
+    if (!r) return;                       /* orphan: nothing left to shop for */
+    const f = factorFor(r, e.servings);
+    (r.ingredients || []).forEach(function (ing) {
+      const name = String(ing.name || "").trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!byName[key]) {
+        byName[key] = { id: "", name: name, checked: false, from: [], qty: [] };
+        order.push(key);
+      }
+      const item = byName[key];
+      if (item.from.indexOf(r.title) < 0) item.from.push(r.title);
+      addSeg(item.qty, {
+        mv: (ing.metricValue === "" || ing.metricValue == null) ? null : Number(ing.metricValue) * f,
+        mu: ing.metricUnit || "",
+        cv: (ing.customaryValue === "" || ing.customaryValue == null) ? null : Number(ing.customaryValue) * f,
+        cu: ing.customaryUnit || ""
+      });
+    });
+  });
+  const out = order.map(k => byName[k]);
+  out.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  out.forEach(function (it, i) {
+    it.id = "g" + (i + 1);
+    it.qty.forEach(function (s) {
+      if (s.mv != null) s.mv = Math.round(s.mv * 1000) / 1000;
+      if (s.cv != null) s.cv = Math.round(s.cv * 1000) / 1000;
+    });
+  });
+  return out;
+}
+
+/* Two lines the person says are the same thing. Quantities add; the name
+   that survives is the one they picked second, which is the point - "Red
+   onion" folds into "Onion, red" because that is how their shop is laid
+   out, not because either spelling is more correct. */
+function mergeGroceryItems(items, fromId, toId) {
+  if (!fromId || !toId || fromId === toId) return items.slice();
+  const src = items.filter(i => i.id === fromId)[0];
+  const dst = items.filter(i => i.id === toId)[0];
+  if (!src || !dst) return items.slice();
+  const qty = dst.qty.map(s => ({ mv: s.mv, mu: s.mu, cv: s.cv, cu: s.cu }));
+  src.qty.forEach(s => addSeg(qty, s));
+  const from = dst.from.slice();
+  src.from.forEach(function (f) { if (from.indexOf(f) < 0) from.push(f); });
+  return items
+    .filter(i => i.id !== fromId)
+    .map(i => (i.id === toId ? Object.assign({}, i, { qty: qty, from: from }) : i));
+}
+
+function reorderGroceryItems(items, id, toIndex) {
+  const out = items.slice();
+  let from = -1;
+  for (let i = 0; i < out.length; i++) if (out[i].id === id) { from = i; break; }
+  if (from < 0) return out;
+  const moved = out.splice(from, 1)[0];
+  out.splice(Math.max(0, Math.min(out.length, toIndex)), 0, moved);
+  return out;
+}
+
+/* What a segment reads as on the list: metric first, customary in brackets,
+   exactly as the recipe shows it. */
+function segText(s) {
+  const bits = [];
+  if (s.mv != null) bits.push(formatMetric(s.mv, s.mu));
+  if (s.cv != null) bits.push(s.mv != null ? "(" + formatCustomary(s.cv, s.cu) + ")" : formatCustomary(s.cv, s.cu));
+  return bits.join(" ") || "—";
+}
+function qtyText(item) { return (item.qty || []).map(segText).join(" + "); }
+function groceryItemsFor(listId) { return state.groceryItems[listId] || []; }
 function commentsFor(id) { return state.comments[id] || []; }
 function statsFor(id) {
   const list = commentsFor(id);
@@ -932,6 +1190,8 @@ function applyLibrary(data) {
   state.incoming = data.incoming || [];
   state.outgoing = data.outgoing || [];
   state.declined = data.declined || [];
+  state.schedule = data.schedule || [];
+  state.groceryLists = data.groceryLists || [];
 }
 
 async function refreshLibrary(showLoading) {
@@ -1491,6 +1751,40 @@ function MarkButtonsHTML(r, full) {
   }).join("");
 }
 
+/* ---- tab bar ----------------------------------------------------------- */
+/* Three places to be, always reachable. Which tab is lit follows the view
+   rather than being stored separately, so there is no second copy of "where
+   am I" to fall out of step with the first. */
+const TABS = [
+  ["recipes", "scroll", "Recipes"],
+  ["calendar", "calGrid", "Calendar"],
+  ["groceries", "checklist", "Groceries"]
+];
+function activeTab() {
+  if (state.view === "calendar") return "calendar";
+  if (state.view === "groceries" || state.view === "grocery") return "groceries";
+  return "recipes";
+}
+/* Hidden while editing: the bar is one tap from throwing away a half-written
+   recipe, and the Cancel button is right there for leaving on purpose. */
+function tabsVisible() {
+  return !!state.session && !state.loading && state.view !== "edit";
+}
+function TabBarHTML() {
+  if (!tabsVisible()) return "";
+  const cur = activeTab();
+  return '<nav class="tabbar">' + TABS.map(function (t) {
+    return '<button class="tab' + (t[0] === cur ? " on" : "") + '" ' +
+      'aria-current="' + (t[0] === cur ? "page" : "false") + '" ' +
+      'onclick="Actions.goTab(\\'' + t[0] + '\\')">' +
+      icon(t[1], 22) + '<span>' + t[2] + '</span></button>';
+  }).join("") + '</nav>';
+}
+function renderTabBar() {
+  const el = document.getElementById("tabbar-root");
+  if (el) el.innerHTML = TabBarHTML();
+}
+
 function visibilityPill(r, clickable) {
   const shared = r.visibility === "friends";
   const label = shared ? "Shared with friends" : privateLabel();
@@ -1513,9 +1807,19 @@ function RecipeCardHTML(r) {
       '<div class="tag-row">' + badge + tags + '</div>' +
       '<div class="card-foot">' + ratingHTML(st.avg, st.count) +
         (st.count ? '<span class="cooked-count">· cooked ' + st.count + '×</span>' : "") +
-        '<span class="mark-row">' + MarkButtonsHTML(r, false) + '</span>' +
+        '<span class="mark-row">' + MarkButtonsHTML(r, false) + ScheduleMarkHTML(r, false) + '</span>' +
       '</div>' +
     '</div>';
+}
+
+/* The same button in both places: a glyph beside the other marks on a card,
+   worded in full on the recipe itself. On a card it stands in for the one on
+   the recipe - same modal, without the trip through the recipe to reach it. */
+function ScheduleMarkHTML(r, full) {
+  return '<button class="mark mark-cal" title="Schedule this recipe" ' +
+    'onclick="event.stopPropagation(); Actions.openSchedule(\\'' + r.recipeId + '\\')">' +
+    icon("calGrid", full ? 15 : 14) + (full ? '<span>Schedule this recipe</span>' : "") +
+  '</button>';
 }
 
 function tagSort(a, b) {
@@ -1686,6 +1990,234 @@ function updateSearchClear() {
   if (el) el.classList.toggle("on", !!state.search);
 }
 function updateLibraryChrome() { updateResultsSection(); updateFilterButton(); updateSearchClear(); }
+
+/* ====================================================================== */
+/* Render: Groceries                                                       */
+/* ====================================================================== */
+/* Pick the days you are shopping for, and everything scheduled inside them
+   is added up into a list. The list is a snapshot on purpose: once you are
+   standing in the shop, the calendar changing under you would be a hazard,
+   not a feature. */
+function GroceriesViewHTML() {
+  const rng = state.groceryRange;
+  const ready = !!(rng.start && rng.end && rng.start <= rng.end);
+  const badOrder = !!(rng.start && rng.end && rng.start > rng.end);
+  const lists = state.groceryLists.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const index = lists.length === 0
+    ? '<div class="empty-state"><p class="title font-display">No shopping lists yet</p>' +
+      '<p class="sub">Pick the first and last day you are shopping for above, and everything on the ' +
+      'calendar between them gets added up into a list.</p></div>'
+    : '<ul class="groc-list">' + lists.map(function (L) {
+        return '<li class="groc-entry">' +
+          '<span style="color:var(--accent);flex-shrink:0">' + icon("checklist", 17) + '</span>' +
+          '<button class="groc-entry-main" onclick="Actions.openGroceryList(\\'' + L.listId + '\\')">' +
+            '<div class="groc-entry-label">' + esc(L.label) + '</div>' +
+            '<div class="groc-entry-sub">' + (L.itemCount || 0) + ' item' +
+              ((L.itemCount || 0) === 1 ? "" : "s") + '</div>' +
+          '</button>' +
+          '<button class="icon-btn" title="Delete this list" ' +
+            'onclick="Actions.deleteGroceryList(\\'' + L.listId + '\\')">' + icon("x", 16) + '</button>' +
+        '</li>';
+      }).join("") + '</ul>';
+  return '' +
+    '<div class="wrap">' +
+      '<div class="detail-top">' +
+        '<h1 class="detail-title font-display" style="margin:0">Groceries</h1>' +
+      '</div>' +
+      '<p class="helper-text">The start and end date are the days you are <b>shopping for</b> — not the ' +
+        'day you go. Everything scheduled on the calendar between them, inclusive, goes on the list.</p>' +
+      '<div class="groc-range">' +
+        '<div class="field"><label>First day</label>' +
+          '<input type="date" id="groc-start" value="' + esc(rng.start) + '" ' +
+          'onchange="Actions.setGroceryRange(\\'start\\', this.value)" /></div>' +
+        '<div class="field"><label>Last day</label>' +
+          '<input type="date" id="groc-end" value="' + esc(rng.end) + '" ' +
+          'onchange="Actions.setGroceryRange(\\'end\\', this.value)" /></div>' +
+        '<button class="btn btn-primary" ' + (ready ? "" : "disabled ") +
+          'onclick="Actions.createGroceryList()">' + icon("plus", 15) + ' Build list</button>' +
+      '</div>' +
+      (badOrder ? '<div class="modal-error">The last day is before the first one.</div>' : "") +
+      index +
+    '</div>';
+}
+
+/* One shopping line. The tick is for the shop; the x is for things you have
+   already got in ("1 tbsp olive oil"); the quantity is editable because half
+   a bag of flour at home means half a bag on the list; the arrows fold two
+   spellings of the same thing together; the dots reorder to match the aisles.  */
+function GroceryRowHTML(L, item, merging) {
+  const isSrc = merging && state.groceryMergeFrom === item.id;
+  const isTarget = merging && !isSrc;
+  const qty = (item.qty || []).map(function (s, si) {
+    const primary = (s.mv != null) ? s.mv : s.cv;
+    const unit = (s.mv != null) ? (s.mu || "") : (s.cu || "");
+    const alt = (s.mv != null && s.cv != null)
+      ? '<span class="groc-alt">(' + esc(formatCustomary(s.cv, s.cu)) + ')</span>' : "";
+    return (si ? '<span class="groc-plus">+</span>' : "") +
+      '<input type="number" step="any" min="0" ' +
+        'value="' + (primary == null ? "" : primary) + '" ' +
+        'aria-label="Quantity for ' + esc(item.name) + '" ' +
+        'onchange="Actions.setGroceryQty(\\'' + L + '\\',\\'' + item.id + '\\',' + si + ',this.value)" />' +
+      (unit ? '<span class="groc-unit">' + esc(unit) + '</span>' : "") + alt;
+  }).join("");
+  const cls = "groc-row" + (item.checked ? " groc-done" : "") +
+    (isSrc ? " merge-src" : "") + (isTarget ? " merge-target" : "");
+  const rowClick = isTarget
+    ? ' onclick="Actions.completeGroceryMerge(\\'' + L + '\\',\\'' + item.id + '\\')"'
+    : "";
+  return '<li class="' + cls + '" data-id="' + item.id + '"' + rowClick + '>' +
+    '<button class="groc-tick' + (item.checked ? " on" : "") + '" ' +
+      'aria-pressed="' + (item.checked ? "true" : "false") + '" ' +
+      'onclick="event.stopPropagation(); Actions.toggleGroceryCheck(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+      (item.checked ? icon("check", 14) : "") + '</button>' +
+    '<div class="groc-main">' +
+      '<div class="groc-name">' + esc(item.name) + '</div>' +
+      ((item.from && item.from.length) ? '<div class="groc-from">' + esc(item.from.join(", ")) + '</div>' : "") +
+      '<div class="groc-qty" onclick="event.stopPropagation()">' + qty + '</div>' +
+    '</div>' +
+    '<div class="groc-acts">' +
+      '<button title="Not needed — remove" onclick="event.stopPropagation(); Actions.removeGroceryItem(\\'' +
+        L + '\\',\\'' + item.id + '\\')">' + icon("x", 15) + '</button>' +
+      '<button title="Merge with another line" onclick="event.stopPropagation(); Actions.beginGroceryMerge(\\'' +
+        item.id + '\\')">' + icon("merge", 15) + '</button>' +
+      '<span class="groc-grip" title="Drag to reorder" ' +
+        'onpointerdown="Actions.gripDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("grip", 16) + '</span>' +
+    '</div>' +
+  '</li>';
+}
+
+function GroceryListViewHTML() {
+  const L = state.activeListId;
+  const meta = state.groceryLists.filter(x => x.listId === L)[0];
+  const items = groceryItemsFor(L);
+  const merging = !!state.groceryMergeFrom;
+  const src = merging ? items.filter(i => i.id === state.groceryMergeFrom)[0] : null;
+  const got = items.filter(i => i.checked).length;
+  const hint = merging
+    ? '<div class="groc-merge-hint">' + icon("merge", 15) +
+        '<span>Pick the line to merge <b>' + esc(src ? src.name : "") + '</b> into. The quantities add up ' +
+        'and the name you pick is the one that stays.</span>' +
+        '<button class="btn btn-sm" style="margin-left:auto" onclick="Actions.cancelGroceryMerge()">Cancel</button>' +
+      '</div>'
+    : "";
+  const body = items.length === 0
+    ? '<div class="empty-state"><p class="title font-display">Nothing on this list</p>' +
+      '<p class="sub">Either nothing was scheduled for those days, or you have crossed everything off.</p></div>'
+    : '<ul class="groc-list" id="groc-items">' +
+        items.map(i => GroceryRowHTML(L, i, merging)).join("") + '</ul>';
+  return '' +
+    '<div class="wrap">' +
+      '<div class="detail-top">' +
+        '<button class="back-link" onclick="Actions.backToGroceries()">' + icon("chevronLeft", 18) + ' Lists</button>' +
+      '</div>' +
+      '<h1 class="detail-title font-display" style="font-size:20px">' + esc(meta ? meta.label : "Shopping list") + '</h1>' +
+      '<p class="helper-text">' + got + ' of ' + items.length + ' in the basket. Tap a quantity to change it if ' +
+        'you already have some at home, the x to drop a line you do not need, the arrows to merge two ' +
+        'spellings of the same thing, and the dots to drag a line into aisle order.</p>' +
+      hint +
+      body +
+    '</div>';
+}
+
+/* ====================================================================== */
+/* Render: Calendar                                                        */
+/* ====================================================================== */
+/* Three weeks on screen, more above and below. Rather than virtualising the
+   scroll, a generous window of real weeks is rendered into a box exactly
+   three rows tall and the box is scrolled to put this week in the middle;
+   reaching either edge widens the window by six weeks and holds the scroll
+   position where it was. It is a page of a wall calendar either way, and the
+   version without the bookkeeping cannot lose its place. */
+const CAL_CELL_H = 92, CAL_GAP = 3, CAL_ROW = CAL_CELL_H + CAL_GAP;
+const CAL_CHIP_MAX = 3;
+
+function calWeekStarts() {
+  const first = addDays(sundayOf(localToday()), -7 * state.calBack);
+  const weeks = [];
+  for (let i = 0; i < state.calBack + 1 + state.calFwd; i++) weeks.push(addDays(first, 7 * i));
+  return weeks;
+}
+
+function CalCellHTML(key, today) {
+  const d = fromYmd(key);
+  const entries = scheduleOn(key);
+  const shown = entries.slice(0, CAL_CHIP_MAX);
+  const chips = shown.map(function (e) {
+    const live = !!recipeById(e.recipeId);
+    const label = live ? (recipeById(e.recipeId).title) : e.title;
+    return '<button class="cal-chip' + (live ? "" : " cal-chip-orphan") + '" ' +
+      'title="' + esc(label) + ' · ' + esc(String(e.servings)) + '" ' +
+      'onclick="event.stopPropagation(); Actions.openScheduled(\\'' + e.entryId + '\\')">' +
+      esc(label) + '</button>';
+  }).join("");
+  const more = entries.length > CAL_CHIP_MAX
+    ? '<div class="cal-more">+' + (entries.length - CAL_CHIP_MAX) + ' more</div>' : "";
+  const cls = "cal-cell" + (key === today ? " cal-today" : "") +
+    (d.getMonth() !== fromYmd(today).getMonth() ? " cal-dim" : "");
+  return '<div class="' + cls + '" role="button" tabindex="0" ' +
+    'aria-label="' + esc(shortDate(key)) + '" ' +
+    'onclick="Actions.openCalDay(\\'' + key + '\\')">' +
+    '<div class="cal-num"><span>' + d.getDate() + '</span>' +
+      (d.getDate() === 1 ? '<span class="cal-mon">' + MON[d.getMonth()] + '</span>' : "") + '</div>' +
+    '<div class="cal-chips">' + chips + '</div>' + more +
+  '</div>';
+}
+
+function CalendarViewHTML() {
+  const today = localToday();
+  const head = DOW.map(n => '<div>' + n + '</div>').join("");
+  let cells = "";
+  calWeekStarts().forEach(function (ws) {
+    for (let i = 0; i < 7; i++) cells += CalCellHTML(addDays(ws, i), today);
+  });
+  const planned = state.schedule.length;
+  return '' +
+    '<div class="wrap">' +
+      '<div class="detail-top">' +
+        '<h1 class="detail-title font-display" style="margin:0">Calendar</h1>' +
+        '<button class="btn btn-sm" onclick="Actions.calToday()">Today</button>' +
+      '</div>' +
+      '<p class="helper-text">Recipes are scheduled from the <b>Recipes tab</b> — open one and use ' +
+        'Schedule this recipe. Whatever you schedule shows up here, and its ingredients feed the ' +
+        '<b>Groceries tab</b> when you build a shopping list for those days.</p>' +
+      '<div class="cal-head">' + head + '</div>' +
+      '<div class="cal-scroll" id="cal-scroll" onscroll="Actions.onCalScroll(this)">' +
+        '<div class="cal-grid">' + cells + '</div>' +
+      '</div>' +
+      '<div class="cal-tools">' +
+        '<span class="helper-text" style="margin:0">' +
+          (planned ? planned + ' recipe' + (planned === 1 ? "" : "s") + ' on the calendar' : "Nothing scheduled yet") +
+        '</span>' +
+      '</div>' +
+    '</div>';
+}
+
+/* The grid squares are too small to hold a long day, so the day itself opens.
+   A chip goes straight to the recipe; the square behind it comes here. */
+function CalDayModalHTML() {
+  const key = state.calDay;
+  if (!key) return modalShell("Day", "");
+  const entries = scheduleOn(key);
+  const body = entries.length === 0
+    ? '<p class="helper-text">Nothing scheduled for this day. Open a recipe on the Recipes tab and ' +
+      'use Schedule this recipe to put something here.</p>'
+    : '<ul style="list-style:none;margin:0;padding:0" class="groc-list">' + entries.map(function (e) {
+        const r = recipeById(e.recipeId);
+        return '<li class="groc-entry">' +
+          '<button class="groc-entry-main" onclick="Actions.openScheduled(\\'' + e.entryId + '\\')">' +
+            '<div class="groc-entry-label">' + esc(r ? r.title : e.title) + '</div>' +
+            '<div class="groc-entry-sub">' + esc(String(e.servings)) + ' ' +
+              esc(r ? r.servings.unit : "servings") +
+              (r ? "" : " · no longer in your box") + '</div>' +
+          '</button>' +
+          '<button class="icon-btn" title="Unschedule" onclick="Actions.unschedule(\\'' + e.entryId + '\\')">' +
+            icon("x", 15) + '</button>' +
+        '</li>';
+      }).join("") + '</ul>';
+  return modalShell(shortDate(key), body +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Close</button></div>');
+}
 
 /* ====================================================================== */
 /* Render: Friends                                                         */
@@ -2037,6 +2569,20 @@ function DetailViewHTML(r) {
      for somebody else's. */
   const markRow = '<div class="detail-marks">' + MarkButtonsHTML(r, true) +
     (r.ours ? visibilityPill(r, true) : "") + '</div>';
+  /* Its own row underneath, because it does something to the calendar rather
+     than to the recipe and reads oddly sitting among the marks. */
+  const schedRow = '<div class="detail-marks">' + ScheduleMarkHTML(r, true) + '</div>';
+  /* Arrived here from a calendar square: say which one, and offer the way
+     back out of it. The portions are already applied to the body below. */
+  const sf = state.scheduledFor;
+  const schedBanner = (sf && sf.recipeId === r.recipeId)
+    ? '<div class="sched-banner">' + icon("calGrid", 15) +
+        '<span>Scheduled for <b>' + esc(shortDate(sf.date)) + '</b> · <b>' + esc(String(sf.servings)) +
+        '</b> ' + esc(r.servings.unit) + '</span>' +
+        '<button class="btn btn-sm btn-no" style="margin-left:auto" onclick="Actions.unschedule(\\'' + sf.entryId + '\\')">' +
+        icon("x", 13) + ' Unschedule</button>' +
+      '</div>'
+    : "";
   /* The code carries a link to this recipe and nothing else. Scanning it
      asks its owner to be friends and queues the pin. */
   const qrBlock =
@@ -2065,7 +2611,9 @@ function DetailViewHTML(r) {
       '<div id="change-banner">' + ChangeBannerHTML() + '</div>' +
       '<h1 class="detail-title font-display">' + esc(r.title) + '</h1>' +
       creditRow +
+      schedBanner +
       markRow +
+      schedRow +
       qrBlock +
       tags +
       prov +
@@ -2461,6 +3009,58 @@ function LogCookModalHTML() {
     '<button class="btn btn-primary" onclick="Actions.saveCookLog()">Save to cook log</button></div>');
 }
 
+/* The Schedule frame: a day, how many you are feeding, and what that comes to
+   in ingredients. Portions here are a count rather than a multiplier - the
+   recipe view asks "how many times this recipe", the calendar asks "how many
+   people on Tuesday", and the second is the question you actually have. */
+function ScheduleModalHTML() {
+  const d = state.scheduleDraft || {};
+  const r = recipeById(d.recipeId);
+  if (!r) return modalShell("Schedule this recipe",
+    '<p class="helper-text">That recipe is no longer in your box.</p>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Close</button></div>');
+  const base = (Number(r.servings.base) > 0) ? Number(r.servings.base) : 1;
+  const serv = Number(d.servings) > 0 ? Number(d.servings) : base;
+  const f = serv / base;
+  const ing = (r.ingredients || []).length === 0
+    ? '<p class="no-rating">This recipe has no ingredients listed, so it will not add anything to a shopping list.</p>'
+    : '<ul class="ing-list">' + r.ingredients.map(function (i) {
+        const mv = scaledVal(i.metricValue, f), cv = scaledVal(i.customaryValue, f);
+        const alt = (i.customaryValue !== "" && i.customaryValue != null)
+          ? ' <span class="alt">(' + formatCustomary(cv, i.customaryUnit) + ')</span>' : "";
+        return '<li><span class="ing-amt font-mono">' + formatMetric(mv, i.metricUnit) + alt + '</span>' +
+          '<span>' + esc(i.name) + '</span></li>';
+      }).join("") + '</ul>';
+  return modalShell("Schedule this recipe",
+    '<p class="helper-text"><b>' + esc(r.title) + '</b> — normally makes ' + base + ' ' +
+      esc(r.servings.unit) + '. Change the number below and the ingredients follow.</p>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Day</label>' +
+        '<input type="date" id="sched-date" value="' + esc(d.date || localToday()) + '" ' +
+        'onchange="Actions.setScheduleField(\\'date\\', this.value)" /></div>' +
+      '<div class="field"><label>' + esc(r.servings.unit.charAt(0).toUpperCase() + r.servings.unit.slice(1)) + '</label>' +
+        '<input type="number" id="sched-servings" min="0.5" step="0.5" value="' + serv + '" ' +
+        'onchange="Actions.setScheduleField(\\'servings\\', this.value)" /></div>' +
+    '</div>' +
+    '<div class="step-block"><div class="step-label">Ingredients at ' + serv + ' ' +
+      esc(r.servings.unit) + '</div>' + ing + '</div>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="Actions.addToCalendar()">' + icon("calGrid", 15) +
+      ' Add to Calendar</button></div>');
+}
+
+function ConfirmDeleteListModalHTML() {
+  const L = state.pendingDeleteList;
+  const meta = state.groceryLists.filter(x => x.listId === L)[0];
+  return modalShell("Delete this list?",
+    '<p class="helper-text">' + esc(meta ? meta.label : "This list") + ' will be deleted, along with ' +
+      'anything you had ticked off on it. The calendar and the recipes are untouched, so you can build ' +
+      'the same list again from the same dates.</p>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Keep it</button>' +
+    '<button class="btn btn-primary" onclick="Actions.confirmDeleteList()">' + icon("trash", 15) +
+      ' Delete list</button></div>');
+}
+
 function ImportModalHTML() {
   const parsed = state.importParsed;
   let summary = "";
@@ -2709,6 +3309,9 @@ function renderModal() {
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
   else if (state.modal === "filters") { root.innerHTML = FiltersModalHTML(); updateFilterScrollHint(); }
   else if (state.modal === "actions") root.innerHTML = ActionsModalHTML();
+  else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
+  else if (state.modal === "calDay") root.innerHTML = CalDayModalHTML();
+  else if (state.modal === "confirmDeleteList") root.innerHTML = ConfirmDeleteListModalHTML();
   else if (state.modal === "conflict") root.innerHTML = ConflictModalHTML();
   else if (state.modal === "locked") root.innerHTML = LockedModalHTML();
 }
@@ -2718,13 +3321,29 @@ function renderModal() {
 /* ====================================================================== */
 function renderApp() {
   const app = document.getElementById("app");
-  if (!state.session) { app.innerHTML = WelcomeViewHTML(); renderModal(); return; }
-  if (state.loading) { app.innerHTML = '<div class="loading">Loading your recipe box…</div>'; renderModal(); return; }
+  if (!state.session) { app.innerHTML = WelcomeViewHTML(); renderTabBar(); renderModal(); return; }
+  if (state.loading) { app.innerHTML = '<div class="loading">Loading your recipe box…</div>'; renderTabBar(); renderModal(); return; }
   if (state.view === "library") app.innerHTML = LibraryViewHTML();
   else if (state.view === "detail") app.innerHTML = DetailViewHTML(getActiveRecipe());
   else if (state.view === "friends") app.innerHTML = FriendsViewHTML();
   else if (state.view === "edit") app.innerHTML = EditViewHTML();
+  else if (state.view === "calendar") app.innerHTML = CalendarViewHTML();
+  else if (state.view === "groceries") app.innerHTML = GroceriesViewHTML();
+  else if (state.view === "grocery") app.innerHTML = GroceryListViewHTML();
+  renderTabBar();
   renderModal();
+  if (state.view === "calendar") placeCalendarScroll();
+}
+
+/* The three-week box opens on this week, which is row calBack of the window.
+   Done after the markup lands rather than inside it, since it is a scroll
+   position and there is no way to express one in HTML. */
+function placeCalendarScroll() {
+  const box = document.getElementById("cal-scroll");
+  if (!box) return;
+  box.scrollTop = (state._calTop == null)
+    ? Math.max(0, (state.calBack - 1) * CAL_ROW)
+    : state._calTop;
 }
 
 /* ====================================================================== */
@@ -2799,10 +3418,15 @@ Actions.signOut = function() {
 Actions.openDetail = function(id, showLogs) {
   state.activeId = id; state.view = "detail"; state.scale = 1;
   state.customScaleOpen = false; state._showAllLogs = !!showLogs;
+  /* Reached from the box rather than from a calendar square, so the portions
+     are the recipe's own again and the banner has nothing to say. */
+  state.scheduledFor = null;
   setWatch(id);
   renderApp();
 };
-Actions.backToLibrary = function() { state.view = "library"; setWatch(null); renderApp(); };
+Actions.backToLibrary = function() {
+  state.view = "library"; state.scheduledFor = null; setWatch(null); renderApp();
+};
 Actions.openFriends = function() {
   state.view = "friends";
   state.friendsTab = "friends";           /* Friends is the default face of it */
@@ -3562,6 +4186,371 @@ Actions.mergeRecipe = async function(id) {
   } catch (e) { toast(e.message); }
 };
 
+/* --- tabs --- */
+/* A tab always lands on the top of its section. Coming back to Recipes from a
+   recipe means the box, not the recipe you were already looking at, and the
+   watch on that recipe is dropped on the way out. */
+Actions.goTab = function(tab) {
+  flushGrocerySave();
+  setWatch(null);
+  state.calDay = null;
+  state.groceryMergeFrom = null;
+  if (tab === "calendar") { state.view = "calendar"; state._calTop = null; }
+  else if (tab === "groceries") { state.view = "groceries"; state.activeListId = null; }
+  else { state.view = "library"; state.scheduledFor = null; }
+  renderApp();
+};
+
+/* --- calendar --- */
+Actions.calToday = function() {
+  state._calTop = Math.max(0, (state.calBack - 1) * CAL_ROW);
+  placeCalendarScroll();
+};
+/* Scrolling to either edge adds six more weeks that way. Repainting just the
+   grid rather than the view keeps the gesture from being interrupted, and the
+   scroll position is nudged by the height of what was added above so the week
+   under the finger stays under the finger. */
+const CAL_MAX_WEEKS = 260;
+Actions.onCalScroll = function(el) {
+  if (!el) return;
+  state._calTop = el.scrollTop;
+  const room = el.scrollHeight - el.clientHeight;
+  if (el.scrollTop < CAL_ROW && state.calBack < CAL_MAX_WEEKS) {
+    state.calBack += 6;
+    repaintCalendarGrid(el, 6 * CAL_ROW);
+  } else if (room - el.scrollTop < CAL_ROW && state.calFwd < CAL_MAX_WEEKS) {
+    state.calFwd += 6;
+    repaintCalendarGrid(el, 0);
+  }
+};
+function repaintCalendarGrid(el, shift) {
+  const grid = el.querySelector(".cal-grid");
+  if (!grid) return;
+  const today = localToday();
+  let cells = "";
+  calWeekStarts().forEach(function (ws) {
+    for (let i = 0; i < 7; i++) cells += CalCellHTML(addDays(ws, i), today);
+  });
+  const at = el.scrollTop;
+  grid.innerHTML = cells;
+  el.scrollTop = at + shift;
+  state._calTop = el.scrollTop;
+}
+Actions.openCalDay = function(key) {
+  state.calDay = key;
+  state.modal = "calDay";
+  state.modalError = "";
+  renderApp();
+};
+/* A chip goes to the recipe with the portions it was scheduled at already
+   applied, and says so at the top so the numbers are not a mystery. */
+Actions.openScheduled = function(entryId) {
+  const e = entryById(entryId);
+  if (!e) return;
+  const r = recipeById(e.recipeId);
+  if (!r) { toast("That recipe is no longer in your box"); return; }
+  state.modal = null;
+  state.calDay = null;
+  state.activeId = e.recipeId;
+  state.view = "detail";
+  state.scale = factorFor(r, e.servings);
+  state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+  state.scheduledFor = { entryId: e.entryId, recipeId: e.recipeId, date: e.date, servings: e.servings };
+  state._showAllLogs = false;
+  setWatch(e.recipeId);
+  renderApp();
+};
+
+Actions.openSchedule = function(recipeId) {
+  const r = recipeById(recipeId);
+  if (!r) { toast("That recipe is no longer in your box"); return; }
+  state.scheduleDraft = {
+    recipeId: recipeId,
+    date: (state.calDay || localToday()),
+    servings: (Number(r.servings.base) > 0 ? Number(r.servings.base) : 1)
+  };
+  state.modal = "schedule";
+  state.modalError = "";
+  renderApp();
+};
+Actions.setScheduleField = function(field, value) {
+  if (!state.scheduleDraft) return;
+  if (field === "servings") {
+    const n = parseFloat(value);
+    state.scheduleDraft.servings = (isNaN(n) || n <= 0) ? state.scheduleDraft.servings : n;
+  } else {
+    state.scheduleDraft.date = String(value || "").slice(0, 10) || state.scheduleDraft.date;
+  }
+  renderModal();
+};
+Actions.addToCalendar = async function() {
+  const d = state.scheduleDraft;
+  if (!d) return;
+  const r = recipeById(d.recipeId);
+  if (!r) { state.modalError = "That recipe is no longer in your box."; renderModal(); return; }
+  const dateEl = document.getElementById("sched-date");
+  const servEl = document.getElementById("sched-servings");
+  const date = (dateEl && dateEl.value) ? String(dateEl.value).slice(0, 10) : d.date;
+  const servRaw = servEl ? parseFloat(servEl.value) : d.servings;
+  const servings = (isNaN(servRaw) || servRaw <= 0) ? d.servings : servRaw;
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) { state.modalError = "Pick a day."; renderModal(); return; }
+  state.busy = true;
+  try {
+    const res = await API("schedule/add", {
+      recipeId: d.recipeId, date: date, servings: servings, title: r.title
+    });
+    state.schedule.push(res.entry);
+    state.modal = null;
+    state.scheduleDraft = null;
+    state.modalError = "";
+    toast(r.title + " scheduled for " + shortDate(date));
+  } catch (e) {
+    state.modalError = e.message;
+  } finally {
+    state.busy = false;
+    renderApp();
+  }
+};
+Actions.unschedule = async function(entryId) {
+  const e = entryById(entryId);
+  if (!e) return;
+  try {
+    await API("schedule/remove", { entryId: entryId });
+    state.schedule = state.schedule.filter(x => x.entryId !== entryId);
+    if (state.scheduledFor && state.scheduledFor.entryId === entryId) state.scheduledFor = null;
+    /* The day sheet is still open behind this if that is where it came from,
+       and an empty one has nothing left to say. */
+    if (state.modal === "calDay" && scheduleOn(state.calDay).length === 0) {
+      state.modal = null;
+      state.calDay = null;
+    }
+    toast("Taken off the calendar");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+
+/* --- groceries --- */
+Actions.setGroceryRange = function(which, value) {
+  state.groceryRange[which] = String(value || "").slice(0, 10);
+  renderApp();
+};
+Actions.backToGroceries = function() {
+  flushGrocerySave();
+  state.view = "groceries";
+  state.activeListId = null;
+  state.groceryMergeFrom = null;
+  renderApp();
+};
+Actions.createGroceryList = async function() {
+  const rng = state.groceryRange;
+  if (!rng.start || !rng.end) { toast("Pick both dates first"); return; }
+  if (rng.start > rng.end) { toast("The last day is before the first one"); return; }
+  const items = buildGroceryItems(rng.start, rng.end);
+  if (!items.length && !confirm("Nothing is scheduled for those days. Build an empty list anyway?")) return;
+  /* Named where the local clock is, since the server's idea of the hour is
+     not the one the person was standing in when they made it. */
+  const now = new Date();
+  const label = slashDate(rng.start) + " - " + slashDate(rng.end) + " made at " +
+    DOW[now.getDay()] + ", " + MON[now.getMonth()] + " " + now.getDate() + ", " + now.getFullYear() + ", " +
+    now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  state.busy = true;
+  try {
+    const res = await API("grocery/create", {
+      startDate: rng.start, endDate: rng.end, label: label, items: items
+    });
+    state.groceryLists.push(res.list);
+    state.groceryItems[res.list.listId] = items;
+    state.activeListId = res.list.listId;
+    state.groceryRange = { start: "", end: "" };
+    state.view = "grocery";
+    toast(items.length + " item" + (items.length === 1 ? "" : "s") + " on the list");
+  } catch (e) { toast(e.message); }
+  state.busy = false;
+  renderApp();
+};
+Actions.openGroceryList = async function(listId) {
+  state.activeListId = listId;
+  state.groceryMergeFrom = null;
+  if (!state.groceryItems[listId]) {
+    state.loading = true;
+    renderApp();
+    try {
+      const res = await API("grocery/get", { listId: listId });
+      state.groceryItems[listId] = res.items || [];
+    } catch (e) { toast(e.message); state.groceryItems[listId] = []; }
+    state.loading = false;
+  }
+  state.view = "grocery";
+  renderApp();
+};
+Actions.deleteGroceryList = function(listId) {
+  state.pendingDeleteList = listId;
+  state.modal = "confirmDeleteList";
+  state.modalError = "";
+  renderApp();
+};
+Actions.confirmDeleteList = async function() {
+  const listId = state.pendingDeleteList;
+  if (!listId) return;
+  try {
+    await API("grocery/delete", { listId: listId });
+    state.groceryLists = state.groceryLists.filter(L => L.listId !== listId);
+    delete state.groceryItems[listId];
+    if (state.activeListId === listId) { state.activeListId = null; state.view = "groceries"; }
+    toast("List deleted");
+  } catch (e) { toast(e.message); }
+  state.pendingDeleteList = null;
+  state.modal = null;
+  renderApp();
+};
+
+/* Every edit to a list writes the whole list back. The lists are small, the
+   whole thing is one snapshot anyway, and a partial write would be a way for
+   the order and the contents to disagree. Coalesced so dragging a row does
+   not turn into a request per frame. */
+/* #app is the scroller, and renderApp replaces everything inside it, so the
+   scroll position goes with it. Ticking the last thing on a long list and
+   being thrown back to the top is not a way anyone can shop, hence this:
+   hold the position across the repaint. */
+function renderKeepingScroll() {
+  const before = document.getElementById("app");
+  const at = before ? before.scrollTop : 0;
+  renderApp();
+  const after = document.getElementById("app");
+  if (after) after.scrollTop = at;
+}
+
+let grocSaveTimer = null;
+/* Walking away from a list should not race the debounce. */
+function flushGrocerySave() {
+  if (!grocSaveTimer) return;
+  clearTimeout(grocSaveTimer);
+  grocSaveTimer = null;
+  const listId = state.activeListId;
+  if (!listId) return;
+  API("grocery/save", { listId: listId, items: groceryItemsFor(listId) })
+    .catch(function (e) { toast("Couldn't save the list — " + e.message); });
+}
+function saveGroceryItems(listId) {
+  const meta = state.groceryLists.filter(L => L.listId === listId)[0];
+  if (meta) meta.itemCount = groceryItemsFor(listId).length;
+  clearTimeout(grocSaveTimer);
+  grocSaveTimer = setTimeout(async function () {
+    grocSaveTimer = null;
+    try { await API("grocery/save", { listId: listId, items: groceryItemsFor(listId) }); }
+    catch (e) { toast("Couldn't save the list — " + e.message); }
+  }, 600);
+}
+
+Actions.toggleGroceryCheck = function(listId, itemId) {
+  state.groceryItems[listId] = groceryItemsFor(listId).map(function (i) {
+    return i.id === itemId ? Object.assign({}, i, { checked: !i.checked }) : i;
+  });
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+};
+Actions.removeGroceryItem = function(listId, itemId) {
+  state.groceryItems[listId] = groceryItemsFor(listId).filter(i => i.id !== itemId);
+  if (state.groceryMergeFrom === itemId) state.groceryMergeFrom = null;
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+};
+/* Editing the number you can see. Where a line carries both units, the one in
+   brackets is moved by the same proportion rather than left behind saying
+   something different from the number next to it. */
+Actions.setGroceryQty = function(listId, itemId, segIdx, raw) {
+  const n = parseFloat(raw);
+  state.groceryItems[listId] = groceryItemsFor(listId).map(function (i) {
+    if (i.id !== itemId) return i;
+    const qty = i.qty.map(function (s, si) {
+      if (si !== segIdx) return s;
+      const next = { mv: s.mv, mu: s.mu, cv: s.cv, cu: s.cu };
+      const val = (isNaN(n) || n < 0) ? null : n;
+      if (s.mv != null) {
+        const ratio = (s.mv > 0 && val != null) ? (val / s.mv) : null;
+        next.mv = val;
+        if (next.cv != null && ratio != null) next.cv = Math.round(next.cv * ratio * 1000) / 1000;
+      } else {
+        next.cv = val;
+      }
+      return next;
+    });
+    return Object.assign({}, i, { qty: qty });
+  });
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+};
+
+Actions.beginGroceryMerge = function(itemId) {
+  const items = groceryItemsFor(state.activeListId);
+  if (items.length < 2) { toast("There is nothing to merge this with"); return; }
+  state.groceryMergeFrom = itemId;
+  renderKeepingScroll();
+};
+Actions.cancelGroceryMerge = function() { state.groceryMergeFrom = null; renderKeepingScroll(); };
+Actions.completeGroceryMerge = function(listId, targetId) {
+  const fromId = state.groceryMergeFrom;
+  state.groceryMergeFrom = null;
+  if (!fromId || fromId === targetId) { renderKeepingScroll(); return; }
+  const before = groceryItemsFor(listId);
+  const after = mergeGroceryItems(before, fromId, targetId);
+  state.groceryItems[listId] = after;
+  const kept = after.filter(i => i.id === targetId)[0];
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+  if (kept) toast("Merged into " + kept.name);
+};
+
+/* Drag to reorder, by hand. The HTML5 drag events never fire for a finger on
+   iOS, so this is pointer events: the row is moved in the DOM as the finger
+   passes the midpoint of its neighbours, and where it ends up is read back on
+   release. touch-action:none on the handle is what stops the scroller from
+   claiming the gesture before the first pointermove arrives. */
+Actions.gripDown = function(ev, listId, itemId) {
+  if (!ev || !document.getElementById("groc-items")) return;
+  if (ev.preventDefault) ev.preventDefault();
+  if (ev.stopPropagation) ev.stopPropagation();
+  const ul = document.getElementById("groc-items");
+  const rowOf = function (id) {
+    const all = Array.prototype.slice.call(ul.querySelectorAll(".groc-row"));
+    return all.filter(function (n) { return n.getAttribute("data-id") === id; })[0] || null;
+  };
+  const row = rowOf(itemId);
+  if (!row) return;
+  row.classList.add("groc-dragging");
+  const onMove = function (e) {
+    if (e.preventDefault) e.preventDefault();
+    const y = (e.clientY != null) ? e.clientY
+      : (e.touches && e.touches[0] ? e.touches[0].clientY : null);
+    if (y == null) return;
+    const others = Array.prototype.slice.call(ul.querySelectorAll(".groc-row"))
+      .filter(function (n) { return n !== row; });
+    let before = null;
+    for (const n of others) {
+      const b = n.getBoundingClientRect();
+      if (y < b.top + b.height / 2) { before = n; break; }
+    }
+    if (before) ul.insertBefore(row, before);
+    else ul.appendChild(row);
+  };
+  const onUp = function () {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    row.classList.remove("groc-dragging");
+    const order = Array.prototype.slice.call(ul.querySelectorAll(".groc-row"));
+    const toIndex = order.indexOf(row);
+    if (toIndex >= 0) {
+      state.groceryItems[listId] = reorderGroceryItems(groceryItemsFor(listId), itemId, toIndex);
+      saveGroceryItems(listId);
+    }
+    renderKeepingScroll();
+  };
+  document.addEventListener("pointermove", onMove, { passive: false });
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onUp);
+};
+
 window.Actions = Actions;
 
 /* ====================================================================== */
@@ -3649,6 +4638,8 @@ function randomFrom(alphabet, length) {
 }
 const newRecipeId = () => randomFrom(RECIPE_ALPHABET, 14);
 const newCommentId = () => randomFrom(RECIPE_ALPHABET, 16);
+const newEntryId = () => randomFrom(RECIPE_ALPHABET, 16);
+const newListId = () => randomFrom(RECIPE_ALPHABET, 16);
 
 const USERNAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,19}$/;
 const COOKBOOK_RE = /^[A-Z0-9]{10}$/;
@@ -3824,7 +4815,26 @@ const LATER_TABLES = [
      here and settled the moment the link exists. */
   "CREATE TABLE IF NOT EXISTS pending_pins ( cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, " +
     "created_at TEXT NOT NULL, PRIMARY KEY (cookbook_id, recipe_id) )",
-  "CREATE INDEX IF NOT EXISTS idx_pending_pins_recipe ON pending_pins(recipe_id)"
+  "CREATE INDEX IF NOT EXISTS idx_pending_pins_recipe ON pending_pins(recipe_id)",
+  /* The meal plan. Keyed to the cookbook, not the person, so a household
+     keeps one calendar. The title is a snapshot: if the recipe is deleted or
+     a friend stops sharing it, the square still says what was planned there
+     rather than silently emptying. */
+  "CREATE TABLE IF NOT EXISTS schedule_entries ( entry_id TEXT PRIMARY KEY, cookbook_id TEXT NOT NULL, " +
+    "recipe_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', on_date TEXT NOT NULL, " +
+    "servings REAL NOT NULL DEFAULT 1, created_by TEXT NOT NULL, created_at TEXT NOT NULL )",
+  "CREATE INDEX IF NOT EXISTS idx_sched_cookbook ON schedule_entries(cookbook_id, on_date)",
+  "CREATE INDEX IF NOT EXISTS idx_sched_recipe ON schedule_entries(recipe_id)",
+  /* A shopping list, items and all, as one JSON snapshot. Ticks, merges,
+     deletions and the aisle order are all edits to the same frozen document,
+     so splitting them across rows would only be a way for the order and the
+     contents to get out of step. item_count is kept alongside so the index
+     can be listed without reading every blob. */
+  "CREATE TABLE IF NOT EXISTS grocery_lists ( list_id TEXT PRIMARY KEY, cookbook_id TEXT NOT NULL, " +
+    "label TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL, end_date TEXT NOT NULL, " +
+    "items TEXT NOT NULL DEFAULT '[]', item_count INTEGER NOT NULL DEFAULT 0, " +
+    "created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )",
+  "CREATE INDEX IF NOT EXISTS idx_glists_cookbook ON grocery_lists(cookbook_id, created_at)"
 ];
 let schemaReady = false;
 async function ensureSchema(env) {
@@ -3834,6 +4844,77 @@ async function ensureSchema(env) {
 }
 
 const MARK_KINDS = ["pin", "star", "later"];
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_SCHEDULE_ENTRIES = 2000;
+const MAX_GROCERY_LISTS = 200;
+const MAX_GROCERY_ITEMS = 400;
+const MAX_GROCERY_SEGMENTS = 8;
+
+/* Can this cookbook read this recipe at all? Its own, one a linked cookbook
+   shares with friends, or one handed to it individually. This is the same
+   test the library query makes, written the other way round for one recipe -
+   pinIsAllowed cannot stand in because it deliberately says no to a recipe
+   you already own, and scheduling your own dinner is the common case. */
+async function canSeeRecipe(env, cookbookId, recipeId) {
+  const row = await env.DB.prepare(
+    "SELECT cookbook_id, visibility FROM recipes WHERE recipe_id = ?"
+  ).bind(recipeId).first();
+  if (!row) return false;
+  if (row.cookbook_id === cookbookId) return true;
+  const handed = await env.DB.prepare(
+    "SELECT recipe_id FROM recipe_shares WHERE recipe_id = ? AND cookbook_id = ?"
+  ).bind(recipeId, cookbookId).first();
+  if (handed) return true;
+  if (row.visibility !== "friends") return false;
+  const friends = await friendCookbooks(env, cookbookId);
+  return friends.indexOf(row.cookbook_id) >= 0;
+}
+
+/* A shopping list comes in already added up, so this checks the shape rather
+   than the sums: known fields only, sane lengths, numbers that are numbers.
+   Anything unrecognised is dropped instead of stored, so a future field
+   cannot be smuggled into the blob and read back as trusted. */
+function optNum(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!isFinite(n) || n < 0 || n > 1e7) return null;
+  return Math.round(n * 1000) / 1000;
+}
+function validateGroceryItems(raw) {
+  if (!Array.isArray(raw)) throw new ApiError(400, "That list was not readable.");
+  if (raw.length > MAX_GROCERY_ITEMS) throw new ApiError(413, "That list is too long.");
+  const out = [];
+  raw.forEach(function (it, i) {
+    if (!it || typeof it !== "object" || Array.isArray(it)) return;
+    const name = cleanString(it.name, 200);
+    if (!name) return;
+    const qty = [];
+    if (Array.isArray(it.qty)) {
+      it.qty.slice(0, MAX_GROCERY_SEGMENTS).forEach(function (s) {
+        if (!s || typeof s !== "object") return;
+        qty.push({ mv: optNum(s.mv), mu: cleanString(s.mu, 12), cv: optNum(s.cv), cu: cleanString(s.cu, 12) });
+      });
+    }
+    const from = [];
+    if (Array.isArray(it.from)) {
+      it.from.slice(0, 40).forEach(function (f) {
+        const t = cleanString(f, 200);
+        if (t) from.push(t);
+      });
+    }
+    out.push({
+      id: cleanString(it.id, 32) || ("g" + (i + 1)),
+      name: name,
+      checked: it.checked === true,
+      from: from,
+      qty: qty
+    });
+  });
+  const text = JSON.stringify(out);
+  if (text.length > MAX_RECIPE_BYTES) throw new ApiError(413, "That list is too big to store.");
+  return out;
+}
 
 /* Is a recipe actually readable by this cookbook? Shared with friends and
    linked, or handed over individually. Mirrors what recipe/mark allows. */
@@ -4056,6 +5137,28 @@ async function handleApi(route, body, env, request) {
       if (label) (shares[row.recipe_id] = shares[row.recipe_id] || []).push(label);
     }
 
+    /* The whole calendar, and the shelf of shopping lists without their
+       contents. A plan is a few dozen rows at most, so it rides along; a
+       list's items are fetched when the list is opened, which keeps a year
+       of shopping out of every sync. */
+    const schedRows = (await env.DB.prepare(
+      "SELECT entry_id, recipe_id, title, on_date, servings, created_by, created_at " +
+      "FROM schedule_entries WHERE cookbook_id = ? ORDER BY on_date, created_at"
+    ).bind(me.cookbookId).all()).results || [];
+    const schedule = schedRows.map(row => ({
+      entryId: row.entry_id, recipeId: row.recipe_id, title: row.title,
+      date: row.on_date, servings: row.servings, by: row.created_by, createdAt: row.created_at
+    }));
+
+    const listRows = (await env.DB.prepare(
+      "SELECT list_id, label, start_date, end_date, item_count, created_by, created_at, updated_at " +
+      "FROM grocery_lists WHERE cookbook_id = ? ORDER BY created_at DESC"
+    ).bind(me.cookbookId).all()).results || [];
+    const groceryLists = listRows.map(row => ({
+      listId: row.list_id, label: row.label, startDate: row.start_date, endDate: row.end_date,
+      itemCount: row.item_count, by: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at
+    }));
+
     const mates = (memberMap[me.cookbookId] || []).filter(n => n.toLowerCase() !== me.usernameLc);
     /* When each link was made. The app folds everything a friend had already
        shared before that moment into a single piece of news. */
@@ -4077,6 +5180,8 @@ async function handleApi(route, body, env, request) {
       comments,
       marks,
       shares,
+      schedule,
+      groceryLists,
       mates,
       friends,
       incoming: pendingIn.map(r => ({
@@ -4129,6 +5234,113 @@ async function handleApi(route, body, env, request) {
       ).bind(me.cookbookId, recipeId, kind, me.username, new Date().toISOString()).run();
     }
     return jsonResponse({ recipeId, kind, on: body.on !== false });
+  }
+
+  /* ---- put a recipe on the calendar ----
+     Anything the cookbook can currently see can be scheduled, including a
+     friend's. The title is copied in at the same time so the square survives
+     the recipe being deleted or unshared later. */
+  if (route === "schedule/add") {
+    const recipeId = cleanString(body.recipeId, 64);
+    const date = cleanString(body.date, 10);
+    if (!DATE_RE.test(date)) throw new ApiError(400, "That is not a day.");
+    const servings = Number(body.servings);
+    if (!(servings > 0) || servings > 999) throw new ApiError(400, "Servings has to be a number above zero.");
+    if (!(await canSeeRecipe(env, me.cookbookId, recipeId))) {
+      throw new ApiError(404, "That recipe is not in your box.");
+    }
+    const row = await env.DB.prepare("SELECT title FROM recipes WHERE recipe_id = ?").bind(recipeId).first();
+    const title = cleanString(row && row.title, 200) || cleanString(body.title, 200) || "Untitled recipe";
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM schedule_entries WHERE cookbook_id = ?"
+    ).bind(me.cookbookId).first();
+    if (count && count.n >= MAX_SCHEDULE_ENTRIES) {
+      throw new ApiError(409, "That is as much as the calendar will hold. Clear some older days first.");
+    }
+    const entryId = newEntryId();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO schedule_entries (entry_id, cookbook_id, recipe_id, title, on_date, servings, created_by, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(entryId, me.cookbookId, recipeId, title, date, servings, me.username, now).run();
+    return jsonResponse({
+      entry: { entryId, recipeId, title, date, servings, by: me.username, createdAt: now }
+    });
+  }
+
+  if (route === "schedule/remove") {
+    const entryId = cleanString(body.entryId, 64);
+    await env.DB.prepare(
+      "DELETE FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
+    ).bind(entryId, me.cookbookId).run();
+    return jsonResponse({ entryId, removed: true });
+  }
+
+  /* ---- shopping lists ----
+     The list arrives already added up: the client knows the scheduled
+     portions and the unit rules, and doing the arithmetic twice in two
+     languages would only be two places for it to disagree. The server's job
+     is to check the shape, cap the size and keep it. */
+  if (route === "grocery/create") {
+    const startDate = cleanString(body.startDate, 10);
+    const endDate = cleanString(body.endDate, 10);
+    if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate)) throw new ApiError(400, "Those are not days.");
+    if (startDate > endDate) throw new ApiError(400, "The last day is before the first one.");
+    const label = cleanString(body.label, 120) || (startDate + " - " + endDate);
+    const items = validateGroceryItems(body.items);
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM grocery_lists WHERE cookbook_id = ?"
+    ).bind(me.cookbookId).first();
+    if (count && count.n >= MAX_GROCERY_LISTS) {
+      throw new ApiError(409, "That is as many lists as the shelf will hold. Delete an old one first.");
+    }
+    const listId = newListId();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO grocery_lists (list_id, cookbook_id, label, start_date, end_date, items, item_count, created_by, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(listId, me.cookbookId, label, startDate, endDate, JSON.stringify(items),
+      items.length, me.username, now, now).run();
+    return jsonResponse({
+      list: { listId, label, startDate, endDate, itemCount: items.length,
+        by: me.username, createdAt: now, updatedAt: now }
+    });
+  }
+
+  if (route === "grocery/get") {
+    const listId = cleanString(body.listId, 64);
+    const row = await env.DB.prepare(
+      "SELECT items FROM grocery_lists WHERE list_id = ? AND cookbook_id = ?"
+    ).bind(listId, me.cookbookId).first();
+    if (!row) throw new ApiError(404, "That list is gone.");
+    let items = [];
+    try { items = JSON.parse(row.items); } catch (e) { items = []; }
+    return jsonResponse({ listId, items: Array.isArray(items) ? items : [] });
+  }
+
+  /* Every edit rewrites the whole snapshot. Last write wins, which for two
+     phones in one kitchen is the behaviour you want anyway: the list is
+     whatever the person holding it last said it was. */
+  if (route === "grocery/save") {
+    const listId = cleanString(body.listId, 64);
+    const row = await env.DB.prepare(
+      "SELECT list_id FROM grocery_lists WHERE list_id = ? AND cookbook_id = ?"
+    ).bind(listId, me.cookbookId).first();
+    if (!row) throw new ApiError(404, "That list is gone.");
+    const items = validateGroceryItems(body.items);
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "UPDATE grocery_lists SET items = ?, item_count = ?, updated_at = ? WHERE list_id = ? AND cookbook_id = ?"
+    ).bind(JSON.stringify(items), items.length, now, listId, me.cookbookId).run();
+    return jsonResponse({ listId, itemCount: items.length, updatedAt: now });
+  }
+
+  if (route === "grocery/delete") {
+    const listId = cleanString(body.listId, 64);
+    await env.DB.prepare(
+      "DELETE FROM grocery_lists WHERE list_id = ? AND cookbook_id = ?"
+    ).bind(listId, me.cookbookId).run();
+    return jsonResponse({ listId, deleted: true });
   }
 
   /* ---- hand a private recipe to particular friends ----
