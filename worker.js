@@ -139,6 +139,41 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
    taken out of that height rather than added to it. */
 #app{ height:100%; overflow-y:auto; overscroll-behavior-y:contain;
   padding-top:env(safe-area-inset-top); }
+
+/* The padding above only says where the content starts. It sits inside the
+   scroller, so it travels with the content, and the first flick took the
+   chips up under a status bar with nothing behind it - black-translucent
+   means the web view owns that band and the clock is drawn straight onto
+   the page. The bottom never had this problem because its inset is not
+   padding at all: .tabbar is fixed, so it stays put and the list passes
+   under it. This is the same arrangement for the top - something opaque,
+   pinned, in the page colour - so what scrolls past is hidden rather than
+   shown through. Below the modal overlay on purpose: a dialog dims the
+   notch band along with everything else. Height falls to zero in a browser
+   tab, where the inset is zero and the toolbar owns that band instead. */
+.sb-scrim{ position:fixed; top:0; left:0; right:0; height:env(safe-area-inset-top);
+  background:var(--bg); z-index:70; pointer-events:none; }
+
+/* ---- browser tab: the document scrolls -------------------------------- */
+/* iOS folds its toolbars away only in answer to the root document moving.
+   The shell above deliberately stops that, and says so - an unscrollable
+   document is what keeps a rubber-band drag from carrying the modal overlay
+   off the screen. In the installed app that costs nothing, because there is
+   no toolbar to fold. In a tab it costs the whole toolbar, permanently, and
+   that is the only place the cost is paid. So the shell stays exactly as it
+   is where it earns its keep, and a tab gets the document back.
+   The two things the shell was quietly doing have to be replaced by hand:
+     - overscroll-behavior on the root stands in for the unscrollable
+       document. Safari has honoured it there since 16, which was not true
+       when this was first fought over; it is the first thing to try
+       removing if the toolbars still refuse to fold.
+     - a modal has a live scroller under it again, so data-scroll-lock goes
+       back to meaning something. setScrollLock fixes the body and holds the
+       offset; without it the library scrolls behind the dialog. */
+html.doc-scroll, html.doc-scroll body{ height:auto; overflow:visible; }
+html.doc-scroll{ overscroll-behavior-y:none; }
+html.doc-scroll #app{ height:auto; overflow:visible; overscroll-behavior:auto; }
+html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:100%; }
 .font-display{ font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif; font-weight:700; }
 .font-mono{ font-family:"SF Mono",Menlo,Consolas,monospace; }
 .wrap{ max-width:960px; margin:0 auto; padding:0 16px calc(58px + var(--tab-pad-b,20px)); }
@@ -759,9 +794,29 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .pick-row.on{ border-color:var(--accent); background:rgba(143,45,36,.09); font-weight:600; }
 .share-row{ display:flex; align-items:center; gap:8px; padding:7px 0; }
 </style>
+<script>
+/* Which of the two layouts to use, decided before anything is drawn so the
+   page never renders one way and then the other. An installed app keeps the
+   shell where #app is the scroller; a browser tab hands scrolling back to
+   the document so iOS will fold its toolbars away. display-mode is checked
+   for fullscreen as well because the manifest asks for it first, and
+   navigator.standalone covers older iOS, which answers neither query. */
+(function () {
+  try {
+    var mm = window.matchMedia;
+    var installed =
+      (mm && (mm("(display-mode: standalone)").matches ||
+              mm("(display-mode: fullscreen)").matches ||
+              mm("(display-mode: minimal-ui)").matches)) ||
+      window.navigator.standalone === true;
+    if (!installed) document.documentElement.classList.add("doc-scroll");
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 <div id="app"></div>
+<div class="sb-scrim"></div>
 <div id="tabbar-root"></div>
 <div id="modal-root"></div>
 <div id="toast-root"></div>
@@ -3995,6 +4050,35 @@ function setChromeTint(dim) {
   if (m) m.setAttribute("content", dim ? CHROME_DIMMED : CHROME_REST);
 }
 
+/* One place that knows which layout is up, and three that read and write
+   scroll through it. Nothing else should reach for #app directly: it is the
+   scroller in the installed app only, and the document is the scroller in a
+   tab. The class is put on <html> in the head before first paint. */
+function docScrolls() {
+  return typeof document !== "undefined" && !!document.documentElement &&
+    document.documentElement.classList.contains("doc-scroll");
+}
+function scrollBox() { return docScrolls() ? null : document.getElementById("app"); }
+function scrollAt() {
+  const el = scrollBox();
+  if (el) return el.scrollTop;
+  if (typeof window === "undefined") return 0;
+  return window.pageYOffset || (document.documentElement && document.documentElement.scrollTop) || 0;
+}
+function scrollToY(y) {
+  const el = scrollBox();
+  if (el) el.scrollTop = y;
+  else if (typeof window !== "undefined") window.scrollTo(0, y);
+}
+function scrollRoom() {
+  const el = scrollBox();
+  if (el) return el.scrollHeight - el.clientHeight;
+  if (typeof window === "undefined") return 0;
+  const d = document.documentElement, b = document.body;
+  return Math.max(d ? d.scrollHeight : 0, b ? b.scrollHeight : 0) - window.innerHeight;
+}
+
+let lockedScrollAt = 0;
 function setScrollLock(want) {
   const b = document.body;
   if (!b) return;
@@ -4003,9 +4087,28 @@ function setScrollLock(want) {
     /* Re-measured on the way in, then kept current by the listeners in the
        init block for as long as the modal is up. */
     syncViewportVars();
+    /* In a tab the document underneath is live, so it has to be pinned or
+       the library scrolls behind the dialog. Fixing the body takes it out of
+       flow, which would otherwise snap the page to the top - hence holding
+       the offset on the way in and putting it back on the way out. Guarded
+       on the attribute because renderModal runs setScrollLock on every
+       repaint, and a modal redrawing itself must not re-read the offset as
+       zero while the body is already fixed.
+       The installed app has nothing to pin - #app is the scroller and the
+       modal is not inside it - so there the attribute stays what it was, a
+       bare hook for CSS. */
+    if (docScrolls() && !b.hasAttribute("data-scroll-lock")) {
+      lockedScrollAt = scrollAt();
+      b.style.top = (-lockedScrollAt) + "px";
+    }
     b.setAttribute("data-scroll-lock", "1");
   } else {
+    const wasLocked = b.hasAttribute("data-scroll-lock");
     b.removeAttribute("data-scroll-lock");
+    if (docScrolls() && wasLocked) {
+      b.style.top = "";
+      scrollToY(lockedScrollAt);
+    }
   }
 }
 
@@ -5313,13 +5416,11 @@ function setTabsDown(down) {
   if (document.body && document.body.classList) document.body.classList.toggle("tabs-down", down);
 }
 function onAppScroll() {
-  const el = document.getElementById("app");
-  if (!el) return;
-  const y = el.scrollTop;
+  const y = scrollAt();
   /* A page with nothing to scroll has nothing to get out of the way of, and
      a dialog is meant to cover the app, tabs included, so neither is a place
      to be hiding things. */
-  if (state.modal || (el.scrollHeight - el.clientHeight) < 80) { setTabsDown(false); tabScrollAt = y; return; }
+  if (state.modal || scrollRoom() < 80) { setTabsDown(false); tabScrollAt = y; return; }
   const dy = y - tabScrollAt;
   /* Below the jitter threshold the anchor deliberately stays put, so a slow
      deliberate drag still accumulates into a decision instead of being
@@ -5334,11 +5435,9 @@ function onAppScroll() {
    being thrown back to the top is not a way anyone can shop, hence this:
    hold the position across the repaint. */
 function renderKeepingScroll() {
-  const before = document.getElementById("app");
-  const at = before ? before.scrollTop : 0;
+  const at = scrollAt();
   renderApp();
-  const after = document.getElementById("app");
-  if (after) after.scrollTop = at;
+  scrollToY(at);
   /* Restoring the position fires a scroll event like any other, and the bar
      would read it as a real gesture and flick out of the way on every tick.
      Moving the anchor with it makes that event a zero delta, which needs no
@@ -5755,9 +5854,14 @@ if (typeof document !== "undefined" && document.addEventListener) {
 /* #app outlives every render - only its contents are replaced - so this
    binds once and never needs rewiring. */
 if (typeof document !== "undefined" && document.getElementById) {
-  const scroller = document.getElementById("app");
+  const scroller = scrollBox();
   if (scroller && scroller.addEventListener) {
     scroller.addEventListener("scroll", onAppScroll, { passive: true });
+  } else if (typeof window !== "undefined" && window.addEventListener) {
+    /* In a tab the scroll events are the document's, and they arrive on
+       window. #app outlives every render either way, so this still binds
+       once and never needs rewiring. */
+    window.addEventListener("scroll", onAppScroll, { passive: true });
   }
 }
 if (typeof window !== "undefined" && window.visualViewport && window.addEventListener) {
