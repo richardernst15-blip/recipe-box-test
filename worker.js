@@ -90,7 +90,7 @@ const APP_HTML = `<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Recipe Box" />
-<meta name="theme-color" content="#000000" />
+<meta name="theme-color" content="#f2ede1" />
 <link rel="apple-touch-icon" href="/icon.png" />
 <link rel="icon" href="/icon.png" />
 <link rel="manifest" href="/manifest.webmanifest" />
@@ -106,8 +106,7 @@ const APP_HTML = `<!DOCTYPE html>
      its own. Twenty or so clears it and gives the rest back to the app.
      Declared once here because the toast and the page's own bottom padding
      both have to keep step with it. */
-  /* DIAGNOSTIC - was: max(6px, calc(env(safe-area-inset-bottom) - 14px)) */
-  --tab-pad-b: 0px;
+  --tab-pad-b: max(6px, calc(env(safe-area-inset-bottom) - 14px));
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
@@ -134,6 +133,18 @@ button, input, textarea, select { font-family:inherit; }
    Safari stops hiding and re-showing its toolbar, so the box a fixed element
    measures itself against stops changing size underneath it. */
 html{ height:100%; overflow:hidden; overscroll-behavior:none; }
+/* DIAGNOSTIC - remove this one rule to revert.
+   Black theme-color did not touch the bar, so iOS is not filling that band
+   from the chrome colour. The other thing that paints outside the page box
+   is the canvas, which by default takes its colour from <body> - cream, which
+   is exactly what is showing. Giving <html> a background of its own takes the
+   canvas off <body> and onto this, so the body box stays cream and only what
+   lies outside it turns black. If the bar goes black, it is the canvas
+   showing through the safe area and the fix is a layout one, not a colour
+   one. If it stays cream, the bar is a real element and I have the wrong
+   suspect entirely. */
+html{ background:#000; }
+
 body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 /* The notch padding moves onto the scroller with the content it is there to
    protect. Body is now a plain full-height shell, and padding on it would be
@@ -175,19 +186,6 @@ html.doc-scroll, html.doc-scroll body{ height:auto; overflow:visible; }
 html.doc-scroll{ overscroll-behavior-y:none; }
 html.doc-scroll #app{ height:auto; overflow:visible; overscroll-behavior:auto; }
 html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:100%; }
-
-/* ====================================================================== */
-/* DIAGNOSTIC BLOCK - shotgun, to find out what the cream bar actually is. */
-/* Three changes, all reversible, all marked DIAGNOSTIC:                   */
-/*   1. no .tabbar in the installed app (this file, below)                 */
-/*   2. --tab-pad-b forced to 0px (:root, above)                           */
-/*   3. theme-color black (meta in head + CHROME_REST in script)           */
-/* Whatever is still there afterwards is not any of those three.           */
-/* Note that 1 removes Calendar and Groceries from the installed app       */
-/* entirely - there is no other way to reach them. Not a keeper.           */
-/* ====================================================================== */
-html:not(.doc-scroll) .tabbar{ display:none !important; }
-html:not(.doc-scroll) .wrap{ padding-bottom:16px; }
 .font-display{ font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif; font-weight:700; }
 .font-mono{ font-family:"SF Mono",Menlo,Consolas,monospace; }
 .wrap{ max-width:960px; margin:0 auto; padding:0 16px calc(58px + var(--tab-pad-b,20px)); }
@@ -262,6 +260,15 @@ html:not(.doc-scroll) .wrap{ padding-bottom:16px; }
 
 /* detail */
 .detail-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:20px 0 14px; }
+/* The name and the count are what tell you which list you are in and how far
+   through it you are, and both are worth having while your thumb is halfway
+   down a long shop. Sticks to whichever scroller is live - #app in the
+   installed app, the document in a tab - because sticky answers to the
+   nearest scrolling ancestor either way. Under the tab bar and the status
+   bar scrim in the stack, so neither gets covered. */
+.groc-bar{ position:sticky; top:0; z-index:40; background:var(--bg);
+  padding-top:8px; padding-bottom:8px; margin-left:-16px; margin-right:-16px;
+  padding-left:16px; padding-right:16px; }
 .back-link{ display:inline-flex; align-items:center; gap:3px; color:var(--ink-muted); background:none; border:none; font-size:14px; cursor:pointer; padding:4px 0; }
 .detail-title{ font-size:29px; margin:0 0 6px; line-height:1.15; }
 .detail-desc{ color:var(--ink-muted); margin:0 0 10px; font-size:15px; }
@@ -4056,7 +4063,7 @@ function syncViewportVars() {
    Repainting it with the colour the overlay composites to closes the seam:
    cream under rgba(34,31,28,.5) is #8a867e. Elsewhere the tag only tints
    browser chrome that is already the right colour, so this costs nothing. */
-const CHROME_REST = "#000000";  /* DIAGNOSTIC - was "#f2ede1" */
+const CHROME_REST = "#f2ede1";
 const CHROME_DIMMED = "#8a867e";
 function setChromeTint(dim) {
   if (typeof document === "undefined") return;
