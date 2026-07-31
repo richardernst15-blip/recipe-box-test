@@ -198,11 +198,42 @@ html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:1
    meant to be doing the scrolling. */
 #app{ overflow-x:clip; }
 html.doc-scroll #app{ overflow-x:clip; }
-/* Only worn while the page springs back from a drag that did not go far
-   enough. A drag that did go far enough is replaced by the library, so it
-   has nothing to animate. */
-.swipe-back-settle{ transition:transform .18s ease-out; }
-@media (prefers-reduced-motion: reduce){ .swipe-back-settle{ transition:none; } }
+/* The page you are heading back to, shown behind the one you are dragging
+   off. It is built by the same function that will draw that view for real a
+   moment later, so what slides in is what lands - and it is drawn from the
+   top, because replacing #app's contents drops the scroller to the top and
+   that is where the real view will open too.
+   A still, not a scroller: fixed, cropped to the window, and deaf to taps,
+   since anything you could press on it is about to be replaced by the same
+   thing that can be pressed for real. Below the tab bar and the status bar
+   scrim in the stack, which both carry on over the top of the whole
+   business the way they do on iOS. */
+.sb-back{ position:fixed; inset:0; z-index:1; overflow:hidden;
+  background:var(--bg); padding-top:env(safe-area-inset-top);
+  pointer-events:none; will-change:transform; }
+/* Held back a little so it slides in slower than the page slides off - the
+   two moving at one speed reads as a single sheet, and the lag is what makes
+   it read as one page coming out from under another. And shaded while it is
+   still behind, coming up to full as it arrives. */
+.sb-dim{ position:absolute; inset:0; background:rgba(34,31,28,.16); }
+
+/* The page being dragged away. It needs a colour of its own now that there
+   is a picture rather than bare cream underneath, height enough to cover the
+   window even when the view is a short one, and an edge - the shadow is what
+   makes it read as a sheet lifting off rather than as two things sliding
+   past each other. */
+.sb-front{ position:relative; z-index:2; background:var(--bg);
+  min-height:100vh; min-height:100dvh;
+  box-shadow:-3px 0 18px rgba(34,31,28,.20); will-change:transform; }
+
+/* Worn only for the last part of the movement, once the finger is off: the
+   run out to the far side, or the fall back into place. Under a finger there
+   is no transition at all, or the page would lag behind the touch. */
+.sb-anim{ transition:transform .24s cubic-bezier(.32,.72,0,1); }
+.sb-dim.sb-anim{ transition:opacity .24s cubic-bezier(.32,.72,0,1); }
+@media (prefers-reduced-motion: reduce){
+  .sb-anim, .sb-dim.sb-anim{ transition:none; }
+}
 
 .font-display{ font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif; font-weight:700; }
 .font-mono{ font-family:"SF Mono",Menlo,Consolas,monospace; }
@@ -5945,6 +5976,11 @@ if (typeof window !== "undefined" && window.addEventListener) {
    list to the lists. On each of them that chevron is a reach on a phone, and
    once the page has been scrolled it is off the screen entirely, so the
    gesture is the only way out that is always to hand.
+   Two layers move while the finger is down: the view being left, dragged
+   along one for one, and behind it the view being returned to, held back at
+   a fraction of the speed so it comes out from underneath rather than
+   travelling with it. Let go past the mark and both run on to the end before
+   the real render happens; let go short of it and both fall back.
    Bound once on the document rather than on the view: #app is emptied and
    refilled on every render, so anything held by the view itself would need
    rewiring each time. Touch events rather than pointer events - a mouse
@@ -5954,36 +5990,40 @@ if (typeof window !== "undefined" && window.addEventListener) {
    this simply never fires, which is the right outcome: there the swipe still
    goes back, just by the browser's reckoning rather than ours. */
 if (typeof document !== "undefined" && document.addEventListener) {
-  const EDGE_ZONE = 28;   /* how far in from the edge a drag may begin */
-  const EDGE_SLOP = 8;    /* travel before the direction is settled on */
-  const EDGE_TAKE = 72;   /* travel before the drag counts as going back */
+  const EDGE_ZONE = 28;      /* how far in from the edge a drag may begin */
+  const EDGE_SLOP = 8;       /* travel before the direction is settled on */
+  const EDGE_TAKE = 72;      /* travel before the drag counts as going back */
+  const PARALLAX  = 0.28;    /* how far behind the page underneath hangs */
+  const RUN_MS    = 260;     /* the .24s in the stylesheet, plus a hair */
 
-  /* What going back means depends on where you are, and each of these is the
-     same thing the chevron at the top of that view already does. Views not
-     listed have no way back for a drag to stand in for: the library, the
-     calendar and the list of shopping lists are all somewhere you arrive at
-     by tab rather than by opening something, and the editor is left through
-     Save or Cancel on purpose - a stray drag must not be able to throw away
-     an afternoon's typing. */
+  /* Where back goes from each view, and what is behind you while you drag.
+     Both halves are the ones the app already uses - the same call the
+     chevron makes, and the same function renderApp would reach for - so the
+     preview cannot drift out of step with what actually lands.
+     Views not listed have no way back for a drag to stand in for: the
+     library, the calendar and the list of shopping lists are all somewhere
+     you arrive at by tab rather than by opening something, and the editor is
+     left through Save or Cancel on purpose - a stray drag must not be able
+     to throw away an afternoon's typing. */
   const BACK_FROM = {
-    detail:  function () { Actions.backToLibrary(); },
-    friends: function () { Actions.backToLibrary(); },
-    grocery: function () { Actions.backToGroceries(); }
+    detail:  { go: function () { Actions.backToLibrary(); },   under: LibraryViewHTML },
+    friends: { go: function () { Actions.backToLibrary(); },   under: LibraryViewHTML },
+    grocery: { go: function () { Actions.backToGroceries(); }, under: GroceriesViewHTML }
   };
   /* What the gesture moves and what it does at the end of the pull, or
      nothing at all if it does not apply here. A modal owns the screen while
      it is up. */
   const dragTarget = function () {
     if (!state.session || state.loading || state.modal) return null;
-    const back = BACK_FROM[state.view];
-    if (!back) return null;
+    const route = BACK_FROM[state.view];
+    if (!route) return null;
     /* A shopping line swiped open is holding a sideways gesture of its own,
        and pulling back to the right is how it is put away again. It gets to
        finish before the page will answer to the same movement. */
     if (state.view === "grocery" && state.grocerySwipedId) return null;
     const app = document.getElementById("app");
     const el = app ? app.querySelector(".wrap") : null;
-    return el ? { el: el, back: back } : null;
+    return el ? { el: el, route: route } : null;
   };
   /* A strip already scrolled sideways - the tag row - has first claim on the
      gesture. Once it is back against its own left edge the page takes over. */
@@ -5995,58 +6035,133 @@ if (typeof document !== "undefined" && document.addEventListener) {
     }
     return false;
   };
+  const windowWidth = function () {
+    const vv = (typeof window !== "undefined") ? window.visualViewport : null;
+    return (vv && vv.width) ||
+      (document.documentElement && document.documentElement.clientWidth) ||
+      (typeof window !== "undefined" && window.innerWidth) || 360;
+  };
 
-  let wrap = null, goBack = null, startX = 0, startY = 0, dir = null, dx = 0;
-  const forget = function () { wrap = null; goBack = null; dir = null; dx = 0; };
-  const springBack = function (el) {
-    if (!el || !el.style.transform) return;
-    el.classList.add("swipe-back-settle");
-    void el.offsetWidth;                       /* so the change is animated */
-    el.style.transform = "";
-    setTimeout(function () { el.classList.remove("swipe-back-settle"); }, 240);
+  let front = null, route = null, ghost = null, shade = null;
+  let startX = 0, startY = 0, dir = null, dx = 0, width = 0;
+  let runTimer = 0, runThen = null;
+
+  /* Everything back the way it was found. Safe to call on a gesture that
+     never started, and safe to call twice. */
+  const teardown = function () {
+    if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    if (front) {
+      front.classList.remove("sb-front", "sb-anim");
+      front.style.transform = "";
+    }
+    front = null; route = null; ghost = null; shade = null;
+    dir = null; dx = 0; width = 0;
+  };
+  /* The tail of the movement, brought forward. Called by the timer when it
+     runs out, and by a finger that lands before it does - either way the
+     thing the animation was on its way to doing still gets done. */
+  const finishRun = function () {
+    if (!runTimer) return;
+    clearTimeout(runTimer); runTimer = 0;
+    const then = runThen; runThen = null;
+    /* The layers go before the render, not after: for a moment the ghost and
+       the real thing would be two copies of one view in the same document,
+       sharing every id in it. Nothing paints in between, so nothing shows. */
+    teardown();
+    if (then) then();
+  };
+
+  /* The view being returned to, drawn behind the one being left. Built when
+     the drag is recognised rather than when the finger lands: every tap near
+     the left edge would otherwise pay for a whole view being built and
+     thrown away, and on the shopping list the left edge is where the
+     tickboxes are. */
+  const raiseGhost = function (build) {
+    const app = document.getElementById("app");
+    if (!app || !app.parentNode) return;
+    let html;
+    try { html = build(); } catch (e) { return; }   /* no preview beats no gesture */
+    const layer = document.createElement("div");
+    layer.className = "sb-back";
+    layer.setAttribute("aria-hidden", "true");
+    layer.innerHTML = html;
+    const dim = document.createElement("div");
+    dim.className = "sb-dim";
+    layer.appendChild(dim);
+    app.parentNode.insertBefore(layer, app.nextSibling);
+    ghost = layer; shade = dim;
+  };
+
+  /* One place that turns how far the finger has travelled into where the two
+     layers sit. Used by the drag and by both endings. */
+  const place = function () {
+    if (!front) return;
+    if (front.isConnected === false) { teardown(); return; }
+    const through = width ? dx / width : 0;
+    front.style.transform = "translateX(" + dx + "px)";
+    if (ghost) ghost.style.transform = "translateX(" + (-PARALLAX * (width - dx)) + "px)";
+    if (shade) shade.style.opacity = String(1 - through);
+  };
+  const runTo = function (target, then) {
+    if (!front) return;
+    front.classList.add("sb-anim");
+    if (ghost) ghost.classList.add("sb-anim");
+    if (shade) shade.classList.add("sb-anim");
+    void front.offsetWidth;              /* so the move is animated, not jumped */
+    dx = target;
+    place();
+    runThen = then;
+    runTimer = setTimeout(finishRun, RUN_MS);
   };
 
   document.addEventListener("touchstart", function (e) {
-    forget();
+    finishRun();                         /* a finger landing mid-flight lands it */
+    teardown();
     if (!e.touches || e.touches.length !== 1) return;
     const t = e.touches[0];
     if (t.clientX > EDGE_ZONE) return;
     if (heldSideways(e.target)) return;
     const hit = dragTarget();
     if (!hit) return;
-    wrap = hit.el; goBack = hit.back; startX = t.clientX; startY = t.clientY;
+    front = hit.el; route = hit.route; startX = t.clientX; startY = t.clientY;
   }, { passive: true });
 
   document.addEventListener("touchmove", function (e) {
-    if (!wrap) return;
-    if (!e.touches || e.touches.length !== 1) { springBack(wrap); forget(); return; }
+    if (!front) return;
+    if (!e.touches || e.touches.length !== 1) {
+      /* A second finger means a pinch, not a back swipe. Anything already
+         pulled falls back; anything not yet moving is simply dropped. */
+      if (dir === "x") runTo(0, null); else teardown();
+      return;
+    }
     const t = e.touches[0];
     const mx = t.clientX - startX, my = t.clientY - startY;
     if (!dir) {
       if (Math.abs(mx) < EDGE_SLOP && Math.abs(my) < EDGE_SLOP) return;
       /* Anything but a clear pull to the right is the scroller's. */
-      if (mx <= 0 || Math.abs(my) >= Math.abs(mx)) { forget(); return; }
+      if (mx <= 0 || Math.abs(my) >= Math.abs(mx)) { teardown(); return; }
       dir = "x";
+      width = windowWidth();
+      front.classList.add("sb-front");
+      raiseGhost(route.under);
     }
     if (e.cancelable) e.preventDefault();
-    /* Follows the finger one for one, and never to the left of where it
-       started - dragging back the other way undoes the pull rather than
-       pushing the page off the far side. */
-    dx = Math.max(0, mx);
-    wrap.style.transform = "translateX(" + dx + "px)";
+    /* Follows the finger one for one, and never past either end - dragging
+       back the other way undoes the pull rather than pushing the page off
+       the far side, and there is nothing beyond a full screen's travel. */
+    dx = Math.max(0, Math.min(width, mx));
+    place();
   }, { passive: false });
 
   const release = function () {
-    if (!wrap) return;
-    const el = wrap, back = goBack, leaving = (dir === "x" && dx >= EDGE_TAKE);
-    forget();
-    if (leaving) { el.style.transform = ""; back(); }
-    else springBack(el);
+    if (!front) return;
+    if (dir !== "x") { teardown(); return; }
+    if (dx >= EDGE_TAKE) runTo(width, route.go);
+    else runTo(0, null);
   };
   document.addEventListener("touchend", release);
   document.addEventListener("touchcancel", release);
 }
-
 (async function init() {
   const scanned = readIntentFromUrl();
   state.session = loadSession();
