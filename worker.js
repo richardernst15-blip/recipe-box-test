@@ -100,6 +100,11 @@ const APP_HTML = `<!DOCTYPE html>
   --bg:#f2ede1; --card:#ffffff; --card-alt:#faf6ee;
   --ink:#221f1c; --ink-muted:#79726a; --border:#d8d0c4; --border-light:#e9e3d7;
   --accent:#8f2d24; --accent-dark:#742119; --gold:#c8850f; --green:#2f6b45;
+  /* Community meals get their own colour throughout - the chip on the grid,
+     the tile below it, the label in the day sheet. Blue against the accent
+     red reads at a glance as "this one is not just yours", which is the only
+     thing the colour has to say. */
+  --meal:#1f5f8b; --meal-dark:#17486a; --meal-soft:#eaf3f9; --meal-line:#b6d4e6;
   /* What sits below the tab labels. The full safe-area inset is about 34px,
      which is generous: the home indicator is a few pixels tall sitting a
      little way up from the edge, so it wants clearing, not a whole band of
@@ -309,6 +314,9 @@ html.doc-scroll #app{ overflow-x:clip; }
 
 /* detail */
 .detail-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:20px 0 14px; }
+/* Three things in a space-between row would spread the two controls to
+   either end of it. They belong together, so they travel together. */
+.detail-tools{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
 /* The name and the count are what tell you which list you are in and how far
    through it you are, and both are worth having while your thumb is halfway
    down a long shop. Sticks to whichever scroller is live - #app in the
@@ -524,8 +532,67 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
   border:0; border-radius:4px; background:#fbf0ef; color:var(--accent); cursor:pointer;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .cal-chip.cal-chip-orphan{ background:var(--border-light); color:var(--ink-muted); }
+.cal-chip.cal-chip-meal{ background:var(--meal-soft); color:var(--meal-dark); }
 .cal-more{ font-size:9px; color:var(--ink-muted); padding-left:3px; }
 .cal-tools{ display:flex; align-items:center; gap:8px; margin:10px 0 0; }
+
+/* ---- community meals ----
+   One tile per meal, a week wide, because a shared meal is not a square on a
+   grid: it is a guest list, a menu and a sign-up sheet, and none of those
+   fit in 92 pixels. So it sits below the calendar at full width and the grid
+   above only carries the blue chip for whatever you personally agreed to
+   bring. */
+.meal-add{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; margin:2px 0 12px; }
+.meal-tile{ border:1px solid var(--meal-line); border-radius:12px; background:var(--card);
+  margin-bottom:10px; overflow:hidden; }
+.meal-tile.meal-mine{ border-color:var(--meal); }
+.meal-tile.meal-focus{ box-shadow:0 0 0 2px var(--meal); }
+.meal-head{ background:var(--meal-soft); padding:10px 12px; border-bottom:1px solid var(--meal-line); }
+.meal-title{ font-size:15.5px; font-weight:700; color:var(--meal-dark); margin:0 0 2px;
+  display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.meal-when{ font-size:12.5px; color:var(--meal-dark); opacity:.85; }
+.meal-host{ font-size:12px; color:var(--ink-muted); margin-top:2px; }
+.meal-body{ padding:10px 12px; }
+.meal-sec{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted);
+  margin:0 0 5px; }
+.meal-sec + .meal-sec{ margin-top:12px; }
+.meal-guests{ display:flex; flex-wrap:wrap; gap:5px; margin:0 0 12px; }
+.meal-guest{ display:inline-flex; align-items:center; gap:4px; font-size:12.5px;
+  padding:3px 8px; border-radius:20px; background:var(--border-light); color:var(--ink); }
+.meal-guest.on{ background:var(--meal-soft); color:var(--meal-dark); }
+.meal-guest.waiting{ color:var(--ink-muted); font-style:italic; }
+.meal-guest button{ border:0; background:none; padding:0; margin-left:2px; cursor:pointer;
+  color:var(--ink-muted); display:inline-flex; }
+.meal-dishes{ list-style:none; margin:0 0 12px; padding:0; }
+.meal-dish{ display:flex; align-items:baseline; gap:8px; padding:6px 0;
+  border-bottom:1px solid var(--border-light); font-size:14px; }
+.meal-dish:last-child{ border-bottom:0; }
+.meal-dish .who{ margin-left:auto; flex-shrink:0; font-size:12px; color:var(--ink-muted); }
+.meal-dish .lots{ color:var(--gold); font-size:11.5px; flex-shrink:0; }
+.meal-none{ font-size:13px; color:var(--ink-muted); margin:0 0 12px; }
+.meal-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+.meal-invite{ display:flex; align-items:center; gap:10px; background:var(--meal-soft);
+  border:1px solid var(--meal-line); border-radius:10px; padding:9px 12px; margin:0 0 12px;
+  font-size:13px; color:var(--meal-dark); flex-wrap:wrap; }
+.meal-invite .grow{ flex:1; min-width:120px; }
+.btn-meal{ background:var(--meal); border-color:var(--meal); color:#fff; }
+.btn-meal:active{ background:var(--meal-dark); }
+/* Something already eaten is a record, not a plan. It keeps one line until
+   asked for more. */
+.meal-past{ border-color:var(--border-light); }
+.meal-past-head{ display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  font:inherit; font-size:13.5px; color:var(--ink-muted); background:none; border:0;
+  padding:9px 12px; cursor:pointer; }
+.meal-past-head .when{ margin-left:auto; font-size:12px; flex-shrink:0; }
+.meal-past-head svg{ flex-shrink:0; transition:transform .15s ease; }
+.meal-past-head[aria-expanded="true"] svg{ transform:rotate(180deg); }
+.meal-dish-pick{ display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:var(--meal-soft); border:1px solid var(--meal-line); border-radius:10px;
+  padding:9px 10px; margin-top:6px; font-size:13.5px; }
+.meal-dish-pick .name{ flex:1; min-width:110px; font-weight:600; color:var(--meal-dark); }
+.meal-dish-pick input{ width:74px; flex-shrink:0; }
+.meal-dup{ background:#fdf6e6; border:1px solid #e8d5a0; border-radius:9px; padding:8px 10px;
+  font-size:12.5px; color:#7a5a12; margin-top:6px; }
 .sched-banner{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   background:#fbf0ef; border:1px solid #e3b3ae; border-radius:10px; padding:9px 12px;
   font-size:13px; color:var(--accent-dark); margin-bottom:12px; }
@@ -1284,7 +1351,17 @@ const state = {
   calFwd: 6,
   pendingDeleteList: null,
   pendingRenameList: null,
-  daySearch: ""
+  daySearch: "",
+  /* ---- community meals ----
+     meals is the server's word on it. mealDraft is the sheet being filled in,
+     mealFocus the tile a notification asked us to land on, and mealDishSearch
+     is keyed per meal so two open tiles do not share one search box. */
+  meals: [],
+  mealDraft: null,
+  mealFocus: null,
+  mealDishSearch: {},
+  mealDishPick: {},
+  mealPastOpen: {}
 };
 
 /* ---- dates, in the calendar's terms ----------------------------------- */
@@ -1345,6 +1422,59 @@ function getActiveRecipe() { return state.recipes.find(r => r.recipeId === state
 function recipeById(id) { return state.recipes.find(r => r.recipeId === id) || null; }
 function entryById(id) { return state.schedule.find(e => e.entryId === id) || null; }
 function scheduleOn(key) { return state.schedule.filter(e => e.date === key); }
+/* The Sun-Sat week that today falls in, not the week the grid happens to be
+   scrolled to. The line is a standing answer to "what am I cooking this
+   week", and that question does not change because you scrolled back to
+   March to see what you ate. */
+function mealById(id) { return state.meals.filter(m => m.mealId === id)[0] || null; }
+
+/* Which schedule entries exist because of a community meal. Used to colour
+   the chip and to label the entry in the day sheet. */
+function mealEntryIds() {
+  const set = {};
+  state.meals.forEach(function (m) {
+    m.dishes.forEach(function (d) { if (d.entryId) set[d.entryId] = m.mealId; });
+  });
+  return set;
+}
+function mealForEntry(entryId) {
+  const id = mealEntryIds()[entryId];
+  return id ? mealById(id) : null;
+}
+
+/* Whole-day, time ignored: a dinner is still tonight's dinner at ten past
+   nine, and a tile that collapses itself mid-meal would be worse than one
+   that waits until tomorrow. */
+function isMealPast(m) { return String(m.date) < localToday(); }
+
+function sortedMeals() {
+  const live = [], past = [];
+  state.meals.forEach(function (m) { (isMealPast(m) ? past : live).push(m); });
+  live.sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
+  past.sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+  return { live, past };
+}
+
+/* Two cookbooks bringing the same thing is allowed and, at a table, usually
+   fine. It is worth saying out loud on the tile rather than showing the same
+   line twice and leaving everyone to notice. */
+function dishTitleCounts(meal) {
+  const n = {};
+  meal.dishes.forEach(function (d) {
+    const k = String(d.title).trim().toLowerCase();
+    n[k] = (n[k] || 0) + 1;
+  });
+  return n;
+}
+function dishDisplayTitle(meal, dish, counts) {
+  const k = String(dish.title).trim().toLowerCase();
+  return (counts[k] > 1 ? "Lots of " : "") + dish.title;
+}
+
+function weekScheduledCount() {
+  const from = sundayOf(localToday()), to = addDays(from, 6);
+  return state.schedule.filter(e => e.date >= from && e.date <= to).length;
+}
 /* A scheduled portion count against the recipe's own base. The recipe view
    works in multiples, the calendar works in mouths to feed, and this is the
    one place the two meet. */
@@ -1718,6 +1848,7 @@ function applyLibrary(data) {
   state.outgoing = data.outgoing || [];
   state.declined = data.declined || [];
   state.schedule = data.schedule || [];
+  state.meals = data.meals || [];
   state.groceryLists = data.groceryLists || [];
   state.exclusions = Array.isArray(data.exclusions) ? data.exclusions : [];
 }
@@ -2206,6 +2337,20 @@ function rawNotifications() {
       at: bundle[label].at, who: label, count: bundle[label].count
     });
   });
+  /* An invitation waiting on an answer. Only the asking is news: an
+     acceptance, a new dish or a cancellation all show on the tile, and
+     reporting each of them separately would turn a dinner for six into a
+     stream. The id carries the seat's timestamp so being asked again after a
+     decline still gets through. */
+  state.meals.forEach(function (m) {
+    if (m.myStatus !== "invited") return;
+    out.push({
+      id: "meal:" + m.mealId + ":" + (m.seatAt || ""),
+      kind: "meal", at: m.seatAt || m.createdAt,
+      who: m.ownerLabel, title: m.title, mealId: m.mealId, when: m.date
+    });
+  });
+
   Object.keys(state.comments).forEach(function (rid) {
     const mine = ours[rid];
     if (!mine) return;                       /* only cooks of our own recipes */
@@ -2553,11 +2698,13 @@ function GroceriesViewHTML() {
     '<div class="wrap">' +
       '<div class="detail-top">' +
         '<h1 class="detail-title font-display" style="margin:0">Groceries</h1>' +
-        '<button class="btn btn-sm" title="Staples left off every new list" ' +
-          'onclick="Actions.openExclusions()">' + icon("checklist", 14) + ' Staples</button>' +
+        '<div class="detail-tools">' +
+          '<button class="btn btn-sm" title="Staples left off every new list" ' +
+            'onclick="Actions.openExclusions()">' + icon("checklist", 14) + ' Staples</button>' +
+          '<button class="icon-btn" title="How groceries work" ' +
+            'onclick="Actions.openModal(\\'groceriesHelp\\')">' + icon("info", 17) + '</button>' +
+        '</div>' +
       '</div>' +
-      '<p class="helper-text">The start and end date are the days you are <b>shopping for</b> — not the ' +
-        'day you go. Everything scheduled on the calendar between them, inclusive, goes on the list.</p>' +
       '<div class="groc-range">' +
         '<div class="field"><label>First day</label>' +
           '<input type="date" id="groc-start" value="' + esc(rng.start) + '" ' +
@@ -2782,15 +2929,21 @@ function calWeekStarts() {
   return weeks;
 }
 
-function CalCellHTML(key, today) {
+function CalCellHTML(key, today, mealEntries) {
   const d = fromYmd(key);
   const entries = scheduleOn(key);
   const shown = entries.slice(0, CAL_CHIP_MAX);
   const chips = shown.map(function (e) {
+    /* Blue means this one is a dish you agreed to bring to a community meal.
+       It reaches the shopping list like any other booking - the colour is
+       only there to say where the commitment came from. */
+    const forMeal = !!(mealEntries && mealEntries[e.entryId]);
     const live = !!recipeById(e.recipeId);
     const label = live ? (recipeById(e.recipeId).title) : e.title;
-    return '<button class="cal-chip' + (live ? "" : " cal-chip-orphan") + '" ' +
-      'title="' + esc(label) + ' · ' + esc(String(e.servings)) + '" ' +
+    return '<button class="cal-chip' + (live ? "" : " cal-chip-orphan") +
+      (forMeal ? " cal-chip-meal" : "") + '" ' +
+      'title="' + esc(label) + ' · ' + esc(String(e.servings)) +
+        (forMeal ? ' · Community Meal' : "") + '" ' +
       'onclick="event.stopPropagation(); Actions.openScheduled(\\'' + e.entryId + '\\')">' +
       esc(label) + '</button>';
   }).join("");
@@ -2811,29 +2964,246 @@ function CalendarViewHTML() {
   const today = localToday();
   const head = DOW.map(n => '<div>' + n + '</div>').join("");
   let cells = "";
+  /* Worked out once for the whole grid rather than per square: it is a walk
+     over every dish on every meal, and there are a few hundred squares. */
+  const mealEntries = mealEntryIds();
   calWeekStarts().forEach(function (ws) {
-    for (let i = 0; i < 7; i++) cells += CalCellHTML(addDays(ws, i), today);
+    for (let i = 0; i < 7; i++) cells += CalCellHTML(addDays(ws, i), today, mealEntries);
   });
-  const planned = state.schedule.length;
+  const planned = weekScheduledCount();
   return '' +
     '<div class="wrap">' +
       '<div class="detail-top">' +
         '<h1 class="detail-title font-display" style="margin:0">Calendar</h1>' +
-        '<button class="btn btn-sm" onclick="Actions.calToday()">Today</button>' +
+        '<div class="detail-tools">' +
+          '<button class="btn btn-sm" onclick="Actions.calToday()">Today</button>' +
+          '<button class="icon-btn" title="How the calendar works" ' +
+            'onclick="Actions.openModal(\\'calendarHelp\\')">' + icon("info", 17) + '</button>' +
+        '</div>' +
       '</div>' +
-      '<p class="helper-text">Recipes are scheduled from the <b>Recipes tab</b> — open one and use ' +
-        'Schedule this recipe. Whatever you schedule shows up here, and its ingredients feed the ' +
-        '<b>Groceries tab</b> when you build a shopping list for those days.</p>' +
+      '<div class="section-label">Personal Calendar</div>' +
       '<div class="cal-head">' + head + '</div>' +
       '<div class="cal-scroll" id="cal-scroll" onscroll="Actions.onCalScroll(this)">' +
         '<div class="cal-grid">' + cells + '</div>' +
       '</div>' +
       '<div class="cal-tools">' +
         '<span class="helper-text" style="margin:0">' +
-          (planned ? planned + ' recipe' + (planned === 1 ? "" : "s") + ' on the calendar' : "Nothing scheduled yet") +
+          (planned
+            ? planned + ' recipe' + (planned === 1 ? "" : "s") + ' scheduled this week'
+            : "Nothing scheduled this week") +
         '</span>' +
       '</div>' +
+      CommunityMealsSectionHTML() +
     '</div>';
+}
+
+/* ---- community meals ---------------------------------------------------
+   Rendered below the grid rather than in it. A tile is a week wide because
+   everything it has to say - who is coming, what they are bringing, and the
+   box where you say what you are - is a list, and a list does not fit in a
+   day square. */
+function mealWhen(m) {
+  const day = shortDate(m.date);
+  if (!m.time) return day;
+  const h = parseInt(m.time.slice(0, 2), 10), mm = m.time.slice(3);
+  const ampm = h < 12 ? "am" : "pm";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return day + " at " + h12 + (mm === "00" ? "" : ":" + mm) + ampm;
+}
+
+function MealGuestsHTML(m) {
+  const canManage = m.myStatus === "owner";
+  return '<div class="meal-guests">' + m.guests.map(function (g) {
+    const settled = g.status === "owner" || g.status === "accepted";
+    const cls = "meal-guest" + (settled ? " on" : " waiting");
+    /* Only somebody who has not answered can be withdrawn. Once they have
+       accepted they are a guest, and a guest leaves under their own steam. */
+    const drop = (canManage && g.status === "invited")
+      ? '<button title="Un-invite" onclick="Actions.uninviteGuest(\\'' + m.mealId + '\\',\\'' +
+          esc(g.label) + '\\')">' + icon("x", 13) + '</button>'
+      : "";
+    const mark = g.status === "owner" ? " (host)" : g.status === "invited" ? " — not answered" : "";
+    return '<span class="' + cls + '">' + (settled ? icon("check", 12) : "") +
+      esc(g.label) + esc(mark) + drop + '</span>';
+  }).join("") + '</div>';
+}
+
+function MealDishesHTML(m) {
+  if (!m.dishes.length) return '<p class="meal-none">Nobody has said what they are bringing yet.</p>';
+  const counts = dishTitleCounts(m);
+  return '<ul class="meal-dishes">' + m.dishes.map(function (d) {
+    const dup = counts[String(d.title).trim().toLowerCase()] > 1;
+    return '<li class="meal-dish">' +
+      '<span>' + esc(dishDisplayTitle(m, d, counts)) + '</span>' +
+      (dup ? '<span class="lots">×' + counts[String(d.title).trim().toLowerCase()] + '</span>' : "") +
+      '<span class="who">' + esc(d.label) +
+        (d.mine ? ' <button class="icon-btn" title="Take this off" onclick="Actions.removeMealDish(\\'' +
+          m.mealId + '\\',\\'' + d.dishId + '\\')">' + icon("x", 13) + '</button>' : "") +
+      '</span>' +
+    '</li>';
+  }).join("") + '</ul>';
+}
+
+/* The sign-up box. Picking a recipe does not commit you to it - it opens a
+   row underneath asking how much you are making, because that number is what
+   reaches the shopping list and guessing it on your behalf would put the
+   wrong quantity of everything in the basket. */
+const MEAL_RESULT_MAX = 6;
+
+/* Split out from the picker so typing can replace just this block. Redrawing
+   the page on every keystroke would take the focus out of the field. */
+function MealDishResultsHTML(m) {
+  const q = String(state.mealDishSearch[m.mealId] || "");
+  const picked = state.mealDishPick[m.mealId] || null;
+  if (picked) {
+    const r = recipeById(picked.recipeId);
+    const counts = dishTitleCounts(m);
+    const clash = counts[String(picked.title).trim().toLowerCase()] > 0;
+    return (clash
+      ? '<div class="meal-dup">Somebody is already bringing ' + esc(picked.title) +
+          '. Add it anyway and the tile will read <b>Lots of ' + esc(picked.title) + '</b>.</div>'
+      : "") +
+      '<div class="meal-dish-pick">' +
+        '<span class="name">' + esc(picked.title) + '</span>' +
+        '<input type="number" step="any" min="0" id="meal-serv-' + m.mealId + '" ' +
+          'aria-label="How many ' + esc(r ? r.servings.unit : "servings") + '" ' +
+          'value="' + esc(String(picked.servings)) + '" />' +
+        '<span style="font-size:12.5px;color:var(--ink-muted)">' +
+          esc(r ? r.servings.unit : "servings") + '</span>' +
+        '<button class="btn btn-sm btn-meal" onclick="Actions.addMealDish(\\'' + m.mealId + '\\')">' +
+          icon("plus", 14) + ' Add</button>' +
+        '<button class="btn btn-sm btn-ghost" onclick="Actions.clearMealDishPick(\\'' + m.mealId + '\\')">' +
+          'Cancel</button>' +
+      '</div>';
+  }
+  if (!q.trim()) return "";
+  const all = mealDishMatches(q);
+  if (all.length === 0) return '<p class="no-rating">Nothing matches "' + esc(q.trim()) + '".</p>';
+  return '<ul class="groc-list">' + all.slice(0, MEAL_RESULT_MAX).map(function (r) {
+      return '<li class="groc-entry">' +
+        '<button class="groc-entry-main" onclick="Actions.pickMealDish(\\'' + m.mealId +
+          '\\',\\'' + r.recipeId + '\\')">' +
+          '<div class="groc-entry-label">' + esc(r.title) + '</div>' +
+          '<div class="groc-entry-sub">' + esc(r.household) + '</div>' +
+        '</button>' +
+        '<span style="color:var(--ink-muted);flex-shrink:0">' + icon("plus", 16) + '</span>' +
+      '</li>';
+    }).join("") + '</ul>' +
+    (all.length > MEAL_RESULT_MAX
+      ? '<p class="no-rating">' + (all.length - MEAL_RESULT_MAX) + ' more — keep typing.</p>' : "");
+}
+
+/* The sign-up box. Picking a recipe does not commit you to it - it opens a
+   row underneath asking how much you are making, because that number is what
+   reaches the shopping list and guessing it on your behalf would put the
+   wrong quantity of everything in the basket. */
+function MealDishPickerHTML(m) {
+  const q = String(state.mealDishSearch[m.mealId] || "");
+  return '<div class="meal-sec">What you are bringing</div>' +
+    '<div class="search-wrap">' +
+      '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
+        '<input id="meal-search-' + m.mealId + '" type="text" ' +
+          'placeholder="Search everyone\\'s recipes..." value="' + esc(q) + '" ' +
+          'oninput="Actions.onMealDishInput(\\'' + m.mealId + '\\', this.value)" />' +
+      '</div>' +
+    '</div>' +
+    '<div id="meal-results-' + m.mealId + '">' + MealDishResultsHTML(m) + '</div>';
+}
+
+/* Same box the calendar's own day sheet searches: everything visible, never
+   what the Recipes tab happens to be filtered to. */
+function mealDishMatches(q) {
+  const needle = String(q).trim().toLowerCase();
+  if (!needle) return [];
+  return state.recipes.filter(function (r) {
+    const hay = [r.title, r.description, r.owner, r.household]
+      .concat(r.tags, r.ingredients.map(i => i.name)).join(" ").toLowerCase();
+    return hay.indexOf(needle) >= 0;
+  });
+}
+
+function MealTileHTML(m) {
+  const invited = m.myStatus === "invited";
+  const owner = m.myStatus === "owner";
+  const cls = "meal-tile" + (owner ? " meal-mine" : "") +
+    (state.mealFocus === m.mealId ? " meal-focus" : "");
+  const head =
+    '<div class="meal-head">' +
+      '<div class="meal-title">' + icon("users", 16) + esc(m.title) + '</div>' +
+      '<div class="meal-when">' + esc(mealWhen(m)) + '</div>' +
+      '<div class="meal-host">Hosted by ' + esc(m.ownerLabel) +
+        (owner ? " — that's you" : "") + '</div>' +
+    '</div>';
+  /* An invitation is a question, so the tile asks it before it shows the
+     sign-up box. You cannot put a dish on a table you have not said yes to. */
+  const ask = invited
+    ? '<div class="meal-invite">' +
+        '<span class="grow">' + esc(m.ownerLabel) + ' has invited you.</span>' +
+        '<button class="btn btn-sm btn-meal" onclick="Actions.respondMeal(\\'' + m.mealId + '\\',\\'accept\\')">' +
+          icon("check", 14) + ' Accept</button>' +
+        '<button class="btn btn-sm btn-ghost" onclick="Actions.respondMeal(\\'' + m.mealId + '\\',\\'decline\\')">' +
+          icon("x", 14) + ' Decline</button>' +
+      '</div>'
+    : "";
+  const actions = '<div class="meal-actions">' +
+    (owner
+      ? '<button class="btn btn-sm" onclick="Actions.openMealGuests(\\'' + m.mealId + '\\')">' +
+          icon("userPlus", 14) + ' Invite more</button>' +
+        '<button class="btn btn-sm" onclick="Actions.openEditMeal(\\'' + m.mealId + '\\')">' +
+          icon("pencil", 14) + ' Edit</button>' +
+        '<button class="btn btn-sm btn-no" onclick="Actions.cancelMeal(\\'' + m.mealId + '\\')">' +
+          icon("trash", 14) + ' Cancel meal</button>'
+      : '<button class="btn btn-sm btn-ghost" onclick="Actions.leaveMeal(\\'' + m.mealId + '\\')">' +
+          icon("x", 14) + ' Leave</button>') +
+    '</div>';
+  return '<div class="' + cls + '" id="meal-' + m.mealId + '">' +
+    head +
+    '<div class="meal-body">' +
+      ask +
+      '<div class="meal-sec">Who is coming</div>' +
+      MealGuestsHTML(m) +
+      '<div class="meal-sec">On the table</div>' +
+      MealDishesHTML(m) +
+      (invited ? "" : MealDishPickerHTML(m)) +
+      actions +
+    '</div>' +
+  '</div>';
+}
+
+/* Already eaten. One line, and the whole tile behind it if you want it. */
+function MealPastTileHTML(m) {
+  const open = !!state.mealPastOpen[m.mealId];
+  const counts = m.dishes.length;
+  return '<div class="meal-tile meal-past" id="meal-' + m.mealId + '">' +
+    '<button class="meal-past-head" aria-expanded="' + (open ? "true" : "false") + '" ' +
+      'onclick="Actions.toggleMealPast(\\'' + m.mealId + '\\')">' +
+      icon("chevronDown", 14) +
+      '<span>' + esc(m.title) + ' — ' + counts + ' dish' + (counts === 1 ? "" : "es") + '</span>' +
+      '<span class="when">' + esc(shortDate(m.date)) + '</span>' +
+    '</button>' +
+    (open
+      ? '<div class="meal-body">' +
+          '<div class="meal-sec">Who came</div>' + MealGuestsHTML(m) +
+          '<div class="meal-sec">What was on the table</div>' + MealDishesHTML(m) +
+        '</div>'
+      : "") +
+  '</div>';
+}
+
+function CommunityMealsSectionHTML() {
+  const groups = sortedMeals();
+  const body = (groups.live.length === 0 && groups.past.length === 0)
+    ? '<p class="helper-text" style="margin:0">No community meals yet. Start one and invite a ' +
+        'friend — everyone says what they are bringing, and whatever you sign up for lands on ' +
+        'your own calendar and shopping list.</p>'
+    : groups.live.map(MealTileHTML).join("") +
+      (groups.past.length
+        ? '<div class="section-label">Past</div>' + groups.past.map(MealPastTileHTML).join("")
+        : "");
+  return '<div class="section-label">Community Meals</div>' +
+    '<button class="btn meal-add" onclick="Actions.openNewMeal()">' + icon("plus", 15) +
+      ' Add Community Meal</button>' +
+    body;
 }
 
 /* The grid squares are too small to hold a long day, so the day itself opens.
@@ -2846,16 +3216,22 @@ function CalDayModalHTML() {
     ? '<p class="helper-text">Nothing scheduled yet. Find something below.</p>'
     : '<ul style="list-style:none;margin:0;padding:0" class="groc-list">' + entries.map(function (e) {
         const r = recipeById(e.recipeId);
+        /* A dish brought to a community meal is managed from here like any
+           other booking - opened, re-portioned, dropped. Only its day is not
+           yours to move, because the host owns that. */
+        const m = mealForEntry(e.entryId);
         return '<li class="groc-entry">' +
           '<button class="groc-entry-main" onclick="Actions.openScheduled(\\'' + e.entryId + '\\')">' +
             '<div class="groc-entry-label">' + esc(r ? r.title : e.title) + '</div>' +
             '<div class="groc-entry-sub">' + esc(String(e.servings)) + ' ' +
               esc(r ? r.servings.unit : "servings") +
-              (r ? "" : " · no longer in your box") + '</div>' +
+              (m ? ' \u00b7 Community Meal: ' + esc(m.title) : "") +
+              (r ? "" : " \u00b7 no longer in your box") + '</div>' +
           '</button>' +
-          (r ? '<button class="icon-btn" title="Change the day or the servings" ' +
+          (r ? '<button class="icon-btn" title="' + (m ? 'Change the servings' : 'Change the day or the servings') + '" ' +
             'onclick="Actions.openScheduleEdit(\\'' + e.entryId + '\\')">' + icon("pencil", 15) + '</button>' : "") +
-          '<button class="icon-btn" title="Unschedule" onclick="Actions.unschedule(\\'' + e.entryId + '\\')">' +
+          '<button class="icon-btn" title="' + (m ? 'Take this off the meal' : 'Unschedule') + '" ' +
+            'onclick="Actions.unschedule(\\'' + e.entryId + '\\')">' +
             icon("x", 15) + '</button>' +
         '</li>';
       }).join("") + '</ul>';
@@ -2995,7 +3371,7 @@ function FriendsViewHTML() {
 function NotificationsPanelHTML() {
   const list = allNotifications();
   if (!list.length) {
-    return '<p class="helper-text">Nothing new. When a friend shares a recipe, or somebody logs a cook of one of yours, it turns up here.</p>';
+    return '<p class="helper-text">Nothing new. When a friend shares a recipe, invites you to a community meal, or logs a cook of one of yours, it turns up here.</p>';
   }
   const unread = list.filter(function (n) { return !n.read; }).length;
   const tools =
@@ -3023,6 +3399,10 @@ function NotificationsPanelHTML() {
     } else if (n.kind === "recipe") {
       line = '<b>' + esc(n.who) + '</b> shared a recipe: <b>' + esc(n.title) + '</b>';
       open = openBtn("Open recipe");
+    } else if (n.kind === "meal") {
+      line = '<b>' + esc(n.who) + '</b> invited you to <b>' + esc(n.title) + '</b>' +
+        (n.when ? ' on ' + esc(shortDate(n.when)) : "");
+      open = openBtn("Open meal");
     } else {
       line = '<b>' + esc(n.who) + '</b> cooked your <b>' + esc(n.title) + '</b>' +
         (n.rating ? ' ' + starsOnly(n.rating) : "") +
@@ -3784,20 +4164,34 @@ function ScheduleModalHTML() {
         return '<li><span class="ing-amt font-mono">' + formatMetric(mv, i.metricUnit) + alt + '</span>' +
           '<span>' + esc(i.name) + '</span></li>';
       }).join("") + '</ul>';
+  /* A dish you are bringing to a community meal sits on the meal's day, and
+     the meal's day belongs to whoever is hosting it. So the day picker and
+     the week strip both come off and only the servings are left - which are
+     yours, and are the number the shopping list actually needs. */
+  const meal = editing ? mealForEntry(d.entryId) : null;
+  const servingsField =
+    '<div class="field"><label>' + esc(r.servings.unit.charAt(0).toUpperCase() + r.servings.unit.slice(1)) + '</label>' +
+      '<input type="number" id="sched-servings" min="0.5" step="0.5" value="' + serv + '" ' +
+      'onfocus="Actions.onSchedFieldFocus()" ' +
+      'onchange="Actions.setScheduleField(\\'servings\\', this.value)" /></div>';
   return modalShell(editing ? "Edit this booking" : "Schedule this recipe",
     '<p class="helper-text"><b>' + esc(r.title) + '</b> — normally makes ' + base + ' ' +
       esc(r.servings.unit) + '. Change the number below and the ingredients follow.</p>' +
-    SchedStripHTML(date, d.entryId || null) +
-    '<div class="row2" id="sched-fields">' +
-      '<div class="field"><label>Day</label>' +
-        '<input type="date" id="sched-date" value="' + esc(date) + '" ' +
-        'onfocus="Actions.onSchedFieldFocus()" ' +
-        'onchange="Actions.setScheduleField(\\'date\\', this.value)" /></div>' +
-      '<div class="field"><label>' + esc(r.servings.unit.charAt(0).toUpperCase() + r.servings.unit.slice(1)) + '</label>' +
-        '<input type="number" id="sched-servings" min="0.5" step="0.5" value="' + serv + '" ' +
-        'onfocus="Actions.onSchedFieldFocus()" ' +
-        'onchange="Actions.setScheduleField(\\'servings\\', this.value)" /></div>' +
-    '</div>' +
+    (meal
+      ? '<div class="meal-invite"><span class="grow">' + icon("users", 15) +
+          ' You are bringing this to <b>' + esc(meal.title) + '</b> on ' +
+          esc(shortDate(meal.date)) + '. Only ' + esc(meal.ownerLabel) +
+          ' can move the day.</span></div>'
+      : SchedStripHTML(date, d.entryId || null)) +
+    (meal
+      ? '<div id="sched-fields">' + servingsField + '</div>'
+      : '<div class="row2" id="sched-fields">' +
+          '<div class="field"><label>Day</label>' +
+            '<input type="date" id="sched-date" value="' + esc(date) + '" ' +
+            'onfocus="Actions.onSchedFieldFocus()" ' +
+            'onchange="Actions.setScheduleField(\\'date\\', this.value)" /></div>' +
+          servingsField +
+        '</div>') +
     '<div class="step-block"><div class="step-label">Ingredients at ' + serv + ' ' +
       esc(r.servings.unit) + '</div>' + ing + '</div>' +
     '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
@@ -3888,6 +4282,193 @@ function GroceryHelpModalHTML() {
       '<li><b>Merge common ingredients</b> folds together two spellings of the same thing and adds the amounts up.</li>' +
     '</ul>' +
     '<div class="edit-actions"><button class="btn btn-primary" onclick="Actions.closeModal()">Got it</button></div>');
+}
+
+/* The paragraph that used to sit at the top of the Groceries tab. It was four
+   lines of standing instruction above the two fields it explains, which is
+   three lines too many once you have read it once. */
+function GroceriesHelpModalHTML() {
+  return modalShell("How groceries work",
+    '<ul class="help-list">' +
+      '<li>The <b>first</b> and <b>last day</b> are the days you are <b>shopping for</b> — not the day you go.</li>' +
+      '<li>Everything on the calendar between those two days, inclusive, is added up into one list.</li>' +
+      '<li>That includes dishes you have signed up to bring to a <b>Community Meal</b>, at the servings you committed to.</li>' +
+      '<li><b>Staples</b> are the things your kitchen always has. They are left off every new list.</li>' +
+      '<li>Building a list twice from the same days gives you the same list again — ticking things off one does not change the other.</li>' +
+    '</ul>' +
+    '<div class="edit-actions"><button class="btn btn-primary" onclick="Actions.closeModal()">Got it</button></div>');
+}
+
+function CalendarHelpModalHTML() {
+  return modalShell("How the calendar works",
+    '<ul class="help-list">' +
+      '<li>Recipes are scheduled from the <b>Recipes tab</b> — open one and use <b>Schedule this recipe</b>.</li>' +
+      '<li>Whatever you schedule shows up here, and its ingredients feed the <b>Groceries tab</b> when you build a list for those days.</li>' +
+      '<li>A <b>Community Meal</b> is a meal cooked between cookbooks. Invite friends, and everyone says what they are bringing.</li>' +
+      '<li>Dishes you sign up to bring land on your own calendar too, <b>in blue</b>, so they reach your shopping list like anything else.</li>' +
+      '<li>Tap a day to see everything on it, or to add something to it.</li>' +
+    '</ul>' +
+    '<div class="edit-actions"><button class="btn btn-primary" onclick="Actions.closeModal()">Got it</button></div>');
+}
+
+/* ---- the community meal sheet -----------------------------------------
+   Creating and editing are the same form; the difference is whether the
+   draft carries a mealId. The guest picker is a list of friend cookbooks,
+   because a friendship is what makes somebody invitable and a cookbook is
+   what a friendship links. */
+/* What the host is bringing, chosen while the meal is still being written.
+   The meal does not exist yet, so these are held in the draft and committed
+   one by one once it does. Same two-step as the tile: pick a recipe, then say
+   how many you are making, because that number is what reaches the shopping
+   list. */
+function MealDraftDishesHTML() {
+  const dr = state.mealDraft;
+  const chosen = dr.dishes.length
+    ? '<ul class="meal-dishes">' + dr.dishes.map(function (d, i) {
+        return '<li class="meal-dish">' +
+          '<span>' + esc(d.title) + '</span>' +
+          '<span class="who">' + esc(String(d.servings)) + ' ' + esc(d.unit) +
+            ' <button class="icon-btn" title="Take this off" ' +
+            'onclick="Actions.removeMealDraftDish(' + i + ')">' + icon("x", 13) + '</button>' +
+          '</span>' +
+        '</li>';
+      }).join("") + '</ul>'
+    : "";
+  return '<div class="step-block"><div class="step-label">What you are bringing</div>' +
+    chosen +
+    '<div class="search-wrap">' +
+      '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
+        '<input id="meal-draft-search" type="text" ' +
+          'placeholder="Search everyone\\'s recipes..." value="' + esc(dr.search || "") + '" ' +
+          'oninput="Actions.onMealDishInput(\\'draft\\', this.value)" />' +
+      '</div>' +
+    '</div>' +
+    '<div id="meal-results-draft">' + MealDraftResultsHTML() + '</div>' +
+  '</div>';
+}
+
+function MealDraftResultsHTML() {
+  const dr = state.mealDraft;
+  if (!dr) return "";
+  const pick = dr.pick;
+  if (pick) {
+    const r = recipeById(pick.recipeId);
+    const clash = dr.dishes.filter(function (d) {
+      return d.title.trim().toLowerCase() === pick.title.trim().toLowerCase();
+    }).length;
+    return (clash
+      ? '<div class="meal-dup">You already have ' + esc(pick.title) + ' on the list.</div>' : "") +
+      '<div class="meal-dish-pick">' +
+        '<span class="name">' + esc(pick.title) + '</span>' +
+        '<input type="number" step="any" min="0" id="meal-serv-draft" ' +
+          'aria-label="How many ' + esc(r ? r.servings.unit : "servings") + '" ' +
+          'value="' + esc(String(pick.servings)) + '" />' +
+        '<span style="font-size:12.5px;color:var(--ink-muted)">' +
+          esc(r ? r.servings.unit : "servings") + '</span>' +
+        '<button class="btn btn-sm btn-meal" onclick="Actions.addMealDraftDish()">' +
+          icon("plus", 14) + ' Add</button>' +
+        '<button class="btn btn-sm btn-ghost" onclick="Actions.clearMealDishPick(\\'draft\\')">' +
+          'Cancel</button>' +
+      '</div>';
+  }
+  const q = String(dr.search || "");
+  if (!q.trim()) return "";
+  const all = mealDishMatches(q);
+  if (all.length === 0) return '<p class="no-rating">Nothing matches "' + esc(q.trim()) + '".</p>';
+  return '<ul class="groc-list">' + all.slice(0, MEAL_RESULT_MAX).map(function (r) {
+      return '<li class="groc-entry">' +
+        '<button class="groc-entry-main" onclick="Actions.pickMealDish(\\'draft\\',\\'' +
+          r.recipeId + '\\')">' +
+          '<div class="groc-entry-label">' + esc(r.title) + '</div>' +
+          '<div class="groc-entry-sub">' + esc(r.household) + '</div>' +
+        '</button>' +
+        '<span style="color:var(--ink-muted);flex-shrink:0">' + icon("plus", 16) + '</span>' +
+      '</li>';
+    }).join("") + '</ul>' +
+    (all.length > MEAL_RESULT_MAX
+      ? '<p class="no-rating">' + (all.length - MEAL_RESULT_MAX) + ' more — keep typing.</p>' : "");
+}
+
+function MealModalHTML() {
+  const dr = state.mealDraft;
+  if (!dr) return modalShell("Community Meal", "");
+  const editing = !!dr.mealId;
+  const picked = {};
+  (dr.guests || []).forEach(function (u) { picked[u.toLowerCase()] = 1; });
+  const friends = state.friends.length
+    ? state.friends.map(function (f) {
+        /* One row per cookbook, keyed on any one of its members - inviting a
+           cookbook invites everybody in it, which is what the sub-line says
+           where a cookbook has more than one person in it. */
+        const key = f.members[0] || "";
+        if (!key) return "";
+        const on = !!picked[key.toLowerCase()];
+        return '<button class="pick-row' + (on ? " on" : "") + '" ' +
+          'onclick="Actions.toggleMealGuest(\\'' + esc(key) + '\\')">' +
+          esc(f.label) +
+          (f.members.length > 1
+            ? '<div class="friend-sub">One cookbook — all of them are invited</div>' : "") +
+        '</button>';
+      }).join("")
+    : '<p class="helper-text">No friends yet. Add someone on the Friends page first — a ' +
+        'community meal is cooked between cookbooks that are already linked.</p>';
+  return modalShell(editing ? "Edit this meal" : "New Community Meal",
+    (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
+    '<div class="field"><label>What is it called</label>' +
+      '<input type="text" id="meal-title" maxlength="120" placeholder="Sunday cookout" ' +
+        'value="' + esc(dr.title) + '" /></div>' +
+    '<div class="groc-range">' +
+      '<div class="field"><label>Day</label>' +
+        '<input type="date" id="meal-date" value="' + esc(dr.date) + '" /></div>' +
+      '<div class="field"><label>Time</label>' +
+        '<input type="time" id="meal-time" value="' + esc(dr.time) + '" /></div>' +
+    '</div>' +
+    '<div class="step-block"><div class="step-label">Who to invite</div>' +
+      '<div class="pick-list">' + friends + '</div>' +
+    '</div>' +
+    (editing ? "" : MealDraftDishesHTML()) +
+    (editing
+      ? '<p class="helper-text">Moving the day moves everyone\\'s dishes with it, on their ' +
+          'calendars as well as yours.</p>'
+      : '<p class="helper-text">You can say what you are bringing once the meal exists — and ' +
+          'so can everyone who accepts.</p>') +
+    '<div class="edit-actions">' +
+      '<button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="Actions.saveMeal()">' +
+        (editing ? "Save changes" : "Create meal") + '</button>' +
+    '</div>');
+}
+
+/* Inviting more people to a meal that already exists. Anyone already on it
+   is shown but not selectable, so the list reads as the whole guest list
+   rather than as a puzzle about who is missing from it. */
+function MealGuestsModalHTML() {
+  const m = mealById(state.mealDraft && state.mealDraft.mealId);
+  if (!m) return modalShell("Invite", "");
+  const already = {};
+  m.guests.forEach(function (g) { already[g.label] = g.status; });
+  const picked = {};
+  (state.mealDraft.guests || []).forEach(function (u) { picked[u.toLowerCase()] = 1; });
+  const rows = state.friends.map(function (f) {
+    const key = f.members[0] || "";
+    if (!key) return "";
+    if (already[f.label]) {
+      return '<div class="pick-row" style="opacity:.55">' + esc(f.label) +
+        '<div class="friend-sub">' +
+          (already[f.label] === "accepted" ? "Already coming" : "Already asked") +
+        '</div></div>';
+    }
+    const on = !!picked[key.toLowerCase()];
+    return '<button class="pick-row' + (on ? " on" : "") + '" ' +
+      'onclick="Actions.toggleMealGuest(\\'' + esc(key) + '\\')">' + esc(f.label) + '</button>';
+  }).join("");
+  return modalShell("Invite to " + m.title,
+    (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
+    '<div class="pick-list">' + (rows || '<p class="helper-text">Nobody left to invite.</p>') + '</div>' +
+    '<div class="edit-actions">' +
+      '<button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="Actions.sendMealInvites()">Send invitations</button>' +
+    '</div>');
 }
 
 function RenameListModalHTML() {
@@ -4215,6 +4796,10 @@ function renderModal() {
   else if (state.modal === "addGroceryItem") root.innerHTML = AddGroceryItemModalHTML();
   else if (state.modal === "renameList") root.innerHTML = RenameListModalHTML();
   else if (state.modal === "groceryHelp") root.innerHTML = GroceryHelpModalHTML();
+  else if (state.modal === "groceriesHelp") root.innerHTML = GroceriesHelpModalHTML();
+  else if (state.modal === "calendarHelp") root.innerHTML = CalendarHelpModalHTML();
+  else if (state.modal === "meal") root.innerHTML = MealModalHTML();
+  else if (state.modal === "mealGuests") root.innerHTML = MealGuestsModalHTML();
   else if (state.modal === "mergeCommon") root.innerHTML = MergeCommonModalHTML();
   else if (state.modal === "exclusions") root.innerHTML = ExclusionsModalHTML();
   else if (state.modal === "conflict") root.innerHTML = ConflictModalHTML();
@@ -4387,6 +4972,21 @@ Actions.openNotification = function(id) {
     state.search = "";
     state.view = "library";
     renderApp();
+    return;
+  }
+  if (n.kind === "meal") {
+    if (!mealById(n.mealId)) {
+      toast("That meal is no longer there");
+      renderApp();
+      return;
+    }
+    /* The calendar, with the one tile it was about marked and brought into
+       view - the meals list can be long, and an invitation that lands you at
+       the top of it has not really taken you anywhere. */
+    state.view = "calendar";
+    state.mealFocus = n.mealId;
+    renderApp();
+    scrollToMeal(n.mealId);
     return;
   }
   if (!state.recipes.some(function (r) { return r.recipeId === n.recipeId; })) {
@@ -5157,8 +5757,11 @@ function repaintCalendarGrid(el, shift) {
   if (!grid) return;
   const today = localToday();
   let cells = "";
+  /* Worked out once for the whole grid rather than per square: it is a walk
+     over every dish on every meal, and there are a few hundred squares. */
+  const mealEntries = mealEntryIds();
   calWeekStarts().forEach(function (ws) {
-    for (let i = 0; i < 7; i++) cells += CalCellHTML(addDays(ws, i), today);
+    for (let i = 0; i < 7; i++) cells += CalCellHTML(addDays(ws, i), today, mealEntries);
   });
   const at = el.scrollTop;
   grid.innerHTML = cells;
@@ -5345,6 +5948,290 @@ Actions.addToCalendar = async function() {
     renderApp();
   }
 };
+/* ---- community meals --------------------------------------------------
+   Every one of these re-reads the library afterwards rather than patching
+   state by hand. A meal is shared between cookbooks, so our copy of it is
+   only ever a snapshot: the moment we change anything, the authoritative
+   version is the server's. Patching locally would be guessing at what four
+   other people did in the meantime. */
+Actions.openNewMeal = function() {
+  if (!state.friends.length) {
+    toast("Add a friend first — a community meal is cooked between cookbooks");
+    return;
+  }
+  state.mealDraft = {
+    mealId: null, title: "", date: localToday(), time: "18:00",
+    guests: [], dishes: [], search: "", pick: null
+  };
+  state.modalError = "";
+  Actions.openModal("meal");
+};
+Actions.openEditMeal = function(mealId) {
+  const m = mealById(mealId);
+  if (!m) return;
+  state.mealDraft = {
+    mealId: mealId, title: m.title, date: m.date, time: m.time || "",
+    guests: [], dishes: [], search: "", pick: null
+  };
+  state.modalError = "";
+  Actions.openModal("meal");
+};
+Actions.toggleMealGuest = function(username) {
+  const dr = state.mealDraft;
+  if (!dr) return;
+  /* The form is re-read before the list is redrawn, or typing a title and
+     then picking a guest would lose the title. */
+  readMealDraftFields();
+  const at = dr.guests.map(u => u.toLowerCase()).indexOf(String(username).toLowerCase());
+  if (at >= 0) dr.guests.splice(at, 1); else dr.guests.push(username);
+  renderModal();
+};
+function readMealDraftFields() {
+  const dr = state.mealDraft;
+  if (!dr) return;
+  const t = document.getElementById("meal-title");
+  const d = document.getElementById("meal-date");
+  const h = document.getElementById("meal-time");
+  if (t) dr.title = t.value;
+  if (d) dr.date = d.value;
+  if (h) dr.time = h.value;
+}
+Actions.saveMeal = async function() {
+  const dr = state.mealDraft;
+  if (!dr) return;
+  readMealDraftFields();
+  const title = String(dr.title || "").trim();
+  if (!title) { state.modalError = "Give the meal a name."; renderModal(); return; }
+  if (!dr.date) { state.modalError = "Pick a day."; renderModal(); return; }
+  try {
+    if (dr.mealId) {
+      await API("meal/update", { mealId: dr.mealId, title, date: dr.date, time: dr.time || "" });
+    } else {
+      const made = await API("meal/create", {
+        title, date: dr.date, time: dr.time || "", guests: dr.guests
+      });
+      /* The dishes were staged against a meal that did not exist yet, so
+         they are committed one at a time now that it does. A dish that fails
+         is reported and the rest still go: the meal itself is already made,
+         and losing all of them over one missing recipe would be worse. */
+      const missed = [];
+      for (const d of dr.dishes) {
+        try {
+          await API("meal/dish/add", {
+            mealId: made.mealId, recipeId: d.recipeId, servings: d.servings
+          });
+        } catch (e) { missed.push(d.title); }
+      }
+      if (missed.length) toast("Could not add " + missed.join(", "));
+    }
+    state.modal = null;
+    state.modalError = "";
+    state.mealDraft = null;
+    await refreshLibrary(false);
+    toast(dr.mealId ? "Meal updated" : "Meal created");
+  } catch (err) {
+    state.modalError = err.message;
+    renderModal();
+    return;
+  }
+  renderApp();
+};
+Actions.openMealGuests = function(mealId) {
+  const m = mealById(mealId);
+  if (!m) return;
+  state.mealDraft = { mealId: mealId, guests: [], dishes: [], search: "", pick: null };
+  state.modalError = "";
+  Actions.openModal("mealGuests");
+};
+Actions.sendMealInvites = async function() {
+  const dr = state.mealDraft;
+  if (!dr || !dr.mealId) return;
+  if (!dr.guests.length) { state.modalError = "Pick somebody to invite."; renderModal(); return; }
+  try {
+    await API("meal/invite", { mealId: dr.mealId, guests: dr.guests });
+    state.modal = null;
+    state.modalError = "";
+    state.mealDraft = null;
+    await refreshLibrary(false);
+    toast("Invitations sent");
+  } catch (err) {
+    state.modalError = err.message;
+    renderModal();
+    return;
+  }
+  renderApp();
+};
+Actions.uninviteGuest = async function(mealId, label) {
+  const m = mealById(mealId);
+  if (!m) return;
+  /* The tile shows household labels; the API wants a username. Any member of
+     that cookbook identifies it, so the friend list is walked to find one. */
+  const f = state.friends.filter(x => x.label === label)[0];
+  const who = f ? (f.members[0] || "") : "";
+  if (!who) { toast("Cannot un-invite them from here"); return; }
+  if (!confirm("Take back " + label + "'s invitation to " + m.title + "?")) return;
+  try {
+    await API("meal/uninvite", { mealId, guest: who });
+    await refreshLibrary(false);
+    toast("Invitation withdrawn");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+Actions.respondMeal = async function(mealId, answer) {
+  const m = mealById(mealId);
+  if (!m) return;
+  if (answer === "decline" && !confirm("Decline " + m.title + "? It will come off your calendar.")) return;
+  try {
+    await API("meal/respond", { mealId, answer });
+    await refreshLibrary(false);
+    toast(answer === "accept" ? "You are going" : "Declined");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+Actions.leaveMeal = async function(mealId) {
+  const m = mealById(mealId);
+  if (!m) return;
+  if (!confirm("Take yourself off " + m.title + "? Anything you signed up to bring comes off " +
+    "your calendar too.")) return;
+  try {
+    await API("meal/leave", { mealId });
+    await refreshLibrary(false);
+    toast("Taken off the meal");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+Actions.cancelMeal = async function(mealId) {
+  const m = mealById(mealId);
+  if (!m) return;
+  if (!confirm("Cancel " + m.title + " for everyone? Every guest's dishes come off their " +
+    "calendars as well as yours. This cannot be undone.")) return;
+  try {
+    await API("meal/cancel", { mealId });
+    await refreshLibrary(false);
+    toast("Meal cancelled");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+/* Bring a tile into view and let the ring fade once it has been seen. The
+   highlight is a pointer, not a state - leaving it on would mean every later
+   visit to the calendar still had one tile shouting. */
+function scrollToMeal(mealId) {
+  setTimeout(function () {
+    const el = document.getElementById("meal-" + mealId);
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(function () {
+      if (state.mealFocus !== mealId) return;
+      state.mealFocus = null;
+      const still = document.getElementById("meal-" + mealId);
+      if (still && still.classList) still.classList.remove("meal-focus");
+    }, 2600);
+  }, 60);
+}
+Actions.toggleMealPast = function(mealId) {
+  state.mealPastOpen[mealId] = !state.mealPastOpen[mealId];
+  renderApp();
+};
+
+/* ---- signing up to bring something ----
+   Typing must not redraw the page or the field loses focus mid-word, so the
+   results are replaced by hand exactly as the day sheet's search does. */
+Actions.onMealDishInput = function(mealId, v) {
+  /* "draft" is the sheet where a meal is still being written. It has no id
+     yet, so its search lives on the draft rather than in the per-meal map. */
+  if (mealId === "draft") {
+    if (!state.mealDraft) return;
+    state.mealDraft.search = v;
+    state.mealDraft.pick = null;
+    const box = document.getElementById("meal-results-draft");
+    if (box) box.innerHTML = MealDraftResultsHTML();
+    return;
+  }
+  state.mealDishSearch[mealId] = v;
+  state.mealDishPick[mealId] = null;
+  const box = document.getElementById("meal-results-" + mealId);
+  const m = mealById(mealId);
+  if (box && m) box.innerHTML = MealDishResultsHTML(m);
+};
+Actions.pickMealDish = function(mealId, recipeId) {
+  const r = recipeById(recipeId);
+  if (!r) { toast("That recipe is no longer there"); return; }
+  const pick = { recipeId: recipeId, title: r.title, servings: r.servings.base || 1 };
+  if (mealId === "draft") {
+    if (!state.mealDraft) return;
+    readMealDraftFields();
+    state.mealDraft.pick = pick;
+    renderModal();
+    return;
+  }
+  state.mealDishPick[mealId] = pick;
+  renderApp();
+};
+Actions.clearMealDishPick = function(mealId) {
+  if (mealId === "draft") {
+    if (!state.mealDraft) return;
+    readMealDraftFields();
+    state.mealDraft.pick = null;
+    renderModal();
+    return;
+  }
+  state.mealDishPick[mealId] = null;
+  renderApp();
+};
+Actions.addMealDraftDish = function() {
+  const dr = state.mealDraft;
+  if (!dr || !dr.pick) return;
+  readMealDraftFields();
+  const field = document.getElementById("meal-serv-draft");
+  const servings = Number(field ? field.value : dr.pick.servings);
+  if (!(servings > 0)) { toast("How many are you making?"); return; }
+  const r = recipeById(dr.pick.recipeId);
+  dr.dishes.push({
+    recipeId: dr.pick.recipeId, title: dr.pick.title, servings: servings,
+    unit: r ? r.servings.unit : "servings"
+  });
+  dr.pick = null;
+  dr.search = "";
+  renderModal();
+};
+Actions.removeMealDraftDish = function(i) {
+  const dr = state.mealDraft;
+  if (!dr) return;
+  readMealDraftFields();
+  dr.dishes.splice(i, 1);
+  renderModal();
+};
+Actions.addMealDish = async function(mealId) {
+  const pick = state.mealDishPick[mealId];
+  const m = mealById(mealId);
+  if (!pick || !m) return;
+  const field = document.getElementById("meal-serv-" + mealId);
+  const servings = Number(field ? field.value : pick.servings);
+  if (!(servings > 0)) { toast("How many are you making?"); return; }
+  /* Two people bringing the same thing is allowed. It is worth saying out
+     loud first, because at a table it is usually an accident. */
+  const clash = m.dishes.filter(function (d) {
+    return String(d.title).trim().toLowerCase() === String(pick.title).trim().toLowerCase();
+  }).length;
+  if (clash && !confirm("Somebody is already bringing " + pick.title +
+    ". Add it anyway? The tile will read \\"Lots of " + pick.title + "\\".")) return;
+  try {
+    await API("meal/dish/add", { mealId, recipeId: pick.recipeId, servings });
+    state.mealDishPick[mealId] = null;
+    state.mealDishSearch[mealId] = "";
+    await refreshLibrary(false);
+    toast("On the table, and on your calendar");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+Actions.removeMealDish = async function(mealId, dishId) {
+  try {
+    await API("meal/dish/remove", { mealId, dishId });
+    await refreshLibrary(false);
+    toast("Taken off");
+  } catch (err) { toast(err.message); }
+  renderApp();
+};
+
 Actions.unschedule = async function(entryId) {
   const e = entryById(entryId);
   if (!e) return;
@@ -6213,6 +7100,8 @@ const newRecipeId = () => randomFrom(RECIPE_ALPHABET, 14);
 const newCommentId = () => randomFrom(RECIPE_ALPHABET, 16);
 const newEntryId = () => randomFrom(RECIPE_ALPHABET, 16);
 const newListId = () => randomFrom(RECIPE_ALPHABET, 16);
+const newMealId = () => randomFrom(RECIPE_ALPHABET, 16);
+const newDishId = () => randomFrom(RECIPE_ALPHABET, 16);
 
 const USERNAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,19}$/;
 const COOKBOOK_RE = /^[A-Z0-9]{10}$/;
@@ -6412,7 +7301,34 @@ const LATER_TABLES = [
      staples you never need to be told to buy are a property of the kitchen,
      not of whoever happened to press Build list. */
   "CREATE TABLE IF NOT EXISTS cookbook_prefs ( cookbook_id TEXT PRIMARY KEY, " +
-    "exclusions TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL )"
+    "exclusions TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL )",
+  /* A meal cooked between cookbooks. Owned by a cookbook rather than a
+     person, like everything else here, so either half of a household can run
+     it. The date and time are plain local strings with no zone: a dinner is
+     at six wherever you are reading about it from. */
+  "CREATE TABLE IF NOT EXISTS community_meals ( meal_id TEXT PRIMARY KEY, owner_cb TEXT NOT NULL, " +
+    "title TEXT NOT NULL DEFAULT '', on_date TEXT NOT NULL, at_time TEXT NOT NULL DEFAULT '', " +
+    "created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )",
+  "CREATE INDEX IF NOT EXISTS idx_meals_owner ON community_meals(owner_cb, on_date)",
+  /* One row per cookbook on the guest list, the owner included. Membership is
+     what grants sight of the meal, which is why two guests who have never
+     met can still read each other's names off the same tile. */
+  "CREATE TABLE IF NOT EXISTS meal_guests ( meal_id TEXT NOT NULL, cookbook_id TEXT NOT NULL, " +
+    "status TEXT NOT NULL, invited_by TEXT NOT NULL, responded_by TEXT, updated_at TEXT NOT NULL, " +
+    "PRIMARY KEY (meal_id, cookbook_id) )",
+  "CREATE INDEX IF NOT EXISTS idx_mguests_cb ON meal_guests(cookbook_id, status)",
+  /* What somebody is bringing. entry_id points at the schedule_entries row
+     the commitment created, which is how the dish reaches the cook's own
+     calendar and from there the shopping list. The reference hangs off this
+     side rather than adding a column to schedule_entries, so the table that
+     is already live in production is never altered. The title is a snapshot
+     for the same reason the calendar keeps one: a guest can read what
+     somebody is bringing without being able to open the recipe. */
+  "CREATE TABLE IF NOT EXISTS meal_dishes ( dish_id TEXT PRIMARY KEY, meal_id TEXT NOT NULL, " +
+    "cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', " +
+    "entry_id TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL )",
+  "CREATE INDEX IF NOT EXISTS idx_mdishes_meal ON meal_dishes(meal_id)",
+  "CREATE INDEX IF NOT EXISTS idx_mdishes_entry ON meal_dishes(entry_id)"
 ];
 
 /* What a kitchen is assumed to have until it says otherwise. Seeded on read
@@ -6430,11 +7346,123 @@ async function ensureSchema(env) {
 
 const MARK_KINDS = ["pin", "star", "later"];
 
+/* Every meal this cookbook is on the guest list for, with its whole guest
+   list and everything anyone is bringing. Membership is the only permission
+   involved: two guests who are not friends still read the same tile, because
+   a shared dinner is not a private thing between each pair of people at it.
+   What crosses that line is deliberately narrow - a household name and a
+   dish title. No recipe, no servings, no cookbook contents. */
+async function mealsFor(env, cookbookId) {
+  const mine = (await env.DB.prepare(
+    "SELECT meal_id, status, updated_at FROM meal_guests " +
+    "WHERE cookbook_id = ? AND status != 'declined'"
+  ).bind(cookbookId).all()).results || [];
+  if (!mine.length) return { meals: [], cookbooks: [] };
+  const ids = mine.map(r => r.meal_id);
+  const myStatus = {}, myAt = {};
+  for (const r of mine) { myStatus[r.meal_id] = r.status; myAt[r.meal_id] = r.updated_at; }
+
+  const metaRows = (await env.DB.prepare(
+    "SELECT meal_id, owner_cb, title, on_date, at_time, created_by, created_at, updated_at " +
+    "FROM community_meals WHERE meal_id IN (" + placeholders(ids.length) + ")"
+  ).bind(...ids).all()).results || [];
+  const guestRows = (await env.DB.prepare(
+    "SELECT meal_id, cookbook_id, status FROM meal_guests WHERE meal_id IN (" +
+    placeholders(ids.length) + ")"
+  ).bind(...ids).all()).results || [];
+  const dishRows = (await env.DB.prepare(
+    "SELECT dish_id, meal_id, cookbook_id, recipe_id, title, entry_id, created_by, created_at " +
+    "FROM meal_dishes WHERE meal_id IN (" + placeholders(ids.length) + ") ORDER BY created_at"
+  ).bind(...ids).all()).results || [];
+
+  /* Guest cookbooks need names, and they are not necessarily friends of
+     ours, so they are collected here rather than borrowed from the friend
+     list the library already built. */
+  const cookbooks = Array.from(new Set(
+    metaRows.map(r => r.owner_cb).concat(guestRows.map(r => r.cookbook_id), dishRows.map(r => r.cookbook_id))
+  ));
+  return { meals: { metaRows, guestRows, dishRows, myStatus, myAt }, cookbooks };
+}
+
+/* The rows above, shaped for the client once labels are known. */
+function shapeMeals(raw, labelFor, cookbookId) {
+  if (!raw || !raw.metaRows) return [];
+  const { metaRows, guestRows, dishRows, myStatus, myAt } = raw;
+  const byMeal = {}, dishesBy = {};
+  for (const g of guestRows) (byMeal[g.meal_id] = byMeal[g.meal_id] || []).push(g);
+  for (const d of dishRows) (dishesBy[d.meal_id] = dishesBy[d.meal_id] || []).push(d);
+  return metaRows.map(m => ({
+    mealId: m.meal_id,
+    title: m.title,
+    date: m.on_date,
+    time: m.at_time,
+    ownerLabel: labelFor(m.owner_cb),
+    ours: m.owner_cb === cookbookId,
+    myStatus: myStatus[m.meal_id] || "invited",
+    /* When our seat was last written. An invitation reopened after a decline
+       gets a fresh stamp, so a notification cleared the first time round does
+       not swallow the second asking. */
+    seatAt: (myAt && myAt[m.meal_id]) || m.created_at,
+    createdBy: m.created_by,
+    createdAt: m.created_at,
+    guests: (byMeal[m.meal_id] || [])
+      .map(g => ({ label: labelFor(g.cookbook_id), status: g.status, mine: g.cookbook_id === cookbookId }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
+    dishes: (dishesBy[m.meal_id] || []).map(d => ({
+      dishId: d.dish_id,
+      label: labelFor(d.cookbook_id),
+      by: d.created_by,
+      title: d.title,
+      /* A dish brought by somebody else is a title and nothing more: the
+         recipe id would only invite a tap that cannot open anything. */
+      recipeId: d.cookbook_id === cookbookId ? d.recipe_id : null,
+      entryId: d.cookbook_id === cookbookId ? d.entry_id : null,
+      mine: d.cookbook_id === cookbookId
+    }))
+  })).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+}
+
+/* Guest rows for one meal, and whether this cookbook may act on it. */
+async function mealSeat(env, mealId, cookbookId) {
+  const meal = await env.DB.prepare(
+    "SELECT meal_id, owner_cb, title, on_date, at_time FROM community_meals WHERE meal_id = ?"
+  ).bind(mealId).first();
+  if (!meal) throw new ApiError(404, "That meal is gone.");
+  const seat = await env.DB.prepare(
+    "SELECT status FROM meal_guests WHERE meal_id = ? AND cookbook_id = ?"
+  ).bind(mealId, cookbookId).first();
+  if (!seat) throw new ApiError(403, "You are not on that meal.");
+  return { meal, status: seat.status, isOwner: meal.owner_cb === cookbookId };
+}
+
+/* Dropping a cookbook from a meal takes its dishes and, with them, the
+   calendar entries those dishes created. The commitment and the booking are
+   one thing, so they leave together. */
+async function dropMealCookbook(env, mealId, cookbookId) {
+  const dishes = (await env.DB.prepare(
+    "SELECT dish_id, entry_id FROM meal_dishes WHERE meal_id = ? AND cookbook_id = ?"
+  ).bind(mealId, cookbookId).all()).results || [];
+  const entries = dishes.map(d => d.entry_id).filter(Boolean);
+  if (entries.length) {
+    await env.DB.prepare(
+      "DELETE FROM schedule_entries WHERE entry_id IN (" + placeholders(entries.length) + ")"
+    ).bind(...entries).run();
+  }
+  await env.DB.prepare(
+    "DELETE FROM meal_dishes WHERE meal_id = ? AND cookbook_id = ?"
+  ).bind(mealId, cookbookId).run();
+}
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_SCHEDULE_ENTRIES = 2000;
 const MAX_GROCERY_LISTS = 200;
 const MAX_GROCERY_ITEMS = 400;
 const MAX_GROCERY_SEGMENTS = 8;
+const MAX_MEALS = 300;
+const MAX_MEAL_GUESTS = 40;
+const MAX_MEAL_DISHES = 60;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MEAL_STATUSES = ["owner", "invited", "accepted", "declined"];
 
 /* Can this cookbook read this recipe at all? Its own, one a linked cookbook
    shares with friends, or one handed to it individually. This is the same
@@ -6647,16 +7675,25 @@ async function handleApi(route, body, env, request) {
       "WHERE addressee_cb = ? AND status = 'declined'"
     ).bind(me.cookbookId).all()).results || [];
 
+    /* Guest cookbooks on a shared meal need names too, and they are not
+       necessarily friends of ours, so they are folded into the same lookup
+       rather than fetched separately. */
+    const mealRaw = await mealsFor(env, me.cookbookId);
+
     const memberMap = await membersOf(env, [me.cookbookId].concat(
       friendCbs,
       pendingIn.map(r => r.requester_cb),
       pendingOut.map(r => r.addressee_cb),
-      declinedRows.map(r => r.requester_cb)
+      declinedRows.map(r => r.requester_cb),
+      mealRaw.cookbooks
     ));
 
     const labelFor = {};
     labelFor[me.cookbookId] = householdLabel(memberMap[me.cookbookId] || [me.username]);
     for (const cb of friendCbs) labelFor[cb] = householdLabel(memberMap[cb] || []);
+    /* Recipes are only ever labelled from labelFor, which is friends-only on
+       purpose. Meals need a wider one, so they get their own reader. */
+    const mealLabel = (cb) => labelFor[cb] || householdLabel(memberMap[cb] || []) || "Someone";
 
     let sql = "SELECT recipe_id, cookbook_id, owner_username, visibility, data, created_at, updated_at, updated_by " +
       "FROM recipes WHERE cookbook_id = ?";
@@ -6778,6 +7815,7 @@ async function handleApi(route, body, env, request) {
       marks,
       shares,
       schedule,
+      meals: shapeMeals(mealRaw.meals, mealLabel, me.cookbookId),
       groceryLists,
       exclusions,
       mates,
@@ -6878,10 +7916,19 @@ async function handleApi(route, body, env, request) {
       "SELECT entry_id FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
     ).bind(entryId, me.cookbookId).first();
     if (!row) throw new ApiError(404, "That booking is gone.");
+    /* A dish you are bringing to a community meal is pinned to the meal's
+       day. The servings are yours to change; the day belongs to the host.
+       The client hides the field, and this is the same rule stated where it
+       cannot be got round. */
+    const dish = await env.DB.prepare(
+      "SELECT d.dish_id, m.on_date FROM meal_dishes d " +
+      "JOIN community_meals m ON m.meal_id = d.meal_id WHERE d.entry_id = ?"
+    ).bind(entryId).first();
+    const onDate = dish ? dish.on_date : date;
     await env.DB.prepare(
       "UPDATE schedule_entries SET on_date = ?, servings = ? WHERE entry_id = ? AND cookbook_id = ?"
-    ).bind(date, servings, entryId, me.cookbookId).run();
-    return jsonResponse({ entryId, date, servings });
+    ).bind(onDate, servings, entryId, me.cookbookId).run();
+    return jsonResponse({ entryId, date: onDate, servings, meal: !!dish });
   }
 
   if (route === "schedule/remove") {
@@ -6889,7 +7936,267 @@ async function handleApi(route, body, env, request) {
     await env.DB.prepare(
       "DELETE FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
     ).bind(entryId, me.cookbookId).run();
-    return jsonResponse({ entryId, removed: true });
+    /* Unscheduling a community-meal dish from your own calendar is the same
+       act as taking it off the tile - there is one commitment, reachable
+       from two places, and it cannot survive in half. */
+    const dish = await env.DB.prepare(
+      "SELECT dish_id FROM meal_dishes WHERE entry_id = ? AND cookbook_id = ?"
+    ).bind(entryId, me.cookbookId).first();
+    if (dish) {
+      await env.DB.prepare("DELETE FROM meal_dishes WHERE dish_id = ?").bind(dish.dish_id).run();
+    }
+    return jsonResponse({ entryId, removed: true, meal: !!dish });
+  }
+
+  /* ---- community meals ----
+     A meal is owned by a cookbook and seen by its guests. Every route below
+     re-reads the seat rather than trusting the client about it, because the
+     guest list is the whole of the permission model here. */
+
+  /* Invite by username, resolved to that person's cookbook and checked
+     against the friend list - the same shape as sending a friend request, so
+     you can only ever put a meal in front of somebody already linked to you. */
+  async function resolveGuestCookbooks(names, meCb) {
+    const friendCbs = await friendCookbooks(env, meCb);
+    const allowed = new Set(friendCbs);
+    const out = [];
+    for (const raw of (Array.isArray(names) ? names : [])) {
+      const name = cleanString(raw, 40);
+      if (!name) continue;
+      const row = await env.DB.prepare(
+        "SELECT cookbook_id FROM users WHERE username_lc = ?"
+      ).bind(name.toLowerCase()).first();
+      if (!row) throw new ApiError(404, "There is nobody here called " + name + ".");
+      if (row.cookbook_id === meCb) continue;              /* already the host */
+      if (!allowed.has(row.cookbook_id)) {
+        throw new ApiError(403, "You can only invite people you are friends with.");
+      }
+      if (out.indexOf(row.cookbook_id) < 0) out.push(row.cookbook_id);
+    }
+    return out;
+  }
+
+  if (route === "meal/create") {
+    const title = cleanString(body.title, 120) || "Community Meal";
+    const date = cleanString(body.date, 10);
+    const time = cleanString(body.time, 5);
+    if (!DATE_RE.test(date)) throw new ApiError(400, "That is not a day.");
+    if (time && !TIME_RE.test(time)) throw new ApiError(400, "That is not a time.");
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM community_meals WHERE owner_cb = ?"
+    ).bind(me.cookbookId).first();
+    if (count && count.n >= MAX_MEALS) {
+      throw new ApiError(409, "That is as many meals as one cookbook can host. Clear some older ones first.");
+    }
+    const guests = await resolveGuestCookbooks(body.guests, me.cookbookId);
+    if (guests.length > MAX_MEAL_GUESTS) {
+      throw new ApiError(409, "That is more guests than one meal will hold.");
+    }
+    const mealId = newMealId();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO community_meals (meal_id, owner_cb, title, on_date, at_time, created_by, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(mealId, me.cookbookId, title, date, time, me.username, now, now).run();
+    await env.DB.prepare(
+      "INSERT INTO meal_guests (meal_id, cookbook_id, status, invited_by, responded_by, updated_at) " +
+      "VALUES (?, ?, 'owner', ?, ?, ?)"
+    ).bind(mealId, me.cookbookId, me.username, me.username, now).run();
+    for (const cb of guests) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO meal_guests (meal_id, cookbook_id, status, invited_by, responded_by, updated_at) " +
+        "VALUES (?, ?, 'invited', ?, NULL, ?)"
+      ).bind(mealId, cb, me.username, now).run();
+    }
+    return jsonResponse({ mealId });
+  }
+
+  /* Title, day and time. Moving the day drags every guest's linked calendar
+     entry with it: the booking exists because of the meal, so it goes where
+     the meal goes rather than being left behind on a Tuesday nobody is
+     cooking any more. */
+  if (route === "meal/update") {
+    const mealId = cleanString(body.mealId, 64);
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (!seat.isOwner) throw new ApiError(403, "Only the cookbook hosting it can change a meal.");
+    const title = cleanString(body.title, 120) || seat.meal.title || "Community Meal";
+    const date = cleanString(body.date, 10);
+    const time = cleanString(body.time, 5);
+    if (!DATE_RE.test(date)) throw new ApiError(400, "That is not a day.");
+    if (time && !TIME_RE.test(time)) throw new ApiError(400, "That is not a time.");
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "UPDATE community_meals SET title = ?, on_date = ?, at_time = ?, updated_at = ? WHERE meal_id = ?"
+    ).bind(title, date, time, now, mealId).run();
+    if (date !== seat.meal.on_date) {
+      const entries = ((await env.DB.prepare(
+        "SELECT entry_id FROM meal_dishes WHERE meal_id = ? AND entry_id IS NOT NULL"
+      ).bind(mealId).all()).results || []).map(r => r.entry_id);
+      if (entries.length) {
+        await env.DB.prepare(
+          "UPDATE schedule_entries SET on_date = ? WHERE entry_id IN (" +
+          placeholders(entries.length) + ")"
+        ).bind(date, ...entries).run();
+      }
+    }
+    return jsonResponse({ mealId, title, date, time });
+  }
+
+  if (route === "meal/invite") {
+    const mealId = cleanString(body.mealId, 64);
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (!seat.isOwner) throw new ApiError(403, "Only the cookbook hosting it can invite people.");
+    const guests = await resolveGuestCookbooks(body.guests, me.cookbookId);
+    const have = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM meal_guests WHERE meal_id = ?"
+    ).bind(mealId).first();
+    if ((have ? have.n : 0) + guests.length > MAX_MEAL_GUESTS + 1) {
+      throw new ApiError(409, "That is more guests than one meal will hold.");
+    }
+    const now = new Date().toISOString();
+    for (const cb of guests) {
+      /* Somebody who said no once can be asked again - the invitation is
+         reopened rather than duplicated. */
+      await env.DB.prepare(
+        "INSERT INTO meal_guests (meal_id, cookbook_id, status, invited_by, responded_by, updated_at) " +
+        "VALUES (?, ?, 'invited', ?, NULL, ?) " +
+        "ON CONFLICT(meal_id, cookbook_id) DO UPDATE SET " +
+        "status = CASE WHEN meal_guests.status = 'declined' THEN 'invited' ELSE meal_guests.status END, " +
+        "updated_at = excluded.updated_at"
+      ).bind(mealId, cb, me.username, now).run();
+    }
+    return jsonResponse({ mealId, invited: guests.length });
+  }
+
+  /* Withdrawing an invitation, which is only a thing you can do to somebody
+     who has not answered yet. Once they have accepted they are a guest, and
+     a guest leaves under their own steam. */
+  if (route === "meal/uninvite") {
+    const mealId = cleanString(body.mealId, 64);
+    const guest = cleanString(body.guest, 40);
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (!seat.isOwner) throw new ApiError(403, "Only the cookbook hosting it can un-invite people.");
+    const row = await env.DB.prepare(
+      "SELECT cookbook_id FROM users WHERE username_lc = ?"
+    ).bind(guest.toLowerCase()).first();
+    if (!row) throw new ApiError(404, "There is nobody here called " + guest + ".");
+    if (row.cookbook_id === me.cookbookId) throw new ApiError(400, "You are hosting it.");
+    const g = await env.DB.prepare(
+      "SELECT status FROM meal_guests WHERE meal_id = ? AND cookbook_id = ?"
+    ).bind(mealId, row.cookbook_id).first();
+    if (!g) throw new ApiError(404, "They are not on that meal.");
+    if (g.status === "accepted") {
+      throw new ApiError(409, "They have already accepted. Only they can take themselves off it now.");
+    }
+    await env.DB.prepare(
+      "DELETE FROM meal_guests WHERE meal_id = ? AND cookbook_id = ?"
+    ).bind(mealId, row.cookbook_id).run();
+    return jsonResponse({ mealId, removed: true });
+  }
+
+  if (route === "meal/respond") {
+    const mealId = cleanString(body.mealId, 64);
+    const answer = cleanString(body.answer, 12);
+    if (answer !== "accept" && answer !== "decline") throw new ApiError(400, "Accept or decline.");
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (seat.isOwner) throw new ApiError(400, "You are hosting it.");
+    const now = new Date().toISOString();
+    if (answer === "decline") await dropMealCookbook(env, mealId, me.cookbookId);
+    await env.DB.prepare(
+      "UPDATE meal_guests SET status = ?, responded_by = ?, updated_at = ? " +
+      "WHERE meal_id = ? AND cookbook_id = ?"
+    ).bind(answer === "accept" ? "accepted" : "declined", me.username, now, mealId, me.cookbookId).run();
+    return jsonResponse({ mealId, status: answer === "accept" ? "accepted" : "declined" });
+  }
+
+  if (route === "meal/leave") {
+    const mealId = cleanString(body.mealId, 64);
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (seat.isOwner) throw new ApiError(400, "You are hosting it — cancel it instead.");
+    await dropMealCookbook(env, mealId, me.cookbookId);
+    await env.DB.prepare(
+      "DELETE FROM meal_guests WHERE meal_id = ? AND cookbook_id = ?"
+    ).bind(mealId, me.cookbookId).run();
+    return jsonResponse({ mealId, left: true });
+  }
+
+  /* Calling the whole thing off. Every guest's linked calendar entry goes
+     with it, theirs as well as ours. */
+  if (route === "meal/cancel") {
+    const mealId = cleanString(body.mealId, 64);
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (!seat.isOwner) throw new ApiError(403, "Only the cookbook hosting it can cancel a meal.");
+    const entries = ((await env.DB.prepare(
+      "SELECT entry_id FROM meal_dishes WHERE meal_id = ? AND entry_id IS NOT NULL"
+    ).bind(mealId).all()).results || []).map(r => r.entry_id);
+    if (entries.length) {
+      await env.DB.prepare(
+        "DELETE FROM schedule_entries WHERE entry_id IN (" + placeholders(entries.length) + ")"
+      ).bind(...entries).run();
+    }
+    await env.DB.prepare("DELETE FROM meal_dishes WHERE meal_id = ?").bind(mealId).run();
+    await env.DB.prepare("DELETE FROM meal_guests WHERE meal_id = ?").bind(mealId).run();
+    await env.DB.prepare("DELETE FROM community_meals WHERE meal_id = ?").bind(mealId).run();
+    return jsonResponse({ mealId, cancelled: true });
+  }
+
+  /* Signing up to bring something. Two rows in one breath: the dish everyone
+     can see, and the calendar entry only this cookbook can, carrying the
+     servings that will reach the shopping list. The servings live on the
+     entry alone - nobody at the table needs to know you are making enough
+     for twelve. */
+  if (route === "meal/dish/add") {
+    const mealId = cleanString(body.mealId, 64);
+    const recipeId = cleanString(body.recipeId, 64);
+    const servings = Number(body.servings);
+    const seat = await mealSeat(env, mealId, me.cookbookId);
+    if (seat.status === "invited") throw new ApiError(409, "Accept the invitation first.");
+    if (!(servings > 0) || servings > 999) throw new ApiError(400, "Servings has to be a number above zero.");
+    if (!(await canSeeRecipe(env, me.cookbookId, recipeId))) {
+      throw new ApiError(404, "That recipe is not in your box.");
+    }
+    const have = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM meal_dishes WHERE meal_id = ?"
+    ).bind(mealId).first();
+    if (have && have.n >= MAX_MEAL_DISHES) {
+      throw new ApiError(409, "That is as many dishes as one meal will hold.");
+    }
+    const row = await env.DB.prepare("SELECT title FROM recipes WHERE recipe_id = ?").bind(recipeId).first();
+    const title = cleanString(row && row.title, 200) || cleanString(body.title, 200) || "Untitled recipe";
+    const now = new Date().toISOString();
+    const entryId = newEntryId();
+    await env.DB.prepare(
+      "INSERT INTO schedule_entries (entry_id, cookbook_id, recipe_id, title, on_date, servings, created_by, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(entryId, me.cookbookId, recipeId, title, seat.meal.on_date, servings, me.username, now).run();
+    const dishId = newDishId();
+    await env.DB.prepare(
+      "INSERT INTO meal_dishes (dish_id, meal_id, cookbook_id, recipe_id, title, entry_id, created_by, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(dishId, mealId, me.cookbookId, recipeId, title, entryId, me.username, now).run();
+    return jsonResponse({ dishId, mealId, entryId, title, servings });
+  }
+
+  /* Taking a dish back off, from either end: the tile or the calendar. Both
+     halves go, because they were one commitment. */
+  if (route === "meal/dish/remove") {
+    const mealId = cleanString(body.mealId, 64);
+    const dishId = cleanString(body.dishId, 64);
+    await mealSeat(env, mealId, me.cookbookId);
+    const dish = await env.DB.prepare(
+      "SELECT entry_id, cookbook_id FROM meal_dishes WHERE dish_id = ? AND meal_id = ?"
+    ).bind(dishId, mealId).first();
+    if (!dish) return jsonResponse({ dishId, removed: true });
+    if (dish.cookbook_id !== me.cookbookId) {
+      throw new ApiError(403, "That is somebody else's dish.");
+    }
+    if (dish.entry_id) {
+      await env.DB.prepare(
+        "DELETE FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
+      ).bind(dish.entry_id, me.cookbookId).run();
+    }
+    await env.DB.prepare("DELETE FROM meal_dishes WHERE dish_id = ?").bind(dishId).run();
+    return jsonResponse({ dishId, removed: true });
   }
 
   /* ---- shopping lists ----
