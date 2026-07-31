@@ -133,18 +133,6 @@ button, input, textarea, select { font-family:inherit; }
    Safari stops hiding and re-showing its toolbar, so the box a fixed element
    measures itself against stops changing size underneath it. */
 html{ height:100%; overflow:hidden; overscroll-behavior:none; }
-/* DIAGNOSTIC - remove this one rule to revert.
-   Black theme-color did not touch the bar, so iOS is not filling that band
-   from the chrome colour. The other thing that paints outside the page box
-   is the canvas, which by default takes its colour from <body> - cream, which
-   is exactly what is showing. Giving <html> a background of its own takes the
-   canvas off <body> and onto this, so the body box stays cream and only what
-   lies outside it turns black. If the bar goes black, it is the canvas
-   showing through the safe area and the fix is a layout one, not a colour
-   one. If it stays cream, the bar is a real element and I have the wrong
-   suspect entirely. */
-html{ background:#000; }
-
 body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 /* The notch padding moves onto the scroller with the content it is there to
    protect. Body is now a plain full-height shell, and padding on it would be
@@ -823,7 +811,21 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
    for fullscreen as well because the manifest asks for it first, and
    navigator.standalone covers older iOS, which answers neither query. */
 (function () {
+  /* Set false to go back to app-shell scrolling in the installed app.
+     The shell - html, body and #app all height:100% with overflow hidden -
+     is a viewport-sized fixed container, which is the exact shape iOS 26
+     miscalculates the bottom of. It leaves phantom space where the Safari
+     toolbar would be even though there is no toolbar, and no stylesheet
+     touches it because it is outside the layout viewport rather than inside
+     it: not the tab bar, not the clearance, not theme-color, not the canvas.
+     Rotating the device makes it recompute, which is why landscape cleared
+     it. Apple fixed this in Safari 26.1; the standing workaround before that
+     was to stop handing the viewport a fixed full-height container, which is
+     what doc-scroll already does. So the tab gets it and the installed app
+     gets it too, and the bar has nothing left to hang on. */
+  var FORCE_DOC_SCROLL = true;
   try {
+    if (FORCE_DOC_SCROLL) { document.documentElement.classList.add("doc-scroll"); return; }
     var mm = window.matchMedia;
     var installed =
       (mm && (mm("(display-mode: standalone)").matches ||
