@@ -172,6 +172,19 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
        offset; without it the library scrolls behind the dialog. */
 html.doc-scroll, html.doc-scroll body{ height:auto; overflow:visible; }
 html.doc-scroll{ overscroll-behavior-y:none; }
+/* A page with nothing to scroll never gets the bar taken back. iOS holds the
+   phantom toolbar space until something makes it remeasure - a scroll, or a
+   rotation, which is why landscape cleared it and why a long shopping list
+   clears it and a short one does not. A document that cannot scroll never
+   gives it the chance, so the calendar and a near-empty Groceries sit there
+   with the gap still allocated.
+   The answer is to make sure there is always a hair of scroll available. One
+   pixel past the viewport is enough to count as scrollable and is far too
+   little to feel or to show. vh first for anything that does not know dvh;
+   dvh second so it wins where it is understood, since in a tab the viewport
+   grows and shrinks as the toolbar folds and vh would be measuring the wrong
+   one. Scoped to doc-scroll because the shell layout sizes itself. */
+html.doc-scroll body{ min-height:calc(100vh + 1px); min-height:calc(100dvh + 1px); }
 html.doc-scroll #app{ height:auto; overflow:visible; overscroll-behavior:auto; }
 html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:100%; }
 .font-display{ font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif; font-weight:700; }
