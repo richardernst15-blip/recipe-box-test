@@ -415,8 +415,15 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .sched-banner b{ font-weight:600; }
 
 /* ---- grocery ---------------------------------------------------------- */
-.groc-range{ display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
-.groc-range .field{ flex:1; min-width:132px; margin:0; }
+/* Two date fields side by side on a narrow phone. min-width:0 is the fix
+   that matters: a date input carries an intrinsic width wider than half a
+   small screen, and without it flex refuses to shrink below that and the
+   pair runs off the right edge into each other. */
+.groc-range{ display:flex; gap:8px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap; }
+.groc-range .field{ flex:1 1 0; min-width:0; margin:0; }
+.groc-range .field label{ display:block; text-align:center; }
+.groc-range .field input{ width:100%; min-width:0; text-align:center; }
+.groc-range .btn{ flex:1 1 100%; justify-content:center; }
 .groc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
 .groc-entry{ display:flex; align-items:center; gap:10px; background:#fff;
   border:1px solid var(--border-light); border-radius:11px; padding:12px 13px; }
@@ -452,7 +459,8 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .groc-row.groc-done .groc-name{ text-decoration:line-through; color:var(--ink-muted); }
 .groc-row.groc-dragging .groc-slide{ opacity:.65; background:var(--card-alt); }
 .groc-row.merge-src .groc-slide{ background:#fbf0ef; }
-.groc-row.merge-target{ cursor:pointer; }
+.groc-row.merge-target .groc-slide{ cursor:pointer; background:#fdfaf7; }
+.groc-row.merge-target .groc-name{ color:var(--accent-dark); }
 .groc-tick{ flex-shrink:0; width:22px; height:22px; border-radius:6px;
   border:1.5px solid var(--border); background:#fff; color:#fff; cursor:pointer;
   display:flex; align-items:center; justify-content:center; padding:0; }
@@ -517,6 +525,17 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 /* The confirm list. Nothing folds without being seen first: a scan that is
    right nine times in ten and silent about the tenth is worse than no scan,
    because the tenth is a thing you then do not buy. */
+.excl-add{ display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+.excl-add input{ flex:1; min-width:0; padding:8px 10px; font-size:14px;
+  border:1px solid var(--border); border-radius:8px; }
+.excl-add .btn{ flex-shrink:0; }
+.excl-list{ list-style:none; margin:0 0 4px; padding:0; max-height:38vh;
+  max-height:calc(var(--vv-height,100dvh) * .38); overflow-y:auto; overscroll-behavior:contain; }
+.excl-row{ display:flex; align-items:center; gap:8px; padding:8px 2px;
+  border-bottom:1px solid var(--border-light); font-size:14px; }
+.excl-row span{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.excl-row:last-child{ border-bottom:0; }
+.excl-empty{ padding:10px 2px; font-size:13px; color:var(--ink-muted); }
 .merge-rows{ display:flex; flex-direction:column; gap:2px; max-height:46vh;
   max-height:calc(var(--vv-height,100dvh) * .46); overflow-y:auto; overscroll-behavior:contain;
   margin:0 0 4px; }
@@ -541,10 +560,11 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
    instructions - about 420px before the first item, on a phone that has
    maybe 550 to give. All four are still here; three of them are now a
    date, a count and an ⓘ.
-   Sticky against #app, which is the scroller. The negative margins pull it
-   out to the full width so the blur band meets both edges, and the matching
-   padding puts the contents back where .wrap had them. */
-.groc-bar{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:6px;
+   It scrolls away with the list rather than staying pinned: the list is the
+   thing you are reading, and the bar has nothing on it you need mid-aisle.
+   The negative margins pull it out to the full width so its rule meets both
+   edges, and the padding puts the contents back where .wrap had them. */
+.groc-bar{ display:flex; align-items:center; gap:6px;
   margin:0 -16px 10px; padding:8px 12px;
   background:rgba(242,237,225,.94); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
   border-bottom:1px solid var(--border-light); }
@@ -1094,6 +1114,10 @@ const state = {
   grocerySections: { basket: false, removed: false },
   /* What the scan proposed, awaiting a yes. Never applied unreviewed. */
   groceryMergePlan: [],
+  /* Staples the kitchen is assumed to have. Cookbook-wide, and consulted at
+     exactly one moment: building a list. */
+  exclusions: [],
+  exclusionDraft: null,
   calDay: null,
   _calTop: null,
   schedWeekTop: null,
@@ -1209,6 +1233,34 @@ function addSeg(list, seg) {
   return list;
 }
 
+/* Does this ingredient line match something on the staples list?
+   The test is a tail match on the reduced name, not equality and not a
+   substring. Tail, because English puts the thing last: "kosher salt" and
+   "coarse sea salt" are both salt, and "black pepper" is what "freshly
+   ground black pepper" is. A plain substring would take "ice" out of "ice
+   cream", which is how a shopping list quietly stops containing pudding.
+   Colours still have to agree, so excluding "black pepper" leaves red
+   pepper flakes exactly where they were. */
+function excludedByStaples(name, exclusions) {
+  if (!exclusions || !exclusions.length) return false;
+  const n = normalizeGroceryName(name);
+  if (!n.base) return false;
+  const words = n.base.split(" ");
+  for (let e = 0; e < exclusions.length; e++) {
+    const x = normalizeGroceryName(exclusions[e]);
+    if (!x.base) continue;
+    if (x.colors !== n.colors) continue;
+    const xw = x.base.split(" ");
+    if (xw.length > words.length) continue;
+    let hit = true;
+    for (let i = 0; i < xw.length; i++) {
+      if (words[words.length - xw.length + i] !== xw[i]) { hit = false; break; }
+    }
+    if (hit) return true;
+  }
+  return false;
+}
+
 function buildGroceryItems(start, end) {
   const byName = {}, order = [];
   state.schedule.forEach(function (e) {
@@ -1219,6 +1271,10 @@ function buildGroceryItems(start, end) {
     (r.ingredients || []).forEach(function (ing) {
       const name = String(ing.name || "").trim();
       if (!name) return;
+      /* The one place staples are consulted. Lists already built are left
+         exactly as they are - this changes what the next one contains, and
+         nothing that is already on a shelf. */
+      if (excludedByStaples(name, state.exclusions)) return;
       const key = name.toLowerCase();
       if (!byName[key]) {
         byName[key] = { id: "", name: name, checked: false, removed: false, from: [], qty: [] };
@@ -1504,6 +1560,7 @@ function applyLibrary(data) {
   state.declined = data.declined || [];
   state.schedule = data.schedule || [];
   state.groceryLists = data.groceryLists || [];
+  state.exclusions = Array.isArray(data.exclusions) ? data.exclusions : [];
 }
 
 async function refreshLibrary(showLoading) {
@@ -2337,6 +2394,8 @@ function GroceriesViewHTML() {
     '<div class="wrap">' +
       '<div class="detail-top">' +
         '<h1 class="detail-title font-display" style="margin:0">Groceries</h1>' +
+        '<button class="btn btn-sm" title="Staples left off every new list" ' +
+          'onclick="Actions.openExclusions()">' + icon("checklist", 14) + ' Staples</button>' +
       '</div>' +
       '<p class="helper-text">The start and end date are the days you are <b>shopping for</b> — not the ' +
         'day you go. Everything scheduled on the calendar between them, inclusive, goes on the list.</p>' +
@@ -2375,18 +2434,25 @@ function GroceryRowHTML(L, item, merging) {
     ? ' onclick="Actions.completeGroceryMerge(\\'' + L + '\\',\\'' + item.id + '\\')"'
     : "";
   /* The tick is inert on a line that is not being bought. */
-  const tick = gone
+  const tick = (gone || merging)
     ? '<span class="groc-tick" aria-hidden="true"></span>'
     : '<button class="groc-tick' + (item.checked ? " on" : "") + '" ' +
         'aria-pressed="' + (item.checked ? "true" : "false") + '" ' +
         'onclick="event.stopPropagation(); Actions.toggleGroceryCheck(\\'' + L + '\\',\\'' + item.id + '\\')">' +
         (item.checked ? icon("check", 14) : "") + '</button>';
+  /* While a merge is being aimed, every tap on a candidate line means "this
+     one" - the editor would otherwise swallow the tap and there would be no
+     way left to pick a target. So the row's own handlers are replaced for
+     the duration rather than competing with the one on the <li>. */
+  const pick = 'Actions.completeGroceryMerge(\\'' + L + '\\',\\'' + item.id + '\\')';
   /* Both units in the one chip, exactly as the line reads. A line with no
      quantity at all still gets a chip, because that is the way in to giving
      it one. */
-  const chip = '<button class="groc-qty-chip" title="Change the amount" ' +
-    'onclick="event.stopPropagation(); Actions.openGroceryRow(\\'' + L + '\\',\\'' + item.id + '\\',\\'qty\\')">' +
-    esc(qtyText(item) || "—") + '</button>';
+  const chip = '<button class="groc-qty-chip" title="' +
+    (isTarget ? 'Merge into this line' : 'Change the amount') + '" ' +
+    'onclick="event.stopPropagation(); ' +
+    (isTarget ? pick : 'Actions.openGroceryRow(\\'' + L + '\\',\\'' + item.id + '\\',\\'qty\\')') +
+    '">' + esc(qtyText(item) || "—") + '</button>';
   /* Parked under the row, revealed by dragging it left. The set-aside x that
      used to sit on every row cost horizontal space on all seventeen of them
      to be useful on about two, so it moved here. */
@@ -2399,12 +2465,13 @@ function GroceryRowHTML(L, item, merging) {
         icon("x", 14) + ' Remove</button></div>';
   const row = '<li class="' + cls + '" data-id="' + item.id + '"' + rowClick + '>' +
     back +
-    '<div class="groc-slide" ' +
-      'onpointerdown="Actions.swipeDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
+    '<div class="groc-slide"' +
+      (merging ? "" : ' onpointerdown="Actions.swipeDown(event,\\'' + L + '\\',\\'' + item.id + '\\')"') + '>' +
       tick +
-      '<button class="groc-name" title="Edit this line" ' +
-        'onclick="event.stopPropagation(); Actions.openGroceryRow(\\'' + L + '\\',\\'' + item.id + '\\',\\'name\\')">' +
-        esc(item.name) + '</button>' +
+      '<button class="groc-name" title="' + (isTarget ? 'Merge into this line' : 'Edit this line') + '" ' +
+        'onclick="event.stopPropagation(); ' +
+        (isTarget ? pick : 'Actions.openGroceryRow(\\'' + L + '\\',\\'' + item.id + '\\',\\'name\\')') +
+        '">' + esc(item.name) + '</button>' +
       chip +
       '<span class="groc-grip" title="Drag to reorder" ' +
         'onpointerdown="Actions.gripDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
@@ -3598,6 +3665,33 @@ function AddGroceryItemModalHTML() {
 
 /* The generated name says when the list was made, which is the useful thing
    until the day you have two on the go and one of them is Thanksgiving. */
+/* The staples list. Shared by the whole cookbook, because whether there is
+   salt in the cupboard is a fact about the cupboard. */
+function ExclusionsModalHTML() {
+  const list = state.exclusionDraft || [];
+  const rows = list.length
+    ? list.map(function (x, idx) {
+        return '<li class="excl-row"><span>' + esc(x) + '</span>' +
+          '<button class="icon-btn" title="Take this off the staples list" ' +
+            'onclick="Actions.removeExclusion(' + idx + ')">' + icon("x", 15) + '</button></li>';
+      }).join("")
+    : '<li class="excl-empty">Nothing is being left off. Every ingredient will go on the list.</li>';
+  return modalShell("Staples",
+    '<p class="helper-text">Things your kitchen always has. Anything here is left off ' +
+      '<b>new</b> lists as they are built — lists you already have are not touched. ' +
+      'Matching goes on the end of a name, so <b>salt</b> also covers kosher salt and sea salt, ' +
+      'while <b>ice</b> leaves ice cream alone.</p>' +
+    '<div class="excl-add">' +
+      '<input type="text" id="excl-new" maxlength="60" placeholder="Add a staple" ' +
+        'onkeydown="if(event.key===\\'Enter\\'){event.preventDefault();Actions.addExclusion();}" />' +
+      '<button class="btn btn-sm" onclick="Actions.addExclusion()">' + icon("plus", 14) + ' Add</button>' +
+    '</div>' +
+    (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
+    '<ul class="excl-list">' + rows + '</ul>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="Actions.saveExclusions()">Save staples</button></div>');
+}
+
 function MergeCommonModalHTML() {
   const plan = state.groceryMergePlan || [];
   const rows = plan.map(function (g, idx) {
@@ -3915,6 +4009,7 @@ function renderModal() {
   else if (state.modal === "renameList") root.innerHTML = RenameListModalHTML();
   else if (state.modal === "groceryHelp") root.innerHTML = GroceryHelpModalHTML();
   else if (state.modal === "mergeCommon") root.innerHTML = MergeCommonModalHTML();
+  else if (state.modal === "exclusions") root.innerHTML = ExclusionsModalHTML();
   else if (state.modal === "conflict") root.innerHTML = ConflictModalHTML();
   else if (state.modal === "locked") root.innerHTML = LockedModalHTML();
 }
@@ -5405,6 +5500,47 @@ Actions.setGroceryName = function(listId, itemId, raw) {
   renderKeepingScroll();
 };
 
+Actions.openExclusions = function() {
+  state.exclusionDraft = (state.exclusions || []).slice();
+  Actions.openModal("exclusions");
+};
+Actions.addExclusion = function() {
+  const el = document.getElementById("excl-new");
+  const raw = el ? String(el.value || "").trim().slice(0, 60) : "";
+  if (!raw) { state.modalError = "Type a name first."; renderModal(); return; }
+  const draft = state.exclusionDraft || (state.exclusionDraft = []);
+  if (draft.some(function (x) { return x.toLowerCase() === raw.toLowerCase(); })) {
+    state.modalError = raw + " is already on the list.";
+    renderModal();
+    return;
+  }
+  draft.push(raw);
+  state.modalError = "";
+  renderModal();
+  const again = document.getElementById("excl-new");
+  if (again) { again.value = ""; again.focus(); }
+};
+Actions.removeExclusion = function(idx) {
+  const draft = state.exclusionDraft || [];
+  if (idx < 0 || idx >= draft.length) return;
+  draft.splice(idx, 1);
+  state.modalError = "";
+  renderModal();
+};
+Actions.saveExclusions = function() {
+  const draft = (state.exclusionDraft || []).slice();
+  /* Kept locally straight away so Build list behaves as the dialog said it
+     would, even if the write is still in flight. */
+  state.exclusions = draft;
+  state.exclusionDraft = null;
+  Actions.closeModal();
+  API("grocery/exclusions", { exclusions: draft })
+    .then(function (res) { if (res && Array.isArray(res.exclusions)) state.exclusions = res.exclusions; })
+    .catch(function (e) { toast("Couldn't save the staples list — " + e.message); });
+  toast(draft.length ? (draft.length + " staple" + (draft.length === 1 ? "" : "s") + " left off new lists")
+                     : "Nothing will be left off");
+};
+
 Actions.openMergeCommon = function() {
   const plan = groceryMergePlan(groceryItemsFor(state.activeListId));
   if (!plan.length) { toast("Nothing on the list looks like a duplicate"); return; }
@@ -5872,8 +6008,20 @@ const LATER_TABLES = [
     "label TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL, end_date TEXT NOT NULL, " +
     "items TEXT NOT NULL DEFAULT '[]', item_count INTEGER NOT NULL DEFAULT 0, " +
     "created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )",
-  "CREATE INDEX IF NOT EXISTS idx_glists_cookbook ON grocery_lists(cookbook_id, created_at)"
+  "CREATE INDEX IF NOT EXISTS idx_glists_cookbook ON grocery_lists(cookbook_id, created_at)",
+  /* Cookbook-wide settings, one row per cookbook rather than per person: the
+     staples you never need to be told to buy are a property of the kitchen,
+     not of whoever happened to press Build list. */
+  "CREATE TABLE IF NOT EXISTS cookbook_prefs ( cookbook_id TEXT PRIMARY KEY, " +
+    "exclusions TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL )"
 ];
+
+/* What a kitchen is assumed to have until it says otherwise. Seeded on read
+   rather than written at signup, so a cookbook that predates the feature
+   gets them too. Once the list has been saved even once - emptied included -
+   the stored answer wins and these are never reapplied. */
+const DEFAULT_EXCLUSIONS = ["Water", "Salt", "Black pepper", "Baking soda", "Ice"];
+const MAX_EXCLUSIONS = 200;
 let schemaReady = false;
 async function ensureSchema(env) {
   if (schemaReady) return;
@@ -6198,6 +6346,17 @@ async function handleApi(route, body, env, request) {
       itemCount: row.item_count, by: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at
     }));
 
+    const prefRow = await env.DB.prepare(
+      "SELECT exclusions FROM cookbook_prefs WHERE cookbook_id = ?"
+    ).bind(me.cookbookId).first();
+    let exclusions = DEFAULT_EXCLUSIONS.slice();
+    if (prefRow) {
+      try {
+        const parsed = JSON.parse(prefRow.exclusions);
+        if (Array.isArray(parsed)) exclusions = parsed.map(x => String(x));
+      } catch (e) { /* a corrupt blob falls back to the defaults */ }
+    }
+
     const mates = (memberMap[me.cookbookId] || []).filter(n => n.toLowerCase() !== me.usernameLc);
     /* When each link was made. The app folds everything a friend had already
        shared before that moment into a single piece of news. */
@@ -6221,6 +6380,7 @@ async function handleApi(route, body, env, request) {
       shares,
       schedule,
       groceryLists,
+      exclusions,
       mates,
       friends,
       incoming: pendingIn.map(r => ({
@@ -6338,6 +6498,24 @@ async function handleApi(route, body, env, request) {
      portions and the unit rules, and doing the arithmetic twice in two
      languages would only be two places for it to disagree. The server's job
      is to check the shape, cap the size and keep it. */
+  if (route === "grocery/exclusions") {
+    const raw = Array.isArray(body.exclusions) ? body.exclusions : [];
+    const clean = [], seen = {};
+    raw.forEach(function (x) {
+      const t = cleanString(x, 60).trim();
+      const k = t.toLowerCase();
+      if (!t || seen[k] || clean.length >= MAX_EXCLUSIONS) return;
+      seen[k] = 1;
+      clean.push(t);
+    });
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO cookbook_prefs (cookbook_id, exclusions, updated_at) VALUES (?, ?, ?) " +
+      "ON CONFLICT(cookbook_id) DO UPDATE SET exclusions = excluded.exclusions, updated_at = excluded.updated_at"
+    ).bind(me.cookbookId, JSON.stringify(clean), now).run();
+    return jsonResponse({ exclusions: clean });
+  }
+
   if (route === "grocery/create") {
     const startDate = cleanString(body.startDate, 10);
     const endDate = cleanString(body.endDate, 10);
