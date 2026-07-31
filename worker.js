@@ -100,6 +100,13 @@ const APP_HTML = `<!DOCTYPE html>
   --bg:#f2ede1; --card:#ffffff; --card-alt:#faf6ee;
   --ink:#221f1c; --ink-muted:#79726a; --border:#d8d0c4; --border-light:#e9e3d7;
   --accent:#8f2d24; --accent-dark:#742119; --gold:#c8850f; --green:#2f6b45;
+  /* What sits below the tab labels. The full safe-area inset is about 34px,
+     which is generous: the home indicator is a few pixels tall sitting a
+     little way up from the edge, so it wants clearing, not a whole band of
+     its own. Twenty or so clears it and gives the rest back to the app.
+     Declared once here because the toast and the page's own bottom padding
+     both have to keep step with it. */
+  --tab-pad-b: max(6px, calc(env(safe-area-inset-bottom) - 14px));
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
@@ -134,7 +141,7 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
   padding-top:env(safe-area-inset-top); }
 .font-display{ font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif; font-weight:700; }
 .font-mono{ font-family:"SF Mono",Menlo,Consolas,monospace; }
-.wrap{ max-width:960px; margin:0 auto; padding:0 16px 110px; }
+.wrap{ max-width:960px; margin:0 auto; padding:0 16px calc(58px + var(--tab-pad-b,20px)); }
 .hidden{ display:none !important; }
 
 /* header */
@@ -370,7 +377,7 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .tabbar{ position:fixed; left:0; right:0; bottom:0; z-index:60; display:flex;
   background:rgba(242,237,225,.94); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
   border-top:1px solid var(--border);
-  padding-bottom:env(safe-area-inset-bottom);
+  padding-bottom:var(--tab-pad-b,20px);
   transition:transform .2s ease; }
 /* Reading gets the whole screen back; the first flick upwards returns the
    bar. The class sits on <body> rather than on the bar, because renderTabBar
@@ -378,10 +385,15 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
    The extra pixel clears the top border, which would otherwise sit as a hair
    line along the bottom of a bar that has supposedly gone. */
 body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
+/* 44px tall, which is the smallest a tap target should be and no larger.
+   It was carrying about six spare pixels of padding on top of an icon a
+   size bigger than it needed to be, which is not much on its own and is
+   very obvious the moment the bar slides away and you see what it was
+   covering. */
 .tabbar .tab{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:2px; padding:7px 0 6px; border:0; background:none; cursor:pointer;
-  color:var(--ink-muted); font-size:10.5px; letter-spacing:.01em; }
-.tabbar .tab span{ line-height:1.2; }
+  gap:1px; padding:6px 0 4px; border:0; background:none; cursor:pointer;
+  color:var(--ink-muted); font-size:10px; letter-spacing:.01em; }
+.tabbar .tab span{ line-height:1.15; }
 .tabbar .tab.on{ color:var(--accent); font-weight:600; }
 .tabbar .tab:active{ background:rgba(0,0,0,.04); }
 
@@ -415,15 +427,23 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .sched-banner b{ font-weight:600; }
 
 /* ---- grocery ---------------------------------------------------------- */
-/* Two date fields side by side on a narrow phone. min-width:0 is the fix
-   that matters: a date input carries an intrinsic width wider than half a
-   small screen, and without it flex refuses to shrink below that and the
-   pair runs off the right edge into each other. */
-.groc-range{ display:flex; gap:8px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap; }
-.groc-range .field{ flex:1 1 0; min-width:0; margin:0; }
+/* Two date fields side by side on a narrow phone.
+   -webkit-appearance is the fix that actually matters. iOS draws a date
+   input as a native control sized to its own content, and it ignores
+   width:100% while it is doing so - so the second field kept its natural
+   width, ran past the right edge and sat on top of the first. Clearing the
+   appearance hands sizing back to CSS. Grid rather than flex for the same
+   reason twice over: minmax(0,1fr) states the halves outright instead of
+   asking two intrinsically-wide controls to agree to shrink. */
+.groc-range{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:8px; align-items:end; margin-bottom:12px; }
+.groc-range .field{ min-width:0; margin:0; }
 .groc-range .field label{ display:block; text-align:center; }
-.groc-range .field input{ width:100%; min-width:0; text-align:center; }
-.groc-range .btn{ flex:1 1 100%; justify-content:center; }
+.groc-range .field input[type=date]{
+  -webkit-appearance:none; appearance:none;
+  width:100%; min-width:0; max-width:100%; box-sizing:border-box;
+  padding-left:4px; padding-right:4px; font-size:14px; text-align:center; }
+.groc-range .btn{ grid-column:1 / -1; justify-content:center; }
 .groc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
 .groc-entry{ display:flex; align-items:center; gap:10px; background:#fff;
   border:1px solid var(--border-light); border-radius:11px; padding:12px 13px; }
@@ -596,8 +616,8 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
   background:#fbf0ef; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* toast / loading */
-body.tabs-down .toast{ bottom:calc(18px + env(safe-area-inset-bottom)); }
-.toast{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom)); transition:bottom .2s ease; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
+body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
+.toast{ position:fixed; bottom:calc(56px + var(--tab-pad-b,20px)); transition:bottom .2s ease; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
 .loading{ display:flex; align-items:center; justify-content:center; height:75vh; color:var(--ink-muted); font-size:14.5px; }
 
 ::-webkit-scrollbar{ width:8px; height:8px; }
@@ -2146,7 +2166,7 @@ function TabBarHTML() {
     return '<button class="tab' + (t[0] === cur ? " on" : "") + '" ' +
       'aria-current="' + (t[0] === cur ? "page" : "false") + '" ' +
       'onclick="Actions.goTab(\\'' + t[0] + '\\')">' +
-      icon(t[1], 22) + '<span>' + t[2] + '</span></button>';
+      icon(t[1], 21) + '<span>' + t[2] + '</span></button>';
   }).join("") + '</nav>';
 }
 function renderTabBar() {
