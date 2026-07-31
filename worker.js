@@ -187,6 +187,23 @@ html.doc-scroll{ overscroll-behavior-y:none; }
 html.doc-scroll body{ min-height:calc(100vh + 1px); min-height:calc(100dvh + 1px); }
 html.doc-scroll #app{ height:auto; overflow:visible; overscroll-behavior:auto; }
 html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:100%; }
+
+/* ---- swipe from the left edge to leave a recipe ------------------------ */
+/* The page is dragged sideways by the gesture, and a transform counts
+   towards what a scroller thinks it has to show - so without this the
+   half-finished drag turns into somewhere you can pan to, and the page ends
+   up sitting slightly off-centre with a strip of nothing beside it. clip
+   rather than hidden: hidden on one axis forces the other to auto, which
+   would make #app a horizontal scroller in a tab where the document is
+   meant to be doing the scrolling. */
+#app{ overflow-x:clip; }
+html.doc-scroll #app{ overflow-x:clip; }
+/* Only worn while the page springs back from a drag that did not go far
+   enough. A drag that did go far enough is replaced by the library, so it
+   has nothing to animate. */
+.swipe-back-settle{ transition:transform .18s ease-out; }
+@media (prefers-reduced-motion: reduce){ .swipe-back-settle{ transition:none; } }
+
 .font-display{ font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif; font-weight:700; }
 .font-mono{ font-family:"SF Mono",Menlo,Consolas,monospace; }
 .wrap{ max-width:960px; margin:0 auto; padding:0 16px calc(58px + var(--tab-pad-b,20px)); }
@@ -5921,6 +5938,113 @@ if (typeof window !== "undefined" && window.addEventListener) {
       })], { type: "application/json" }));
     } catch (e) {}
   });
+}
+
+/* A drag in from the left edge does what the chevron at the top of the view
+   does: out of an open recipe, off the Friends page, back from a shopping
+   list to the lists. On each of them that chevron is a reach on a phone, and
+   once the page has been scrolled it is off the screen entirely, so the
+   gesture is the only way out that is always to hand.
+   Bound once on the document rather than on the view: #app is emptied and
+   refilled on every render, so anything held by the view itself would need
+   rewiring each time. Touch events rather than pointer events - a mouse
+   drifting past the edge should not start it, and the two dragging gestures
+   that already exist take pointerdown on their own elements first.
+   In a browser tab iOS claims left-edge drags for its own back gesture and
+   this simply never fires, which is the right outcome: there the swipe still
+   goes back, just by the browser's reckoning rather than ours. */
+if (typeof document !== "undefined" && document.addEventListener) {
+  const EDGE_ZONE = 28;   /* how far in from the edge a drag may begin */
+  const EDGE_SLOP = 8;    /* travel before the direction is settled on */
+  const EDGE_TAKE = 72;   /* travel before the drag counts as going back */
+
+  /* What going back means depends on where you are, and each of these is the
+     same thing the chevron at the top of that view already does. Views not
+     listed have no way back for a drag to stand in for: the library, the
+     calendar and the list of shopping lists are all somewhere you arrive at
+     by tab rather than by opening something, and the editor is left through
+     Save or Cancel on purpose - a stray drag must not be able to throw away
+     an afternoon's typing. */
+  const BACK_FROM = {
+    detail:  function () { Actions.backToLibrary(); },
+    friends: function () { Actions.backToLibrary(); },
+    grocery: function () { Actions.backToGroceries(); }
+  };
+  /* What the gesture moves and what it does at the end of the pull, or
+     nothing at all if it does not apply here. A modal owns the screen while
+     it is up. */
+  const dragTarget = function () {
+    if (!state.session || state.loading || state.modal) return null;
+    const back = BACK_FROM[state.view];
+    if (!back) return null;
+    /* A shopping line swiped open is holding a sideways gesture of its own,
+       and pulling back to the right is how it is put away again. It gets to
+       finish before the page will answer to the same movement. */
+    if (state.view === "grocery" && state.grocerySwipedId) return null;
+    const app = document.getElementById("app");
+    const el = app ? app.querySelector(".wrap") : null;
+    return el ? { el: el, back: back } : null;
+  };
+  /* A strip already scrolled sideways - the tag row - has first claim on the
+     gesture. Once it is back against its own left edge the page takes over. */
+  const heldSideways = function (node) {
+    let n = node;
+    while (n && n.nodeType === 1 && n !== document.body) {
+      if (n.scrollWidth > n.clientWidth + 1 && n.scrollLeft > 0) return true;
+      n = n.parentNode;
+    }
+    return false;
+  };
+
+  let wrap = null, goBack = null, startX = 0, startY = 0, dir = null, dx = 0;
+  const forget = function () { wrap = null; goBack = null; dir = null; dx = 0; };
+  const springBack = function (el) {
+    if (!el || !el.style.transform) return;
+    el.classList.add("swipe-back-settle");
+    void el.offsetWidth;                       /* so the change is animated */
+    el.style.transform = "";
+    setTimeout(function () { el.classList.remove("swipe-back-settle"); }, 240);
+  };
+
+  document.addEventListener("touchstart", function (e) {
+    forget();
+    if (!e.touches || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (t.clientX > EDGE_ZONE) return;
+    if (heldSideways(e.target)) return;
+    const hit = dragTarget();
+    if (!hit) return;
+    wrap = hit.el; goBack = hit.back; startX = t.clientX; startY = t.clientY;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", function (e) {
+    if (!wrap) return;
+    if (!e.touches || e.touches.length !== 1) { springBack(wrap); forget(); return; }
+    const t = e.touches[0];
+    const mx = t.clientX - startX, my = t.clientY - startY;
+    if (!dir) {
+      if (Math.abs(mx) < EDGE_SLOP && Math.abs(my) < EDGE_SLOP) return;
+      /* Anything but a clear pull to the right is the scroller's. */
+      if (mx <= 0 || Math.abs(my) >= Math.abs(mx)) { forget(); return; }
+      dir = "x";
+    }
+    if (e.cancelable) e.preventDefault();
+    /* Follows the finger one for one, and never to the left of where it
+       started - dragging back the other way undoes the pull rather than
+       pushing the page off the far side. */
+    dx = Math.max(0, mx);
+    wrap.style.transform = "translateX(" + dx + "px)";
+  }, { passive: false });
+
+  const release = function () {
+    if (!wrap) return;
+    const el = wrap, back = goBack, leaving = (dir === "x" && dx >= EDGE_TAKE);
+    forget();
+    if (leaving) { el.style.transform = ""; back(); }
+    else springBack(el);
+  };
+  document.addEventListener("touchend", release);
+  document.addEventListener("touchcancel", release);
 }
 
 (async function init() {
