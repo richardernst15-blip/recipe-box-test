@@ -349,6 +349,9 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .modal-close{ border:none; background:none; color:var(--ink-muted); cursor:pointer; padding:4px; }
 
 .helper-text{ font-size:13px; color:var(--ink-muted); margin-bottom:14px; line-height:1.5; }
+.help-list{ margin:0 0 4px; padding-left:18px; font-size:13.5px; line-height:1.55; color:var(--ink-muted); }
+.help-list li{ margin-bottom:7px; }
+.help-list b{ color:var(--ink); font-weight:600; }
 .step-block{ margin-bottom:16px; }
 .step-block .step-label{ font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-muted); margin-bottom:6px; }
 .prompt-box{ width:100%; height:170px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:11.5px; line-height:1.4; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card-alt); resize:vertical; }
@@ -367,7 +370,14 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .tabbar{ position:fixed; left:0; right:0; bottom:0; z-index:60; display:flex;
   background:rgba(242,237,225,.94); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
   border-top:1px solid var(--border);
-  padding-bottom:env(safe-area-inset-bottom); }
+  padding-bottom:env(safe-area-inset-bottom);
+  transition:transform .2s ease; }
+/* Reading gets the whole screen back; the first flick upwards returns the
+   bar. The class sits on <body> rather than on the bar, because renderTabBar
+   replaces the bar's markup and a class on it would not survive a repaint.
+   The extra pixel clears the top border, which would otherwise sit as a hair
+   line along the bottom of a bar that has supposedly gone. */
+body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .tabbar .tab{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:2px; padding:7px 0 6px; border:0; background:none; cursor:pointer;
   color:var(--ink-muted); font-size:10.5px; letter-spacing:.01em; }
@@ -413,46 +423,111 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .groc-entry-main{ flex:1; min-width:0; text-align:left; border:0; background:none; cursor:pointer; padding:0; }
 .groc-entry-label{ font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .groc-entry-sub{ font-size:12px; color:var(--ink-muted); margin-top:2px; }
-/* One shopping line: tick, name and quantity, then the three controls. */
-.groc-row{ display:flex; align-items:flex-start; gap:9px; background:#fff;
-  border:1px solid var(--border-light); border-radius:11px; padding:10px 6px 10px 10px; }
+/* One shopping line, collapsed: tick, name, quantity, grip - one line, no
+   card. The old row stacked name over source over a quantity input and came
+   to ~93px, which on a small phone is four items a screen. Name and quantity
+   share a line, the source moves into the expanded editor, and the cards
+   become one bordered list with hairline rules, which lands at ~44px. */
+.groc-lines{ list-style:none; margin:0; padding:0; background:#fff;
+  border:1px solid var(--border-light); border-radius:12px; overflow:hidden; }
+.groc-row{ position:relative; overflow:hidden;
+  border-bottom:1px solid var(--border-light); }
+.groc-row:last-child{ border-bottom:0; }
+/* The row's visible content rides on this, so it can slide left off the
+   button parked underneath. touch-action:pan-y is the whole contract with
+   iOS: the vertical gesture stays the scroller's, and only once the finger
+   has proved it is going sideways does the row claim it. Anything else here
+   and either the list stops scrolling or the swipe never starts. */
+.groc-slide{ display:flex; align-items:center; gap:8px; padding:0 4px 0 9px;
+  min-height:44px; background:#fff; touch-action:pan-y;
+  transition:transform .18s ease; will-change:transform; }
+.groc-row.swiping .groc-slide{ transition:none; }
+.groc-row.swiped .groc-slide{ transform:translateX(-96px); }
+.groc-swipe-back{ position:absolute; top:0; right:0; bottom:0; width:96px;
+  display:flex; align-items:stretch; }
+.groc-swipe-back button{ flex:1; border:0; cursor:pointer; color:#fff;
+  font-size:12.5px; font-weight:600; display:flex; align-items:center;
+  justify-content:center; gap:5px; background:var(--accent); padding:0; }
+.groc-swipe-back button.put-back{ background:var(--green); }
 .groc-row.groc-done .groc-name{ text-decoration:line-through; color:var(--ink-muted); }
-.groc-row.groc-dragging{ opacity:.65; border-color:var(--accent); box-shadow:0 4px 14px rgba(0,0,0,.12); }
-.groc-row.merge-src{ border-color:var(--accent); background:#fbf0ef; }
-.groc-row.merge-target{ cursor:pointer; border-style:dashed; }
-.groc-tick{ flex-shrink:0; width:22px; height:22px; margin-top:1px; border-radius:6px;
+.groc-row.groc-dragging .groc-slide{ opacity:.65; background:var(--card-alt); }
+.groc-row.merge-src .groc-slide{ background:#fbf0ef; }
+.groc-row.merge-target{ cursor:pointer; }
+.groc-tick{ flex-shrink:0; width:22px; height:22px; border-radius:6px;
   border:1.5px solid var(--border); background:#fff; color:#fff; cursor:pointer;
   display:flex; align-items:center; justify-content:center; padding:0; }
 .groc-tick.on{ background:var(--green); border-color:var(--green); }
-.groc-main{ flex:1; min-width:0; }
-.groc-name{ font-size:14px; line-height:1.3; }
-.groc-from{ font-size:11px; color:var(--ink-muted); margin-top:1px;
+/* The name is the wide tap target and it opens the editor. Truncated rather
+   than wrapped: a wrapping name is the thing that makes row heights uneven,
+   and the full text is one tap away in the editor. */
+.groc-name{ flex:1; min-width:0; font-size:14.5px; line-height:1.25; text-align:left;
+  border:0; background:none; padding:6px 0; color:inherit; cursor:pointer;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.groc-qty{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:5px; }
-.groc-qty input{ width:66px; padding:4px 6px; font-size:12.5px; border-radius:7px;
-  border:1px solid var(--border); background:var(--card-alt); text-align:right; }
-.groc-unit{ font-size:12px; color:var(--ink-muted); }
-.groc-alt{ font-size:11.5px; color:var(--ink-muted); }
-.groc-plus{ font-size:12px; color:var(--ink-muted); padding:0 1px; }
-.groc-acts{ flex-shrink:0; display:flex; align-items:center; gap:1px; }
-.groc-acts button{ border:0; background:none; color:var(--ink-muted); cursor:pointer; padding:5px; }
-.groc-acts button:active{ color:var(--accent); }
+.groc-name:active{ color:var(--accent); }
+/* Both units in one chip. Tapping it opens the same editor the name does,
+   with the quantity focused instead. */
+.groc-qty-chip{ flex-shrink:0; max-width:44%; font-size:12px; color:var(--ink-muted);
+  background:var(--card-alt); border:1px solid var(--border-light); border-radius:7px;
+  padding:3px 7px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.groc-qty-chip:active{ border-color:var(--accent); color:var(--accent); }
 /* touch-action is the whole trick on iOS: without it the first finger-move
    is claimed by the scroller and the row never gets a pointermove. */
-.groc-grip{ flex-shrink:0; color:var(--border); cursor:grab; padding:5px 2px;
+.groc-grip{ flex-shrink:0; color:var(--border); cursor:grab; padding:8px 3px;
   touch-action:none; -webkit-user-select:none; user-select:none; }
+
+/* The editor. One row open at a time, so the list never grows by more than
+   this much and the thing you tapped stays where you left it. */
+.groc-edit{ padding:2px 9px 11px; background:var(--card-alt);
+  border-bottom:1px solid var(--border-light); }
+.groc-edit:last-child{ border-bottom:0; }
+.groc-edit input.groc-name-input{ width:100%; font-size:14.5px; padding:7px 9px;
+  border:1px solid var(--border); border-radius:8px; background:#fff; }
+.groc-from{ font-size:11.5px; color:var(--ink-muted); margin:6px 0 0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.groc-qty{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+.groc-qty input{ width:78px; padding:5px 7px; font-size:13px; border-radius:7px;
+  border:1px solid var(--border); background:#fff; text-align:right; }
+.groc-unit{ font-size:12px; color:var(--ink-muted); }
+.groc-plus{ font-size:12px; color:var(--ink-muted); padding:0 1px; }
+.groc-edit-acts{ display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
 .groc-merge-hint{ background:#fbf0ef; border:1px solid #e3b3ae; border-radius:10px;
   padding:9px 12px; font-size:13px; color:var(--accent-dark); margin-bottom:10px;
   display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
 /* A line you have said you do not need. Still there, still recoverable,
    plainly not part of the shop any more. */
-.groc-row.groc-gone{ background:#f7f4ed; border-style:dashed; }
+.groc-row.groc-gone .groc-slide{ background:#f7f4ed; }
 .groc-row.groc-gone .groc-name{ color:var(--ink-muted); }
-.groc-row.groc-gone .groc-qty input{ color:var(--ink-muted); background:transparent; }
-.groc-sep{ display:flex; align-items:center; gap:8px; margin:4px 2px 0;
+.groc-row.groc-gone .groc-qty-chip{ color:var(--ink-muted); background:transparent; }
+.groc-sep{ background:var(--card-alt); border-bottom:1px solid var(--border-light); }
+.groc-sep:last-child{ border-bottom:0; }
+/* Collapsed by default. Everything under these headings is either already in
+   the cart or deliberately not being bought, so neither is worth the height
+   while you are still working through the list. */
+.groc-sec{ display:flex; align-items:center; gap:7px; width:100%; padding:9px 9px;
+  border:0; background:none; cursor:pointer; text-align:left;
   font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-muted); }
-.groc-sep::after{ content:""; flex:1; height:1px; background:var(--border-light); }
+.groc-sec .groc-sec-n{ font-weight:700; color:var(--ink); }
+.groc-sec svg{ flex-shrink:0; transition:transform .15s ease; }
+.groc-sec.open svg{ transform:rotate(180deg); }
+.groc-sec::after{ content:""; flex:1; }
+.groc-sec:active{ color:var(--accent); }
+.groc-tidy{ display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%; margin-bottom:10px; }
+/* The confirm list. Nothing folds without being seen first: a scan that is
+   right nine times in ten and silent about the tenth is worse than no scan,
+   because the tenth is a thing you then do not buy. */
+.merge-rows{ display:flex; flex-direction:column; gap:2px; max-height:46vh;
+  max-height:calc(var(--vv-height,100dvh) * .46); overflow-y:auto; overscroll-behavior:contain;
+  margin:0 0 4px; }
+.merge-row{ display:flex; align-items:flex-start; gap:10px; padding:9px 4px;
+  border-bottom:1px solid var(--border-light); cursor:pointer; }
+.merge-row:last-child{ border-bottom:0; }
+.merge-row input{ margin-top:2px; flex-shrink:0; width:18px; height:18px; accent-color:var(--accent); }
+.merge-body{ flex:1; min-width:0; }
+.merge-from{ display:block; font-size:13px; color:var(--ink-muted); }
+.merge-into{ display:flex; align-items:center; gap:5px; font-size:14px; margin-top:3px; }
+.merge-into svg{ color:var(--accent); flex-shrink:0; }
 .groc-add{ width:100%; margin-top:10px; display:flex; align-items:center; justify-content:center; gap:6px; }
 /* The name of an open list is the name of the list, and tapping a title to
    change it is the thing everyone tries first. */
@@ -461,6 +536,27 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
 .title-edit svg{ color:var(--border); flex-shrink:0; margin-top:7px; }
 .title-edit:active h1, .title-edit:active svg{ color:var(--accent); }
 .groc-counts{ display:flex; gap:10px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-muted); margin:0 0 10px; }
+/* The list header, in one line. It used to be a back link, a two-line
+   date-stamped title, a counts line and a five-line paragraph of
+   instructions - about 420px before the first item, on a phone that has
+   maybe 550 to give. All four are still here; three of them are now a
+   date, a count and an ⓘ.
+   Sticky against #app, which is the scroller. The negative margins pull it
+   out to the full width so the blur band meets both edges, and the matching
+   padding puts the contents back where .wrap had them. */
+.groc-bar{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:6px;
+  margin:0 -16px 10px; padding:8px 12px;
+  background:rgba(242,237,225,.94); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border-light); }
+.groc-bar-back{ flex-shrink:0; display:flex; align-items:center; border:0; background:none;
+  color:var(--ink-muted); cursor:pointer; padding:4px 2px; }
+.groc-bar-back:active{ color:var(--accent); }
+.groc-bar-title{ flex:1; min-width:0; display:flex; align-items:baseline; gap:8px;
+  border:0; background:none; cursor:pointer; padding:4px 0; text-align:left; color:inherit; }
+.groc-bar-title .lbl{ font-size:15px; font-weight:600; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.groc-bar-title .cnt{ flex-shrink:0; font-size:12.5px; color:var(--ink-muted); }
+.groc-bar-title:active .lbl{ color:var(--accent); }
 
 /* One week visible, the rest a scroll away. Same idea as .cal-scroll, one
    row instead of three. */
@@ -480,7 +576,8 @@ body{ height:100%; overflow:hidden; overscroll-behavior:none; }
   background:#fbf0ef; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* toast / loading */
-.toast{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
+body.tabs-down .toast{ bottom:calc(18px + env(safe-area-inset-bottom)); }
+.toast{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom)); transition:bottom .2s ease; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 16px; border-radius:9px; font-size:13.5px; z-index:100; max-width:90vw; text-align:center; }
 .loading{ display:flex; align-items:center; justify-content:center; height:75vh; color:var(--ink-muted); font-size:14.5px; }
 
 ::-webkit-scrollbar{ width:8px; height:8px; }
@@ -691,6 +788,7 @@ const ICONS = {
   camera: '<path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.4"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/>',
   sliders: '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.5"/><circle cx="15" cy="16" r="2.5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.6" r="1.1" fill="currentColor" stroke="none"/>',
   chevronUp: '<polyline points="6 15 12 9 18 15"/>',
   chevronDown: '<polyline points="6 9 12 15 18 9"/>',
   upload: '<path d="M12 3v12"/><polyline points="7 8 12 3 17 8"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
@@ -984,6 +1082,18 @@ const state = {
   scheduledFor: null,
   groceryRange: { start: "", end: "" },
   groceryMergeFrom: null,
+  /* Which line has its editor open, and which field wanted the focus. Kept
+     on state rather than on the item: it is a view detail, and putting it in
+     the item would ship it to D1 on every tap. */
+  groceryOpenId: null,
+  groceryOpenFocus: "name",
+  /* At most one row sits open on its swipe action at a time. */
+  grocerySwipedId: null,
+  /* Both bands start shut and reopen shut next time. A view detail, never
+     written to the list. */
+  grocerySections: { basket: false, removed: false },
+  /* What the scan proposed, awaiting a yes. Never applied unreviewed. */
+  groceryMergePlan: [],
   calDay: null,
   _calTop: null,
   schedWeekTop: null,
@@ -1023,6 +1133,30 @@ function slashDate(k) {
   const d = fromYmd(k);
   return (d.getMonth() + 1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(2);
 }
+/* m/d, which is all a list name needs. The old name carried the range, the
+   day it was made, the date it was made, the year and the time - four
+   restatements of the same week, wrapping to two lines on a phone. The year
+   is on the created date if it is ever wanted; the range is the thing you
+   pick a list by. A single-day range says one date rather than saying it
+   twice. */
+function shortDay(k) { const d = fromYmd(k); return (d.getMonth() + 1) + "/" + d.getDate(); }
+function rangeLabel(start, end) {
+  const a = shortDay(start), b = shortDay(end);
+  return a === b ? a : (a + " - " + b);
+}
+/* Two lists for the same days are a real thing to do - a second shop later
+   in the week - so they are not refused, just told apart. Only ever appended
+   on an actual collision, so the ordinary case stays clean. */
+function uniqueListLabel(base, lists) {
+  const taken = {};
+  (lists || []).forEach(function (L) { taken[String(L.label)] = 1; });
+  if (!taken[base]) return base;
+  for (let n = 2; n < 200; n++) {
+    const tryIt = base + " (" + n + ")";
+    if (!taken[tryIt]) return tryIt;
+  }
+  return base;
+}
 
 function getActiveRecipe() { return state.recipes.find(r => r.recipeId === state.activeId) || null; }
 function recipeById(id) { return state.recipes.find(r => r.recipeId === id) || null; }
@@ -1042,13 +1176,34 @@ function factorFor(r, servings) {
    keeps a segment for each: 250 g and 1 cup cannot be added without knowing
    what the thing weighs, and guessing would be worse than showing both. */
 function segKey(s) { return (s.mu || "") + "|" + (s.cu || ""); }
+/* Two segments can be added when their metric units agree and their
+   customary units either agree or one of them simply is not there. One
+   recipe giving "15 g (1/4 cup)" and another giving "10 g" of the same thing
+   is 25 g of it; refusing to add them because only one bothered with cups
+   left the line reading "15 g (1/4 cup) + 10 g", which is a sum the person
+   then has to do in the shop. */
+function segCompatible(a, b) {
+  if ((a.mu || "") !== (b.mu || "")) return false;
+  const ca = a.cu || "", cb = b.cu || "";
+  return ca === cb || !ca || !cb;
+}
 function addSeg(list, seg) {
   for (const s of list) {
-    if (segKey(s) === segKey(seg)) {
-      if (seg.mv != null) s.mv = (s.mv == null ? 0 : s.mv) + seg.mv;
+    if (!segCompatible(s, seg)) continue;
+    if (seg.mv != null) s.mv = (s.mv == null ? 0 : s.mv) + seg.mv;
+    const sameCu = (s.cu || "") === (seg.cu || "");
+    if (sameCu) {
       if (seg.cv != null) s.cv = (s.cv == null ? 0 : s.cv) + seg.cv;
-      return list;
+    } else if ((s.cv == null) && (s.cu || "") === "") {
+      /* This side never had a second unit; adopt the other's outright. */
+      s.cv = seg.cv; s.cu = seg.cu || "";
+    } else {
+      /* One side had no second unit to contribute, so the pair no longer
+         describes the total. Better to carry one honest number than two
+         where the bracketed one quietly understates. */
+      s.cv = null; s.cu = "";
     }
+    return list;
   }
   list.push({ mv: seg.mv, mu: seg.mu || "", cv: seg.cv, cu: seg.cu || "" });
   return list;
@@ -1091,6 +1246,95 @@ function buildGroceryItems(start, end) {
   return out;
 }
 
+/* ---- telling two spellings of one ingredient apart --------------------- */
+/* Words that describe what you do to a thing in the kitchen, not what you
+   pick up in the shop. "Chopped cilantro" and "fresh cilantro" are one bunch
+   of cilantro, so these come off before two names are compared. */
+const GROC_PREP = {
+  chopped: 1, minced: 1, diced: 1, sliced: 1, shredded: 1, grated: 1, crushed: 1,
+  mashed: 1, melted: 1, softened: 1, beaten: 1, cubed: 1, julienned: 1, halved: 1,
+  quartered: 1, torn: 1, trimmed: 1, peeled: 1, seeded: 1, deseeded: 1, cored: 1,
+  stemmed: 1, rinsed: 1, drained: 1, cooked: 1, warmed: 1, cooled: 1, chilled: 1,
+  packed: 1, heaping: 1, level: 1, divided: 1, optional: 1, plus: 1, more: 1,
+  fresh: 1, freshly: 1, finely: 1, coarsely: 1, roughly: 1, thinly: 1, thickly: 1,
+  lightly: 1, well: 1, very: 1, and: 1, or: 1, of: 1, to: 1, taste: 1, for: 1,
+  garnish: 1, serving: 1
+};
+/* Everything not in that list stays significant, which is what keeps "ground
+   beef" away from "beef" and "dried oregano" away from "oregano" without
+   needing a second list to say so. */
+const GROC_COLORS = {
+  red: 1, green: 1, yellow: 1, white: 1, black: 1, brown: 1,
+  purple: 1, pink: 1, blue: 1, golden: 1, orange: 1
+};
+
+function grocSingular(w) {
+  if (w.length <= 3) return w;
+  if (/ies$/.test(w)) return w.slice(0, -3) + "y";
+  if (/(ches|shes|sses|xes|zes)$/.test(w)) return w.slice(0, -2);
+  if (/oes$/.test(w)) return w.slice(0, -2);
+  if (/ss$/.test(w)) return w;
+  if (/s$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+
+/* A name reduced to the thing you actually buy, plus the colours that were
+   attached to it. Colour is never dropped: a red onion and a yellow onion
+   are two different things to come home with, and folding them would be a
+   silent wrong answer rather than a missed convenience.
+   Orange is the awkward one - it is a colour and it is a fruit - so it only
+   counts as a colour when something else follows it to be the colour of. */
+function normalizeGroceryName(raw) {
+  const words = String(raw || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\\s+/);
+  const kept = [];
+  words.forEach(function (w) { if (w && !GROC_PREP[w]) kept.push(w); });
+  const colors = [], base = [];
+  kept.forEach(function (w, i) {
+    if (GROC_COLORS[w]) {
+      /* Something after it that is not itself a colour makes this a colour. */
+      let qualifies = false;
+      for (let n = i + 1; n < kept.length; n++) if (!GROC_COLORS[kept[n]]) { qualifies = true; break; }
+      if (qualifies) { colors.push(w); return; }
+    }
+    base.push(grocSingular(w));
+  });
+  /* Stems are for comparing, never for showing. "Molasses" stems to
+     "molass", which is fine as a key and would be an embarrassment as the
+     name left on the list, so what gets displayed is the words as written
+     with only the prep taken off. */
+  return {
+    base: base.join(" "),
+    colors: colors.slice().sort().join(","),
+    display: kept.join(" "),
+    key: colors.slice().sort().join(",") + "|" + base.join(" ")
+  };
+}
+
+/* What the scan proposes, never what it does. Only lines still to get: a
+   line already in the basket has been found and picked up, and folding it
+   into something you are still looking for would lose track of both. */
+function groceryMergePlan(items) {
+  const groups = {}, order = [];
+  (items || []).forEach(function (i) {
+    if (i.removed || i.checked) return;
+    const n = normalizeGroceryName(i.name);
+    if (!n.base) return;
+    if (!groups[n.key]) { groups[n.key] = { key: n.key, into: n.display, ids: [], names: [] }; order.push(n.key); }
+    /* The shortest way anyone on this list wrote the thing wins. It is a
+       real name someone typed rather than something assembled, and the
+       shortest is the one with the least prep clinging to it. */
+    if (n.display.length < groups[n.key].into.length) groups[n.key].into = n.display;
+    groups[n.key].ids.push(i.id);
+    groups[n.key].names.push(i.name);
+  });
+  const out = [];
+  order.forEach(function (k) {
+    const g = groups[k];
+    if (g.ids.length > 1) out.push({ key: k, into: g.into, ids: g.ids, names: g.names, on: true });
+  });
+  return out;
+}
+
 /* Two lines the person says are the same thing. Quantities add; the name
    that survives is the one they picked second, which is the point - "Red
    onion" folds into "Onion, red" because that is how their shop is laid
@@ -1124,7 +1368,14 @@ function reorderGroceryItems(items, id, toIndex) {
 function segText(s) {
   const bits = [];
   if (s.mv != null) bits.push(formatMetric(s.mv, s.mu));
-  if (s.cv != null) bits.push(s.mv != null ? "(" + formatCustomary(s.cv, s.cu) + ")" : formatCustomary(s.cv, s.cu));
+  /* Countable things carry the same number in both fields - two and a half
+     peppers are two and a half peppers - and "2 1/2 (2 1/2)" is the same
+     fact twice in a chip with no width to spare. */
+  const echo = (s.mv != null && s.cv != null &&
+    (s.mu || "") === (s.cu || "") && Number(s.mv) === Number(s.cv));
+  if (s.cv != null && !echo) {
+    bits.push(s.mv != null ? "(" + formatCustomary(s.cv, s.cu) + ")" : formatCustomary(s.cv, s.cu));
+  }
   return bits.join(" ") || "—";
 }
 function qtyText(item) { return (item.qty || []).map(segText).join(" + "); }
@@ -2106,46 +2357,23 @@ function GroceriesViewHTML() {
     '</div>';
 }
 
-/* One shopping line. The tick is for the shop; the x is for things you have
-   already got in ("1 tbsp olive oil"); the quantity is editable because half
-   a bag of flour at home means half a bag on the list; the arrows fold two
-   spellings of the same thing together; the dots reorder to match the aisles.  */
+/* One shopping line, collapsed. The tick is for the shop; the name and the
+   quantity chip both open the editor below, which is where the source recipe,
+   the two unit fields and this line's own actions live; the dots reorder to
+   match the aisles. Everything that used to stack vertically inside the row
+   now lives one tap away, which is what gets the row down to a single line. */
 function GroceryRowHTML(L, item, merging) {
   const gone = !!item.removed;
   const isSrc = merging && state.groceryMergeFrom === item.id;
   /* A line you have set aside is not a thing to merge into. */
   const isTarget = merging && !isSrc && !gone;
-  const qty = (item.qty || []).map(function (s, si) {
-    const primary = (s.mv != null) ? s.mv : s.cv;
-    const unit = (s.mv != null) ? (s.mu || "") : (s.cu || "");
-    const alt = (s.mv != null && s.cv != null)
-      ? '<span class="groc-alt">(' + esc(formatCustomary(s.cv, s.cu)) + ')</span>' : "";
-    return (si ? '<span class="groc-plus">+</span>' : "") +
-      '<input type="number" step="any" min="0" ' + (gone ? "disabled " : "") +
-        'value="' + (primary == null ? "" : primary) + '" ' +
-        'aria-label="Quantity for ' + esc(item.name) + '" ' +
-        'onchange="Actions.setGroceryQty(\\'' + L + '\\',\\'' + item.id + '\\',' + si + ',this.value)" />' +
-      (unit ? '<span class="groc-unit">' + esc(unit) + '</span>' : "") + alt;
-  }).join("");
+  const open = state.groceryOpenId === item.id;
   const cls = "groc-row" + (item.checked && !gone ? " groc-done" : "") + (gone ? " groc-gone" : "") +
-    (isSrc ? " merge-src" : "") + (isTarget ? " merge-target" : "");
+    (isSrc ? " merge-src" : "") + (isTarget ? " merge-target" : "") +
+    (state.grocerySwipedId === item.id ? " swiped" : "");
   const rowClick = isTarget
     ? ' onclick="Actions.completeGroceryMerge(\\'' + L + '\\',\\'' + item.id + '\\')"'
     : "";
-  /* Set aside: put it back, or say for certain you never wanted it. Still
-     wanted: set it aside, fold it into another line, or drag it. */
-  const acts = gone
-    ? '<button title="Put this back on the list" onclick="event.stopPropagation(); Actions.restoreGroceryItem(\\'' +
-        L + '\\',\\'' + item.id + '\\')">' + icon("undo", 15) + '</button>' +
-      '<button title="Delete for good" onclick="event.stopPropagation(); Actions.purgeGroceryItem(\\'' +
-        L + '\\',\\'' + item.id + '\\')">' + icon("trash", 15) + '</button>'
-    : '<button title="Not needed — set aside" onclick="event.stopPropagation(); Actions.removeGroceryItem(\\'' +
-        L + '\\',\\'' + item.id + '\\')">' + icon("x", 15) + '</button>' +
-      '<button title="Merge with another line" onclick="event.stopPropagation(); Actions.beginGroceryMerge(\\'' +
-        item.id + '\\')">' + icon("merge", 15) + '</button>' +
-      '<span class="groc-grip" title="Drag to reorder" ' +
-        'onpointerdown="Actions.gripDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
-        icon("grip", 16) + '</span>';
   /* The tick is inert on a line that is not being bought. */
   const tick = gone
     ? '<span class="groc-tick" aria-hidden="true"></span>'
@@ -2153,14 +2381,85 @@ function GroceryRowHTML(L, item, merging) {
         'aria-pressed="' + (item.checked ? "true" : "false") + '" ' +
         'onclick="event.stopPropagation(); Actions.toggleGroceryCheck(\\'' + L + '\\',\\'' + item.id + '\\')">' +
         (item.checked ? icon("check", 14) : "") + '</button>';
-  return '<li class="' + cls + '" data-id="' + item.id + '"' + rowClick + '>' +
-    tick +
-    '<div class="groc-main">' +
-      '<div class="groc-name">' + esc(item.name) + '</div>' +
-      ((item.from && item.from.length) ? '<div class="groc-from">' + esc(item.from.join(", ")) + '</div>' : "") +
-      '<div class="groc-qty" onclick="event.stopPropagation()">' + qty + '</div>' +
+  /* Both units in the one chip, exactly as the line reads. A line with no
+     quantity at all still gets a chip, because that is the way in to giving
+     it one. */
+  const chip = '<button class="groc-qty-chip" title="Change the amount" ' +
+    'onclick="event.stopPropagation(); Actions.openGroceryRow(\\'' + L + '\\',\\'' + item.id + '\\',\\'qty\\')">' +
+    esc(qtyText(item) || "—") + '</button>';
+  /* Parked under the row, revealed by dragging it left. The set-aside x that
+     used to sit on every row cost horizontal space on all seventeen of them
+     to be useful on about two, so it moved here. */
+  const back = gone
+    ? '<div class="groc-swipe-back"><button class="put-back" ' +
+        'onclick="event.stopPropagation(); Actions.restoreGroceryItem(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("undo", 14) + ' Put back</button></div>'
+    : '<div class="groc-swipe-back"><button ' +
+        'onclick="event.stopPropagation(); Actions.removeGroceryItem(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("x", 14) + ' Remove</button></div>';
+  const row = '<li class="' + cls + '" data-id="' + item.id + '"' + rowClick + '>' +
+    back +
+    '<div class="groc-slide" ' +
+      'onpointerdown="Actions.swipeDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
+      tick +
+      '<button class="groc-name" title="Edit this line" ' +
+        'onclick="event.stopPropagation(); Actions.openGroceryRow(\\'' + L + '\\',\\'' + item.id + '\\',\\'name\\')">' +
+        esc(item.name) + '</button>' +
+      chip +
+      '<span class="groc-grip" title="Drag to reorder" ' +
+        'onpointerdown="Actions.gripDown(event,\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("grip", 16) + '</span>' +
     '</div>' +
-    '<div class="groc-acts">' + acts + '</div>' +
+  '</li>';
+  return row + (open ? GroceryEditHTML(L, item) : "");
+}
+
+/* The editor for one line. Renaming here changes this list and nothing else -
+   the recipe keeps its own wording, so next week's list comes back saying
+   what the recipe says. That is deliberate: "Onion, red" is how a shop is
+   laid out, not how a recipe is written. */
+function GroceryEditHTML(L, item) {
+  const gone = !!item.removed;
+  /* A hand-added line can have no quantity at all. It still gets one empty
+     pair of fields, otherwise there is no way to give it one. */
+  const segs = (item.qty && item.qty.length) ? item.qty : [{ mv: null, mu: "", cv: null, cu: "" }];
+  const fields = segs.map(function (s, si) {
+    const metric = '<input type="number" step="any" min="0" ' + (gone ? "disabled " : "") +
+      'id="groc-m-' + item.id + '-' + si + '" value="' + (s.mv == null ? "" : s.mv) + '" ' +
+      'aria-label="Metric amount for ' + esc(item.name) + '" ' +
+      'onchange="Actions.setGroceryQty(\\'' + L + '\\',\\'' + item.id + '\\',' + si + ',\\'m\\',this.value)" />' +
+      (s.mu ? '<span class="groc-unit">' + esc(s.mu) + '</span>' : "");
+    /* Only where the line actually carries a second unit. There is no
+       conversion table behind these two numbers - they are the pair the
+       recipe stated - so a customary field on a line that never had one
+       would be a number with nothing to be proportional to. */
+    const cust = (s.cv == null && !s.cu) ? "" :
+      '<input type="number" step="any" min="0" ' + (gone ? "disabled " : "") +
+      'id="groc-c-' + item.id + '-' + si + '" value="' + (s.cv == null ? "" : s.cv) + '" ' +
+      'aria-label="Customary amount for ' + esc(item.name) + '" ' +
+      'onchange="Actions.setGroceryQty(\\'' + L + '\\',\\'' + item.id + '\\',' + si + ',\\'c\\',this.value)" />' +
+      (s.cu ? '<span class="groc-unit">' + esc(s.cu) + '</span>' : "");
+    return (si ? '<span class="groc-plus">+</span>' : "") + metric + cust;
+  }).join("");
+  const acts = gone
+    ? '<button class="btn btn-sm" onclick="Actions.restoreGroceryItem(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("undo", 14) + ' Put back</button>' +
+      '<button class="btn btn-sm" onclick="Actions.purgeGroceryItem(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("trash", 14) + ' Delete for good</button>'
+    : '<button class="btn btn-sm" onclick="Actions.removeGroceryItem(\\'' + L + '\\',\\'' + item.id + '\\')">' +
+        icon("x", 14) + ' Remove from list</button>' +
+      '<button class="btn btn-sm" onclick="Actions.beginGroceryMerge(\\'' + item.id + '\\')">' +
+        icon("merge", 14) + ' Merge into…</button>' +
+      '<button class="btn btn-sm" style="margin-left:auto" onclick="Actions.closeGroceryRow()">Done</button>';
+  return '<li class="groc-edit">' +
+    '<input class="groc-name-input" id="groc-name-' + item.id + '" ' + (gone ? "disabled " : "") +
+      'value="' + esc(item.name) + '" maxlength="120" aria-label="Name of this line" ' +
+      'onchange="Actions.setGroceryName(\\'' + L + '\\',\\'' + item.id + '\\',this.value)" />' +
+    ((item.from && item.from.length)
+      ? '<p class="groc-from">From ' + esc(item.from.join(", ")) + '</p>'
+      : '<p class="groc-from">Added by hand</p>') +
+    '<div class="groc-qty">' + fields + '</div>' +
+    '<div class="groc-edit-acts">' + acts + '</div>' +
   '</li>';
 }
 
@@ -2180,40 +2479,57 @@ function GroceryListViewHTML() {
         '<button class="btn btn-sm" style="margin-left:auto" onclick="Actions.cancelGroceryMerge()">Cancel</button>' +
       '</div>'
     : "";
-  /* Rendered in stored order, which normalizeGroceryOrder keeps banded, with a
-     caption dropped in where the band changes. The captions are not .groc-row
-     elements, so the drag maths steps straight over them. */
+  /* Rendered in stored order, which normalizeGroceryOrder keeps banded: still
+     to get, then in the basket, then removed. The last two collapse behind a
+     heading, because both are things you have already dealt with and neither
+     earns its height while you are still shopping.
+     The headings are not .groc-row elements and the bands stay in stored
+     order, so the drag maths steps straight over them and an index read off
+     the rendered rows still means what it means in the array. */
+  const toGet = items.filter(function (i) { return !i.removed && !i.checked; });
+  const inBasket = items.filter(function (i) { return !i.removed && i.checked; });
+  const takenOff = items.filter(function (i) { return i.removed; });
+  const section = function (key, label, group) {
+    if (!group.length) return "";
+    const open = !!state.grocerySections[key];
+    return '<li class="groc-sep">' +
+        '<button class="groc-sec' + (open ? " open" : "") + '" ' +
+          'aria-expanded="' + (open ? "true" : "false") + '" ' +
+          'onclick="Actions.toggleGrocerySection(\\'' + key + '\\')">' +
+          esc(label) + ' <span class="groc-sec-n">' + group.length + '</span>' +
+          icon("chevronDown", 14) +
+        '</button>' +
+      '</li>' +
+      (open ? group.map(function (i) { return GroceryRowHTML(L, i, merging); }).join("") : "");
+  };
   let body;
   if (items.length === 0) {
     body = '<div class="empty-state"><p class="title font-display">Nothing on this list</p>' +
       '<p class="sub">Either nothing was scheduled for those days, or you have taken everything off.</p></div>';
   } else {
-    let seenChecked = false, seenGone = false;
-    body = '<ul class="groc-list" id="groc-items">' + items.map(function (i) {
-      let sep = "";
-      if (i.removed && !seenGone) { seenGone = true; sep = '<li class="groc-sep">Not needed</li>'; }
-      else if (!i.removed && i.checked && !seenChecked) { seenChecked = true; sep = '<li class="groc-sep">In the basket</li>'; }
-      return sep + GroceryRowHTML(L, i, merging);
-    }).join("") + '</ul>';
+    body = '<ul class="groc-lines" id="groc-items">' +
+      toGet.map(function (i) { return GroceryRowHTML(L, i, merging); }).join("") +
+      section("basket", "In the basket", inBasket) +
+      section("removed", "Removed from list", takenOff) +
+      '</ul>';
   }
   return '' +
     '<div class="wrap">' +
-      '<div class="detail-top">' +
-        '<button class="back-link" onclick="Actions.backToGroceries()">' + icon("chevronLeft", 18) + ' Lists</button>' +
+      '<div class="groc-bar">' +
+        '<button class="groc-bar-back" title="Back to the lists" ' +
+          'onclick="Actions.backToGroceries()">' + icon("chevronLeft", 20) + '</button>' +
+        '<button class="groc-bar-title" title="Rename this list" ' +
+          'onclick="Actions.openRenameList(\\'' + L + '\\')">' +
+          '<span class="lbl">' + esc(meta ? meta.label : "Shopping list") + '</span>' +
+          '<span class="cnt">' + got + '/' + live.length + '</span>' +
+        '</button>' +
+        '<button class="icon-btn" title="How this list works" ' +
+          'onclick="Actions.openModal(\\'groceryHelp\\')">' + icon("info", 17) + '</button>' +
       '</div>' +
-      '<button class="title-edit" title="Rename this list" ' +
-        'onclick="Actions.openRenameList(\\'' + L + '\\')">' +
-        '<h1 class="detail-title font-display" style="font-size:20px;margin:0">' +
-          esc(meta ? meta.label : "Shopping list") + '</h1>' +
-        icon("pencil", 14) +
-      '</button>' +
-      '<div class="groc-counts">' +
-        '<span>' + got + ' of ' + live.length + ' in the basket</span>' +
-        (gone ? '<span>' + gone + ' not needed</span>' : "") +
-      '</div>' +
-      '<p class="helper-text">Tap a quantity to change it if you already have some at home, the x to set a ' +
-        'line aside, the arrows to merge two spellings of the same thing, and the dots to drag a line into ' +
-        'aisle order. Anything set aside drops to the bottom and can be put back.</p>' +
+      (items.length > 1
+        ? '<button class="btn btn-sm groc-tidy" onclick="Actions.openMergeCommon()">' +
+            icon("merge", 14) + ' Merge common ingredients</button>'
+        : "") +
       hint +
       body +
       '<button class="btn groc-add" onclick="Actions.openAddGroceryItem()">' + icon("plus", 15) +
@@ -3282,6 +3598,45 @@ function AddGroceryItemModalHTML() {
 
 /* The generated name says when the list was made, which is the useful thing
    until the day you have two on the go and one of them is Thanksgiving. */
+function MergeCommonModalHTML() {
+  const plan = state.groceryMergePlan || [];
+  const rows = plan.map(function (g, idx) {
+    return '<label class="merge-row">' +
+        '<input type="checkbox" ' + (g.on ? "checked " : "") +
+          'onchange="Actions.toggleMergePlan(' + idx + ')" />' +
+        '<span class="merge-body">' +
+          '<span class="merge-from">' + g.names.map(esc).join("  +  ") + '</span>' +
+          '<span class="merge-into">' + icon("merge", 13) + esc(g.into) + '</span>' +
+        '</span>' +
+      '</label>';
+  }).join("");
+  const n = plan.filter(function (g) { return g.on; }).length;
+  return modalShell("Merge common ingredients",
+    '<p class="helper-text">These look like the same thing spelled two ways. ' +
+      'The amounts add up and the name below each pair is the one that stays — you can rename it ' +
+      'afterwards by tapping the line. Colours are never folded together, so a red onion and a ' +
+      'yellow onion stay apart.</p>' +
+    '<div class="merge-rows">' + rows + '</div>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" ' + (n ? "" : "disabled ") +
+      'onclick="Actions.applyMergeCommon()">Merge ' + n + '</button></div>');
+}
+
+/* The paragraph that used to sit above every list, on demand. It was five
+   lines of screen paid for on every visit to teach something once. */
+function GroceryHelpModalHTML() {
+  return modalShell("How this list works",
+    '<ul class="help-list">' +
+      '<li>Tap the <b>tick</b> as you put something in the basket. It folds away under <b>In the basket</b>.</li>' +
+      '<li>Tap the <b>name</b> or the <b>amount</b> to open a line: rename it, change either unit, or see which recipe it came from. The two amounts move together.</li>' +
+      '<li>Renaming a line changes it here only. The recipe keeps its own wording.</li>' +
+      '<li><b>Swipe a line left</b> to remove it — for things you have already got in. It drops under <b>Removed from list</b> and can be put back.</li>' +
+      '<li>Drag the <b>dots</b> to put lines in the order of your shop.</li>' +
+      '<li><b>Merge common ingredients</b> folds together two spellings of the same thing and adds the amounts up.</li>' +
+    '</ul>' +
+    '<div class="edit-actions"><button class="btn btn-primary" onclick="Actions.closeModal()">Got it</button></div>');
+}
+
 function RenameListModalHTML() {
   const L = state.pendingRenameList;
   const meta = state.groceryLists.filter(x => x.listId === L)[0];
@@ -3558,6 +3913,8 @@ function renderModal() {
   else if (state.modal === "confirmDeleteList") root.innerHTML = ConfirmDeleteListModalHTML();
   else if (state.modal === "addGroceryItem") root.innerHTML = AddGroceryItemModalHTML();
   else if (state.modal === "renameList") root.innerHTML = RenameListModalHTML();
+  else if (state.modal === "groceryHelp") root.innerHTML = GroceryHelpModalHTML();
+  else if (state.modal === "mergeCommon") root.innerHTML = MergeCommonModalHTML();
   else if (state.modal === "conflict") root.innerHTML = ConflictModalHTML();
   else if (state.modal === "locked") root.innerHTML = LockedModalHTML();
 }
@@ -3955,6 +4312,7 @@ Actions.setCustomScale = function(v) { const n = parseFloat(v); if (!isNaN(n) &&
 Actions.toggleShowAllLogs = function() { state._showAllLogs = !state._showAllLogs; updateRecipeBody(); };
 
 Actions.openModal = function(name) {
+  setTabsDown(false);
   state.modal = name;
   state.modalError = "";
   if (name === "logCook") state.logRating = 0;
@@ -4448,6 +4806,7 @@ Actions.mergeRecipe = async function(id) {
    recipe means the box, not the recipe you were already looking at, and the
    watch on that recipe is dropped on the way out. */
 Actions.goTab = function(tab) {
+  setTabsDown(false);
   flushGrocerySave();
   setWatch(null);
   state.calDay = null;
@@ -4723,6 +5082,9 @@ Actions.backToGroceries = function() {
   state.view = "groceries";
   state.activeListId = null;
   state.groceryMergeFrom = null;
+  state.groceryOpenId = null;
+  state.grocerySwipedId = null;
+  state.grocerySections = { basket: false, removed: false };
   renderApp();
 };
 Actions.createGroceryList = async function() {
@@ -4731,12 +5093,7 @@ Actions.createGroceryList = async function() {
   if (rng.start > rng.end) { toast("The last day is before the first one"); return; }
   const items = buildGroceryItems(rng.start, rng.end);
   if (!items.length && !confirm("Nothing is scheduled for those days. Build an empty list anyway?")) return;
-  /* Named where the local clock is, since the server's idea of the hour is
-     not the one the person was standing in when they made it. */
-  const now = new Date();
-  const label = slashDate(rng.start) + " - " + slashDate(rng.end) + " made at " +
-    DOW[now.getDay()] + ", " + MON[now.getMonth()] + " " + now.getDate() + ", " + now.getFullYear() + ", " +
-    now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const label = uniqueListLabel(rangeLabel(rng.start, rng.end), state.groceryLists);
   state.busy = true;
   try {
     const res = await API("grocery/create", {
@@ -4755,6 +5112,9 @@ Actions.createGroceryList = async function() {
 Actions.openGroceryList = async function(listId) {
   state.activeListId = listId;
   state.groceryMergeFrom = null;
+  state.groceryOpenId = null;
+  state.grocerySwipedId = null;
+  state.grocerySections = { basket: false, removed: false };
   if (!state.groceryItems[listId]) {
     state.loading = true;
     renderApp();
@@ -4828,6 +5188,32 @@ Actions.confirmDeleteList = async function() {
    whole thing is one snapshot anyway, and a partial write would be a way for
    the order and the contents to disagree. Coalesced so dragging a row does
    not turn into a request per frame. */
+/* The tab bar gets out of the way going down and comes back coming up. Three
+   tabs and a label are about 60px that is only wanted at the moment you go
+   looking for it. */
+let tabScrollAt = 0, tabsAreDown = false;
+function setTabsDown(down) {
+  if (tabsAreDown === down) return;
+  tabsAreDown = down;
+  if (document.body && document.body.classList) document.body.classList.toggle("tabs-down", down);
+}
+function onAppScroll() {
+  const el = document.getElementById("app");
+  if (!el) return;
+  const y = el.scrollTop;
+  /* A page with nothing to scroll has nothing to get out of the way of, and
+     a dialog is meant to cover the app, tabs included, so neither is a place
+     to be hiding things. */
+  if (state.modal || (el.scrollHeight - el.clientHeight) < 80) { setTabsDown(false); tabScrollAt = y; return; }
+  const dy = y - tabScrollAt;
+  /* Below the jitter threshold the anchor deliberately stays put, so a slow
+     deliberate drag still accumulates into a decision instead of being
+     rounded away a pixel at a time. */
+  if (Math.abs(dy) < 6) return;
+  if (dy > 0 && y > 64) setTabsDown(true);
+  else if (dy < 0) setTabsDown(false);
+  tabScrollAt = y;
+}
 /* #app is the scroller, and renderApp replaces everything inside it, so the
    scroll position goes with it. Ticking the last thing on a long list and
    being thrown back to the top is not a way anyone can shop, hence this:
@@ -4838,6 +5224,11 @@ function renderKeepingScroll() {
   renderApp();
   const after = document.getElementById("app");
   if (after) after.scrollTop = at;
+  /* Restoring the position fires a scroll event like any other, and the bar
+     would read it as a real gesture and flick out of the way on every tick.
+     Moving the anchor with it makes that event a zero delta, which needs no
+     flag and no timer to unset. */
+  tabScrollAt = at;
 }
 
 let grocSaveTimer = null;
@@ -4863,6 +5254,7 @@ function saveGroceryItems(listId) {
 }
 
 Actions.toggleGroceryCheck = function(listId, itemId) {
+  state.grocerySwipedId = null;
   state.groceryItems[listId] = groceryItemsFor(listId).map(function (i) {
     return i.id === itemId ? Object.assign({}, i, { checked: !i.checked }) : i;
   });
@@ -4874,6 +5266,7 @@ Actions.toggleGroceryCheck = function(listId, itemId) {
    the reason, and the tenth is a misfire - either way the line drops to the
    bottom, greys out, and stays recoverable. */
 Actions.removeGroceryItem = function(listId, itemId) {
+  state.grocerySwipedId = null;
   state.groceryItems[listId] = normalizeGroceryOrder(groceryItemsFor(listId).map(function (i) {
     return i.id === itemId ? Object.assign({}, i, { removed: true, checked: false }) : i;
   }));
@@ -4882,6 +5275,7 @@ Actions.removeGroceryItem = function(listId, itemId) {
   renderKeepingScroll();
 };
 Actions.restoreGroceryItem = function(listId, itemId) {
+  state.grocerySwipedId = null;
   state.groceryItems[listId] = normalizeGroceryOrder(groceryItemsFor(listId).map(function (i) {
     return i.id === itemId ? Object.assign({}, i, { removed: false }) : i;
   }));
@@ -4891,27 +5285,40 @@ Actions.restoreGroceryItem = function(listId, itemId) {
 /* The only irreversible one, and it is deliberately two steps: a line has to
    be set aside first, so this button is never next to a line still in play. */
 Actions.purgeGroceryItem = function(listId, itemId) {
+  state.grocerySwipedId = null;
   state.groceryItems[listId] = groceryItemsFor(listId).filter(i => i.id !== itemId);
   saveGroceryItems(listId);
   renderKeepingScroll();
 };
-/* Editing the number you can see. Where a line carries both units, the one in
-   brackets is moved by the same proportion rather than left behind saying
-   something different from the number next to it. */
-Actions.setGroceryQty = function(listId, itemId, segIdx, raw) {
+/* Editing either number on a line that carries both. They stay in step by
+   proportion, not by conversion: the two values are the pair the recipe
+   stated, and there is no table that turns 15 g of cilantro into a quarter
+   cup - that ratio is true of cilantro and of nothing else. So halving one
+   halves the other, which is right for every ingredient, and no arithmetic
+   claims to know more than it does.
+   A side with no number to divide by - null, or zero - has no ratio to
+   apply, so the other side is left exactly as it was rather than being
+   silently zeroed or guessed at. */
+Actions.setGroceryQty = function(listId, itemId, segIdx, side, raw) {
   const n = parseFloat(raw);
+  const val = (isNaN(n) || n < 0) ? null : n;
+  const round = function (x) { return Math.round(x * 1000) / 1000; };
   state.groceryItems[listId] = groceryItemsFor(listId).map(function (i) {
     if (i.id !== itemId) return i;
-    const qty = i.qty.map(function (s, si) {
+    /* A hand-added line can arrive with no segments at all; the editor shows
+       one empty pair for exactly that case, so make it real on first edit. */
+    const base = (i.qty && i.qty.length) ? i.qty : [{ mv: null, mu: "", cv: null, cu: "" }];
+    const qty = base.map(function (s, si) {
       if (si !== segIdx) return s;
       const next = { mv: s.mv, mu: s.mu, cv: s.cv, cu: s.cu };
-      const val = (isNaN(n) || n < 0) ? null : n;
-      if (s.mv != null) {
-        const ratio = (s.mv > 0 && val != null) ? (val / s.mv) : null;
-        next.mv = val;
-        if (next.cv != null && ratio != null) next.cv = Math.round(next.cv * ratio * 1000) / 1000;
-      } else {
+      if (side === "c") {
+        const ratio = (s.cv != null && s.cv > 0 && val != null) ? (val / s.cv) : null;
         next.cv = val;
+        if (next.mv != null && ratio != null) next.mv = round(next.mv * ratio);
+      } else {
+        const ratio = (s.mv != null && s.mv > 0 && val != null) ? (val / s.mv) : null;
+        next.mv = val;
+        if (next.cv != null && ratio != null) next.cv = round(next.cv * ratio);
       }
       return next;
     });
@@ -4958,16 +5365,97 @@ Actions.addGroceryItem = function() {
   toast(name + " added");
 };
 
+/* Open one line's editor, closing whichever was open. The focus is handed to
+   the field that was tapped: the name if you tapped the name, the first
+   quantity if you tapped the chip. Without that the editor opens and the
+   keyboard does not, which reads as nothing having happened. */
+Actions.openGroceryRow = function(listId, itemId, focus) {
+  state.grocerySwipedId = null;
+  const already = state.groceryOpenId === itemId;
+  state.groceryOpenId = already ? null : itemId;
+  state.groceryOpenFocus = focus || "name";
+  renderKeepingScroll();
+  if (already) return;
+  const id = (state.groceryOpenFocus === "qty" ? "groc-m-" + itemId + "-0" : "groc-name-" + itemId);
+  setTimeout(function () {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus();
+    if (el.select) { try { el.select(); } catch (e) {} }
+  }, 0);
+};
+Actions.toggleGrocerySection = function(key) {
+  state.grocerySections[key] = !state.grocerySections[key];
+  state.grocerySwipedId = null;
+  renderKeepingScroll();
+};
+Actions.closeGroceryRow = function() {
+  state.groceryOpenId = null;
+  state.grocerySwipedId = null;
+  renderKeepingScroll();
+};
+/* Renames the line on this list only. The recipe is untouched on purpose. */
+Actions.setGroceryName = function(listId, itemId, raw) {
+  const name = String(raw == null ? "" : raw).trim().slice(0, 120);
+  if (!name) { toast("A line needs a name"); renderKeepingScroll(); return; }
+  state.groceryItems[listId] = groceryItemsFor(listId).map(function (i) {
+    return i.id === itemId ? Object.assign({}, i, { name: name }) : i;
+  });
+  saveGroceryItems(listId);
+  renderKeepingScroll();
+};
+
+Actions.openMergeCommon = function() {
+  const plan = groceryMergePlan(groceryItemsFor(state.activeListId));
+  if (!plan.length) { toast("Nothing on the list looks like a duplicate"); return; }
+  state.groceryMergePlan = plan;
+  state.groceryOpenId = null;
+  state.grocerySwipedId = null;
+  Actions.openModal("mergeCommon");
+};
+Actions.toggleMergePlan = function(idx) {
+  const g = (state.groceryMergePlan || [])[idx];
+  if (!g) return;
+  g.on = !g.on;
+  renderModal();
+};
+Actions.applyMergeCommon = function() {
+  const listId = state.activeListId;
+  const plan = (state.groceryMergePlan || []).filter(function (g) { return g.on && g.ids.length > 1; });
+  if (!plan.length) { Actions.closeModal(); return; }
+  let items = groceryItemsFor(listId);
+  let folded = 0;
+  plan.forEach(function (g) {
+    /* Everything folds into the first line of the group, which then takes
+       the stripped-down name. Guarded against a line having gone since the
+       scan ran - the list is editable behind the dialog. */
+    const live = g.ids.filter(function (id) { return items.some(function (i) { return i.id === id; }); });
+    if (live.length < 2) return;
+    const keep = live[0];
+    for (let n = 1; n < live.length; n++) { items = mergeGroceryItems(items, live[n], keep); folded++; }
+    items = items.map(function (i) {
+      return i.id === keep ? Object.assign({}, i, { name: g.into }) : i;
+    });
+  });
+  state.groceryItems[listId] = normalizeGroceryOrder(items);
+  state.groceryMergePlan = [];
+  saveGroceryItems(listId);
+  Actions.closeModal();
+  toast(folded ? ("Folded " + folded + " line" + (folded === 1 ? "" : "s") + " in") : "Nothing left to merge");
+};
+
 Actions.beginGroceryMerge = function(itemId) {
   const items = groceryItemsFor(state.activeListId);
   if (items.length < 2) { toast("There is nothing to merge this with"); return; }
   state.groceryMergeFrom = itemId;
+  state.groceryOpenId = null;
   renderKeepingScroll();
 };
 Actions.cancelGroceryMerge = function() { state.groceryMergeFrom = null; renderKeepingScroll(); };
 Actions.completeGroceryMerge = function(listId, targetId) {
   const fromId = state.groceryMergeFrom;
   state.groceryMergeFrom = null;
+  state.groceryOpenId = null;
   if (!fromId || fromId === targetId) { renderKeepingScroll(); return; }
   const before = groceryItemsFor(listId);
   const after = normalizeGroceryOrder(mergeGroceryItems(before, fromId, targetId));
@@ -4976,6 +5464,63 @@ Actions.completeGroceryMerge = function(listId, targetId) {
   saveGroceryItems(listId);
   renderKeepingScroll();
   if (kept) toast("Merged into " + kept.name);
+};
+
+/* Swipe a row left to uncover its action. The hard part is not the animation,
+   it is not stealing the scroll: the row must let a vertical drag through to
+   the scroller untouched, and only take the gesture once the finger has
+   committed sideways. So touch-action:pan-y hands vertical to the browser,
+   and the first move that is both past the slop and more sideways than down
+   locks the direction for the rest of the gesture - after which it cannot
+   change its mind, which is what stops a wobbly finger from juddering
+   between scrolling and swiping.
+   preventDefault is deliberately not called until that lock: calling it on
+   pointerdown would suppress the click, and the tick and the name would stop
+   responding to an ordinary tap. */
+Actions.swipeDown = function(ev, listId, itemId) {
+  if (!ev || ev.pointerType === "mouse" && ev.button !== 0) return;
+  const slide = ev.currentTarget;
+  const row = slide && slide.parentNode;
+  if (!row) return;
+  /* Only one row open at a time, and touching another closes it. */
+  if (state.grocerySwipedId && state.grocerySwipedId !== itemId) {
+    state.grocerySwipedId = null;
+    renderKeepingScroll();
+    return;
+  }
+  const startX = ev.clientX, startY = ev.clientY;
+  const wasOpen = state.grocerySwipedId === itemId;
+  const OPEN = 96, SLOP = 8;
+  let dir = null, dx = 0;
+
+  const move = function (e) {
+    const mx = e.clientX - startX, my = e.clientY - startY;
+    if (!dir) {
+      if (Math.abs(mx) < SLOP && Math.abs(my) < SLOP) return;
+      dir = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+      if (dir === "y") { done(false); return; }
+      row.classList.add("swiping");
+    }
+    if (e.cancelable) e.preventDefault();
+    dx = Math.max(-OPEN, Math.min(0, (wasOpen ? -OPEN : 0) + mx));
+    slide.style.transform = "translateX(" + dx + "px)";
+  };
+  const up = function () { done(true); };
+  const done = function (settle) {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    document.removeEventListener("pointercancel", up);
+    row.classList.remove("swiping");
+    slide.style.transform = "";
+    if (!settle || dir !== "x") return;
+    /* Past halfway it stays open, short of it springs back. */
+    const open = dx <= -OPEN / 2;
+    const next = open ? itemId : null;
+    if (state.grocerySwipedId !== next) { state.grocerySwipedId = next; renderKeepingScroll(); }
+  };
+  document.addEventListener("pointermove", move, { passive: false });
+  document.addEventListener("pointerup", up);
+  document.addEventListener("pointercancel", up);
 };
 
 /* Drag to reorder, by hand. The HTML5 drag events never fire for a finger on
@@ -4994,29 +5539,36 @@ Actions.gripDown = function(ev, listId, itemId) {
   };
   const row = rowOf(itemId);
   if (!row) return;
-  row.classList.add("groc-dragging");
+  /* An open editor is a second element that does not travel with the row it
+     belongs to, so the drag would leave it sitting under someone else. */
+  if (state.groceryOpenId || state.grocerySwipedId) {
+    state.groceryOpenId = null; state.grocerySwipedId = null; renderKeepingScroll();
+  }
+  const row2 = rowOf(itemId);
+  if (!row2) return;
+  row2.classList.add("groc-dragging");
   const onMove = function (e) {
     if (e.preventDefault) e.preventDefault();
     const y = (e.clientY != null) ? e.clientY
       : (e.touches && e.touches[0] ? e.touches[0].clientY : null);
     if (y == null) return;
     const others = Array.prototype.slice.call(ul.querySelectorAll(".groc-row"))
-      .filter(function (n) { return n !== row; });
+      .filter(function (n) { return n !== row2; });
     let before = null;
     for (const n of others) {
       const b = n.getBoundingClientRect();
       if (y < b.top + b.height / 2) { before = n; break; }
     }
-    if (before) ul.insertBefore(row, before);
-    else ul.appendChild(row);
+    if (before) ul.insertBefore(row2, before);
+    else ul.appendChild(row2);
   };
   const onUp = function () {
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
     document.removeEventListener("pointercancel", onUp);
-    row.classList.remove("groc-dragging");
+    row2.classList.remove("groc-dragging");
     const order = Array.prototype.slice.call(ul.querySelectorAll(".groc-row"));
-    const toIndex = order.indexOf(row);
+    const toIndex = order.indexOf(row2);
     if (toIndex >= 0) {
       state.groceryItems[listId] =
         normalizeGroceryOrder(reorderGroceryItems(groceryItemsFor(listId), itemId, toIndex));
@@ -5044,6 +5596,14 @@ if (typeof document !== "undefined" && document.addEventListener) {
    has to be told. resize covers the height changes and scroll covers the
    visible area shifting under a pinch. Cheap enough to leave running rather
    than wiring up and tearing down around each modal. */
+/* #app outlives every render - only its contents are replaced - so this
+   binds once and never needs rewiring. */
+if (typeof document !== "undefined" && document.getElementById) {
+  const scroller = document.getElementById("app");
+  if (scroller && scroller.addEventListener) {
+    scroller.addEventListener("scroll", onAppScroll, { passive: true });
+  }
+}
 if (typeof window !== "undefined" && window.visualViewport && window.addEventListener) {
   const vvport = window.visualViewport;
   vvport.addEventListener("resize", syncViewportVars);
