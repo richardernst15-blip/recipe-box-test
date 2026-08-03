@@ -994,6 +994,11 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 /* No on/off to it - the calendar button opens a frame rather than setting a
    flag - so it only ever shows the pressed state its neighbours share. */
 .mark-cal:active{ color:var(--accent); border-color:var(--accent); background:rgba(143,45,36,.14); }
+/* Shown rather than hidden to somebody reading a link without an account:
+   greying them out says what a cookbook would let them do here, where
+   leaving them out says nothing at all. Pointer events go off as well as the
+   disabled attribute so a tap does not even flash the pressed state. */
+.mark[disabled]{ opacity:.42; cursor:default; pointer-events:none; }
 .detail-marks{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 4px; }
 .owner-pick{ text-align:left; }
 .pick-list{ max-height:52vh; overflow-y:auto; margin-top:10px; }
@@ -4869,6 +4874,35 @@ function VisibilityModalHTML() {
    compared with the ordinary detail view is deliberate - no marks, no
    scheduling and no cook log, because all of those are things you do to your
    own box or say to a friend, and a link holder is neither yet. */
+/* The same four things you can do to a recipe in your own box, offered on a
+   recipe that arrived by link or code. They are drawn for everybody and work
+   for account holders only: a reader with no cookbook sees them greyed, which
+   is a truer answer than an empty space to "what happens if I tap that".
+   Not MARK_DEFS through MarkButtonsHTML because that one toggles against a
+   recipe already in the library, and this one has to take the recipe into the
+   library first - a different call with a different failure mode. */
+function LinkMarkButtonsHTML(lr, mine) {
+  const signedIn = !!state.session;
+  const dead = !signedIn || state.busy;
+  const btn = function (cls, kind, glyph, label, on, call) {
+    return '<button class="mark ' + cls + (on ? " on" : "") + '" title="' + label + '"' +
+      (dead ? " disabled" : ' onclick="' + call + '"') + '>' +
+      icon(glyph, 15) + '<span>' + label + '</span></button>';
+  };
+  let out = "";
+  MARK_DEFS.forEach(function (d) {
+    /* Pinning a recipe you already own is meaningless, exactly as it is in
+       the library. Favourite and Save for later still mean something. */
+    if (d[0] === "pin" && mine) return;
+    const on = signedIn && isMarked(d[0], lr.recipeId);
+    out += btn("mark-" + d[0], d[0], d[1], on ? d[3] : d[2], on,
+      "Actions.markFromLink(\\'" + d[0] + "\\')");
+  });
+  out += btn("mark-cal", "cal", "calGrid", "Schedule this recipe", false,
+    "Actions.scheduleFromLink()");
+  return out;
+}
+
 function LinkRecipeViewHTML() {
   const signedIn = !!state.session;
   const back = signedIn
@@ -4892,17 +4926,14 @@ function LinkRecipeViewHTML() {
     ? '<button class="owner-badge owner-badge-btn" onclick="Actions.askToBeFriends(\\'' + esc(lr.owner) + '\\')">' +
         'from ' + esc(lr.household) + ' ' + icon("userPlus", 11) + '</button>'
     : '<span class="owner-badge">from ' + esc(lr.household) + '</span>';
-  const pinRow = !signedIn ? ""
-    : mine ? '<p class="helper-text">This one is already yours.</p>'
-    : already ? '<p class="helper-text">Already in your cookbook.</p>'
-    : '<div class="detail-marks">' +
-        '<button class="mark-btn" ' + (state.busy ? "disabled" : "") + ' onclick="Actions.pinFromLink()">' +
-          icon("pin", 15) + ' Pin to my cookbook</button>' +
-      '</div>';
+  const pinRow = '<div class="detail-marks">' + LinkMarkButtonsHTML(lr, mine) + '</div>' +
+    (signedIn && mine ? '<p class="helper-text">This one is already yours.</p>'
+      : signedIn && already ? '<p class="helper-text">Already in your cookbook.</p>' : "");
   const joinRow = signedIn ? "" :
     '<div class="link-join">' +
       '<p class="helper-text" style="margin:0 0 8px">You are reading this without an account. ' +
-      'A cookbook of your own lets you pin this recipe, cook from it and keep your own notes.</p>' +
+      'A cookbook of your own lets you favourite this recipe, put it on a calendar, ' +
+      'cook from it and keep your own notes.</p>' +
       '<button class="btn btn-primary btn-block" onclick="Actions.leaveLinkView()">Make a cookbook</button>' +
     '</div>';
   const tags = r.tags && r.tags.length
@@ -6064,29 +6095,79 @@ Actions.leaveLinkView = function() {
   state.view = state.session ? "library" : "welcome";
   renderApp();
 };
-Actions.pinFromLink = async function() {
+/* Taking a link recipe into the library so something can be done to it.
+   Every one of the four buttons comes through here first, because the recipe
+   is not in state.recipes yet and half the app resolves recipes by looking
+   there. Claiming and then refreshing turns it into an ordinary library
+   recipe, after which the existing toggle and schedule paths work on it with
+   no special cases of their own.
+   The mark asked for is the mark left behind - Favorite favourites, and does
+   not quietly pin as well. A null asks for the grant alone. */
+async function claimFromLink(mark) {
   const lr = state.linkRecipe;
-  if (!lr || !state.session || state.busy) return;
+  if (!lr || !state.session || state.busy) return null;
   state.busy = true;
   renderApp();
   try {
-    const res = await API("recipe/claim", { recipeId: lr.recipeId });
+    const res = await API("recipe/claim", { recipeId: lr.recipeId, mark: mark });
     await refreshLibrary(false);
-    state.linkRecipe = null;
     state.busy = false;
-    if (res.recipeId && state.recipes.some(function (r) { return r.recipeId === res.recipeId; })) {
-      state._showAllLogs = false;
-      Actions.openDetail(res.recipeId);
-      toast(res.mine ? "Opened" : "Pinned to your cookbook");
-      return;
-    }
-    state.view = "library";
-    renderApp();
+    return res;
   } catch (e) {
     state.busy = false;
     toast(e.message);
     renderApp();
+    return null;
   }
+}
+/* Pin still ends on the recipe in your own box - it is the one mark that
+   means "this is mine now", and landing on it is the confirmation. Favorite
+   and Save for later stay put and just light up, because they are things you
+   note in passing rather than places you go. */
+Actions.markFromLink = async function(kind) {
+  const lr = state.linkRecipe;
+  if (!lr || !state.session || state.busy) return;
+  /* Already in the library - your own recipe, one a friend shares, or one
+     claimed a moment ago - so there is nothing to claim and this is just the
+     ordinary toggle. Sending it through claim instead would return early on
+     a recipe of your own and quietly drop the mark. */
+  if (recipeById(lr.recipeId) || isMarked(kind, lr.recipeId)) {
+    await Actions.toggleMark(kind, lr.recipeId);
+    renderApp();
+    return;
+  }
+  const res = await claimFromLink(kind);
+  if (!res) return;
+  const landed = res.recipeId && state.recipes.some(function (r) { return r.recipeId === res.recipeId; });
+  if (kind === "pin" && landed) {
+    state.linkRecipe = null;
+    state._showAllLogs = false;
+    Actions.openDetail(res.recipeId);
+    toast(res.mine ? "Opened" : "Pinned to your cookbook");
+    return;
+  }
+  if (res.mine && landed) {
+    state.linkRecipe = null;
+    state._showAllLogs = false;
+    Actions.openDetail(res.recipeId);
+    return;
+  }
+  renderApp();
+  toast(kind === "star" ? "Added to your favorites" : "Saved for later");
+};
+/* Scheduling takes the grant and no mark: a dinner on Tuesday is not a
+   favourite. Once the refresh has landed it, the ordinary schedule frame can
+   take over, ingredients and portions and all. */
+Actions.scheduleFromLink = async function() {
+  const lr = state.linkRecipe;
+  if (!lr || !state.session || state.busy) return;
+  const id = lr.recipeId;
+  if (recipeById(id)) { Actions.openSchedule(id); return; }
+  const res = await claimFromLink(null);
+  if (!res) return;
+  if (!recipeById(id)) { renderApp(); toast("That recipe could not be added to your box."); return; }
+  renderApp();
+  Actions.openSchedule(id);
 };
 /* Tapping who a recipe came from. Lands on the friends page with their name
    already in the box, so the whole gesture is tap-the-name then tap Add. */
@@ -8106,6 +8187,30 @@ async function reachesReader(env, cookbookId, row, recipeId) {
   return friends.indexOf(row.cookbook_id) >= 0;
 }
 
+/* A link grant is the only thing holding somebody else's recipe in this
+   library, so it has to outlive everything that leans on it and go when the
+   last of them does. Two things lean on it: a mark of any kind, and a day on
+   the calendar. This used to be keyed to the pin alone, which was true only
+   while the pin was the one thing a link could leave behind - a favourited
+   recipe then sat in Everyone's recipes carrying no mark, with nothing left
+   to un-toggle and so no way back out of the library.
+   Owned and friend-reachable recipes are unaffected: they have no grant row,
+   so the delete finds nothing. */
+async function releaseGrantIfUnused(env, cookbookId, recipeId) {
+  const marked = await env.DB.prepare(
+    "SELECT 1 AS n FROM recipe_marks WHERE cookbook_id = ? AND recipe_id = ? LIMIT 1"
+  ).bind(cookbookId, recipeId).first();
+  if (marked) return false;
+  const booked = await env.DB.prepare(
+    "SELECT 1 AS n FROM schedule_entries WHERE cookbook_id = ? AND recipe_id = ? LIMIT 1"
+  ).bind(cookbookId, recipeId).first();
+  if (booked) return false;
+  await env.DB.prepare(
+    "DELETE FROM link_grants WHERE recipe_id = ? AND cookbook_id = ?"
+  ).bind(recipeId, cookbookId).run();
+  return true;
+}
+
 /* Is a recipe actually readable by this cookbook? Mirrors what recipe/mark
    allows. */
 async function pinIsAllowed(env, cookbookId, recipeId) {
@@ -8431,14 +8536,11 @@ async function handleApi(route, body, env, request) {
       await env.DB.prepare(
         "DELETE FROM recipe_marks WHERE cookbook_id = ? AND recipe_id = ? AND kind = ?"
       ).bind(me.cookbookId, recipeId, kind).run();
-      /* A recipe reached by link is in this library only because it was
-         pinned. Taking the pin off takes the grant with it, otherwise it
-         would sit there unpinned and unremovable. */
-      if (kind === "pin") {
-        await env.DB.prepare(
-          "DELETE FROM link_grants WHERE recipe_id = ? AND cookbook_id = ?"
-        ).bind(recipeId, me.cookbookId).run();
-      }
+      /* A recipe reached by link is in this library only because some mark
+         or booking put it there. Taking the last of those off takes the
+         grant with it, otherwise it would sit there unmarked and
+         unremovable. */
+      await releaseGrantIfUnused(env, me.cookbookId, recipeId);
     } else {
       await env.DB.prepare(
         "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
@@ -8509,9 +8611,17 @@ async function handleApi(route, body, env, request) {
 
   if (route === "schedule/remove") {
     const entryId = cleanString(body.entryId, 64);
+    /* Read before deleting: once the row is gone there is nothing left to
+       say which recipe the booking was holding open. */
+    const held = await env.DB.prepare(
+      "SELECT recipe_id FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
+    ).bind(entryId, me.cookbookId).first();
     await env.DB.prepare(
       "DELETE FROM schedule_entries WHERE entry_id = ? AND cookbook_id = ?"
     ).bind(entryId, me.cookbookId).run();
+    if (held && held.recipe_id) {
+      await releaseGrantIfUnused(env, me.cookbookId, held.recipe_id);
+    }
     /* Unscheduling a community-meal dish from your own calendar is the same
        act as taking it off the tile - there is one commitment, reachable
        from two places, and it cannot survive in half. */
@@ -9191,8 +9301,18 @@ async function handleApi(route, body, env, request) {
      recipe. The grant lives in its own table because the owner's sharing
      checkboxes rewrite recipe_shares wholesale, and a pin somebody took ought
      not to evaporate the next time the owner edits who they ticked. */
+  /* Taking a link recipe into your library. The grant is the part that makes
+     it visible at all; the mark on top says which shelf it went on. A bare
+     null asks for the grant alone, which is what scheduling needs - a dinner
+     on Tuesday is not a favourite and should not pretend to be one.
+     Defaulting to the pin keeps every older caller doing what it always
+     did. */
   if (route === "recipe/claim") {
     const recipeId = cleanString(body.recipeId, 64);
+    const mark = body.mark === null ? null
+      : body.mark === undefined ? "pin"
+      : cleanString(body.mark, 12);
+    if (mark !== null && MARK_KINDS.indexOf(mark) < 0) throw new ApiError(400, "Unknown mark.");
     const row = await env.DB.prepare(
       "SELECT recipe_id, cookbook_id, owner_username, visibility, title FROM recipes WHERE recipe_id = ?"
     ).bind(recipeId).first();
@@ -9206,13 +9326,15 @@ async function handleApi(route, body, env, request) {
     await env.DB.prepare(
       "INSERT OR IGNORE INTO link_grants (recipe_id, cookbook_id, created_at) VALUES (?, ?, ?)"
     ).bind(recipeId, me.cookbookId, now).run();
-    await env.DB.prepare(
-      "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
-      "VALUES (?, ?, 'pin', ?, ?)"
-    ).bind(me.cookbookId, recipeId, me.username, now).run();
+    if (mark) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
+        "VALUES (?, ?, ?, ?, ?)"
+      ).bind(me.cookbookId, recipeId, mark, me.username, now).run();
+    }
     const map = await membersOf(env, [row.cookbook_id]);
     return jsonResponse({
-      recipeId, pinned: true, owner: row.owner_username,
+      recipeId, pinned: mark === "pin", mark: mark, owner: row.owner_username,
       household: householdLabel(map[row.cookbook_id] || [row.owner_username])
     });
   }
