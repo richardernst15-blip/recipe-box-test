@@ -543,6 +543,12 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
    above only carries the blue chip for whatever you personally agreed to
    bring. */
 .meal-add{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; margin:2px 0 12px; }
+/* Where a recipe came from, under the steps it produced. The URL wraps at any
+   character because a recipe URL is one long unbroken token more often than
+   not, and left alone it would push the column wider than the phone. */
+.source-credit{ margin-top:16px; padding-top:12px; border-top:1px solid var(--border-light); }
+.source-credit .small-label{ margin-bottom:4px; }
+.source-credit a{ font-size:12.5px; color:var(--ink-muted); word-break:break-all; }
 .meal-tile{ border:1px solid var(--meal-line); border-radius:12px; background:var(--card);
   margin-bottom:10px; overflow:hidden; }
 .meal-tile.meal-mine{ border-color:var(--meal); }
@@ -564,17 +570,36 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .meal-guest button{ border:0; background:none; padding:0; margin-left:2px; cursor:pointer;
   color:var(--ink-muted); display:inline-flex; }
 .meal-dishes{ list-style:none; margin:0 0 12px; padding:0; }
-.meal-dish{ display:flex; align-items:baseline; gap:8px; padding:6px 0;
+/* One dish, one row. The name gives way before the row does - a long title
+   ellipses rather than pushing the cook's name onto a second line, because
+   who is bringing it is the part you are scanning the list for. */
+.meal-dish{ display:flex; align-items:center; flex-wrap:nowrap; gap:8px; padding:6px 0;
   border-bottom:1px solid var(--border-light); font-size:14px; }
 .meal-dish:last-child{ border-bottom:0; }
-.meal-dish .who{ margin-left:auto; flex-shrink:0; font-size:12px; color:var(--ink-muted); }
+.meal-dish .what{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Name and remove sit in the same box so the x is beside the name it belongs
+   to rather than wrapping underneath it. */
+.meal-dish-who{ margin-left:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:2px;
+  font-size:12px; color:var(--ink-muted); }
+.meal-dish-who .icon-btn{ flex-shrink:0; }
 .meal-dish .lots{ color:var(--gold); font-size:11.5px; flex-shrink:0; }
 .meal-none{ font-size:13px; color:var(--ink-muted); margin:0 0 12px; }
 .meal-actions{ display:flex; flex-wrap:wrap; gap:8px; }
-.meal-invite{ display:flex; align-items:center; gap:10px; background:var(--meal-soft);
-  border:1px solid var(--meal-line); border-radius:10px; padding:9px 12px; margin:0 0 12px;
-  font-size:13px; color:var(--meal-dark); flex-wrap:wrap; }
-.meal-invite .grow{ flex:1; min-width:120px; }
+/* An invitation is a question and two answers, stacked: the asking on its own
+   line, then Accept and Decline side by side underneath. Side by side with
+   the question they were being squeezed to a third of the width each. */
+.meal-invite{ display:flex; flex-direction:column; align-items:stretch; gap:9px;
+  background:var(--meal-soft); border:1px solid var(--meal-line); border-radius:10px;
+  padding:9px 12px; margin:0 0 12px; font-size:13px; color:var(--meal-dark); }
+.meal-invite .grow{ flex:1; min-width:0; }
+.meal-invite-acts{ display:flex; align-items:center; gap:8px; }
+.meal-invite-acts .btn{ flex:1; justify-content:center; }
+/* The two lines a meal can carry beyond its name. Both are optional, so
+   neither leaves a gap when it is not there. */
+.meal-note{ font-size:12.5px; color:var(--meal-dark); opacity:.9; margin:4px 0 0; }
+.meal-where{ display:flex; align-items:flex-start; gap:5px; font-size:12.5px;
+  color:var(--meal-dark); opacity:.9; margin-top:3px; }
+.meal-where svg{ flex-shrink:0; margin-top:1px; }
 .btn-meal{ background:var(--meal); border-color:var(--meal); color:#fff; }
 .btn-meal:active{ background:var(--meal-dark); }
 /* Something already eaten is a record, not a plan. It keeps one line until
@@ -586,11 +611,19 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .meal-past-head .when{ margin-left:auto; font-size:12px; flex-shrink:0; }
 .meal-past-head svg{ flex-shrink:0; transition:transform .15s ease; }
 .meal-past-head[aria-expanded="true"] svg{ transform:rotate(180deg); }
-.meal-dish-pick{ display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+/* Recipe, how much, add, drop - one row. It used to wrap onto three on a
+   phone, which put the control that abandons the pick a long way from the
+   pick it abandons. The name is the only part that gives, so the numbers and
+   the two buttons stay where the thumb last found them. */
+.meal-dish-pick{ display:flex; align-items:center; gap:6px; flex-wrap:nowrap;
   background:var(--meal-soft); border:1px solid var(--meal-line); border-radius:10px;
   padding:9px 10px; margin-top:6px; font-size:13.5px; }
-.meal-dish-pick .name{ flex:1; min-width:110px; font-weight:600; color:var(--meal-dark); }
-.meal-dish-pick input{ width:74px; flex-shrink:0; }
+.meal-dish-pick .name{ flex:1; min-width:0; font-weight:600; color:var(--meal-dark);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meal-dish-pick input{ width:58px; flex-shrink:0; text-align:center; padding-left:4px; padding-right:4px; }
+.meal-dish-pick .unit{ font-size:12px; color:var(--ink-muted); flex-shrink:0;
+  max-width:74px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meal-dish-pick .btn{ flex-shrink:0; padding-left:9px; padding-right:9px; }
 .meal-dup{ background:#fdf6e6; border:1px solid #e8d5a0; border-radius:9px; padding:8px 10px;
   font-size:12.5px; color:#7a5a12; margin-top:6px; }
 .sched-banner{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
@@ -611,9 +644,14 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
   gap:8px; align-items:end; margin-bottom:12px; }
 .groc-range .field{ min-width:0; margin:0; }
 .groc-range .field label{ display:block; text-align:center; }
-.groc-range .field input[type=date]{
+/* Date and time are styled as one control, not two. Left to itself iOS gives
+   each of them its own intrinsic height, and the taller of the pair drags its
+   label off the line the other one's label is sitting on. */
+.groc-range .field input[type=date],
+.groc-range .field input[type=time]{
   -webkit-appearance:none; appearance:none;
   width:100%; min-width:0; max-width:100%; box-sizing:border-box;
+  height:42px; line-height:normal;
   padding-left:4px; padding-right:4px; font-size:14px; text-align:center; }
 .groc-range .btn{ grid-column:1 / -1; justify-content:center; }
 .groc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
@@ -622,6 +660,11 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .groc-entry-main{ flex:1; min-width:0; text-align:left; border:0; background:none; cursor:pointer; padding:0; }
 .groc-entry-label{ font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .groc-entry-sub{ font-size:12px; color:var(--ink-muted); margin-top:2px; }
+/* The plus at the end of a result used to be a bare span, so the one part of
+   the row that looks like the button was the one part that did nothing. */
+.groc-entry-plus{ flex-shrink:0; border:0; background:none; padding:6px; margin:-6px -4px -6px 0;
+  cursor:pointer; color:var(--ink-muted); display:flex; align-items:center; }
+.groc-entry-plus:active{ color:var(--meal); }
 /* One shopping line, collapsed: tick, name, quantity, grip - one line, no
    card. The old row stacked name over source over a quantity input and came
    to ~93px, which on a small phone is four items a screen. Name and quantity
@@ -925,6 +968,11 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .detail-marks{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 4px; }
 .owner-pick{ text-align:left; }
 .pick-list{ max-height:52vh; overflow-y:auto; margin-top:10px; }
+/* The meal sheets carry a guest list on top of everything else they ask for,
+   so theirs is pegged at three rows and scrolls. Whose recipes keeps the full
+   half-screen: a picker that is the whole sheet can afford the room. Three
+   rows of 44px plus the 7px gaps between them. */
+.pick-list-3{ max-height:145px; }
 .pick-row{ display:block; width:100%; text-align:left; font:inherit; font-size:14.5px; padding:10px 11px;
   border:1px solid var(--border-light); background:var(--card); border-radius:9px; margin-bottom:6px;
   cursor:pointer; color:inherit; }
@@ -1002,16 +1050,21 @@ Follow this schema exactly:
 }
 
 Rules:
-1. Nutrition first, then estimate. Check the recipe page itself for a nutrition/macros section first. If it is there, use those numbers and set macrosPerServing.source to "site". Only calculate your own estimate from the ingredient list if the source has nothing, and in that case set source to "estimated".
-2. Always give both units — convert to get whichever one the source is missing. Round sensibly (grams to whole numbers, cups to the nearest quarter).
-3. Countable ingredients (eggs, onions, cloves of garlic) use "each" as the unit for both value fields, with the count as the value.
-4. Split the method into genuinely separate steps, not one paragraph. Include timerMinutes whenever a step names a cook/rest/chill time; otherwise null.
-5. Tags come from the fixed list at the end of this prompt. Copy each one exactly as written there, capitalization included. Do not invent a tag, do not reword one, and leave out anything that is not on the list. The words before a colon are the category path, not tags; the words after the colon are the tags.
-6. Be generous. Include every tag that genuinely applies: meal types, region and flavor, effort, diet, each significant ingredient, occasion or season, and every cooking method and piece of equipment involved. Twenty or more tags is normal and welcome. They exist only to make the recipe easy to find again, so more is better.
-7. Where a dish suits more than one answer, give every one. A hash eaten at breakfast and at dinner gets Breakfast and Dinner both. A stew that is a main and a soup gets both.
-8. Only tag what is actually true of the recipe. A wrong tag is worse than a missing one.
-9. Do not add any other fields. No id, no cookLog, no dates.
-10. Output must be valid JSON on one line.
+1. Title. Use the plain, descriptive name of the dish — "Chicken Piccata", "Brown Butter Chocolate Chip Cookies". A dish name is not anybody's property and does not need rewording. A distinctive or branded headline is: "The Best Damn Chewy Brownies You Will Ever Make" becomes "Chewy Brownies". Never carry a site's name, a byline, or a slogan into the title.
+2. Nutrition first, then estimate. Check the recipe page itself for a nutrition/macros section first. If it is there, use those numbers and set macrosPerServing.source to "site". Only calculate your own estimate from the ingredient list if the source has nothing, and in that case set source to "estimated".
+3. Always give both units — convert to get whichever one the source is missing. Round sensibly (grams to whole numbers, cups to the nearest quarter).
+4. Countable ingredients (eggs, onions, cloves of garlic) use "each" as the unit for both value fields, with the count as the value.
+5. Ingredient names are the shopping name of the thing, in Title Case — every word capitalized: "Extra Virgin Olive Oil", "All-Purpose Flour", "Unsalted Butter", "Kosher Salt". This is what the shopping list groups on, so the same thing must come out with the same name every time.
+6. Use the phrasing a shop uses, not the shorthand a recipe uses. "Extra Virgin Olive Oil" rather than "Olive Oil" where that is what is meant. "Scallions" rather than "green part of scallions". Say the full, specific thing you would look for on a shelf.
+7. Everything about the state or preparation of an ingredient belongs in its notes, never in its name. That covers descriptive words (all-purpose, chopped, minced, diced, finely grated, thinly sliced, room temperature) and temporal ones (melted, warm, softened, chilled, divided). "1 cup butter, melted" is name "Butter", notes "melted". "2 cloves garlic, minced" is name "Garlic", notes "minced". The exception is where the word is part of what you buy rather than what you do to it: All-Purpose Flour and Smoked Paprika are shelf names and stay whole.
+8. Where the ingredient offers a choice, the name is the primary thing and the alternative goes in the notes. "milk or non-dairy milk" is name "Milk", notes "or non-dairy milk". "butter or margarine" is name "Butter", notes "or margarine". Never put "or" in an ingredient name.
+9. Split the method into genuinely separate steps, not one paragraph. Include timerMinutes whenever a step names a cook/rest/chill time; otherwise null.
+10. Tags come from the fixed list at the end of this prompt. Copy each one exactly as written there, capitalization included. Do not invent a tag, do not reword one, and leave out anything that is not on the list. The words before a colon are the category path, not tags; the words after the colon are the tags.
+11. Be generous. Include every tag that genuinely applies: meal types, region and flavor, effort, diet, each significant ingredient, occasion or season, and every cooking method and piece of equipment involved. Twenty or more tags is normal and welcome. They exist only to make the recipe easy to find again, so more is better.
+12. Where a dish suits more than one answer, give every one. A hash eaten at breakfast and at dinner gets Breakfast and Dinner both. A stew that is a main and a soup gets both.
+13. Only tag what is actually true of the recipe. A wrong tag is worse than a missing one.
+14. Do not add any other fields. No id, no cookLog, no dates.
+15. Output must be valid JSON on one line.
 
 TAG LIST - the only tags you may use:
 {{TAG_LIST}}
@@ -1031,6 +1084,11 @@ const ICONS = {
   x: '<line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/>',
   chevronLeft: '<polyline points="15 6 9 12 15 18"/>',
   pin: '<path d="M9 3h6l-1 6 4 4v2H6v-2l4-4z"/><line x1="12" y1="15" x2="12" y2="21"/>',
+  /* A place on a map, which is a different idea from Pin above - that one is
+     a pushpin and means a live reference to somebody else's recipe. Using it
+     for a meal's address would have overloaded the one word the app already
+     spends on something else. */
+  mapPin: '<path d="M12 21s7-5.7 7-11a7 7 0 1 0-14 0c0 5.3 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/>',
   camera: '<path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.4"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/>',
   sliders: '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.5"/><circle cx="15" cy="16" r="2.5"/>',
@@ -1218,7 +1276,10 @@ function tagVocabularyText() {
 const IMPORT_SOURCES = {
   url: {
     label: "From URL", icon: "link",
-    intro: "Read the recipe at the URL at the end of this message.",
+    intro: "Read the recipe at the URL at the end of this message. Take the facts from it — " +
+      "ingredients, quantities, times, temperatures — but write it out in your own words. Do not " +
+      "copy the page's sentences. Do not reproduce its headnote, its story, its tips, or any other " +
+      "prose surrounding the recipe. Record the URL in the source field.",
     tail: "Recipe to convert:" + String.fromCharCode(10)
   },
   text: {
@@ -1230,9 +1291,10 @@ const IMPORT_SOURCES = {
   },
   photo: {
     label: "From Photo", icon: "camera",
-    intro: "Read the recipe in the photo attached to this message. Transcribe what is written there; " +
-      "do not substitute a similar recipe you already know. If part of the photo is unreadable, leave " +
-      "that field empty rather than inventing it.",
+    intro: "Read the recipe in the photo attached to this message. Take the facts from it — " +
+      "ingredients, quantities, times, temperatures — but write the steps out in your own words " +
+      "rather than copying the sentences as printed. Do not substitute a similar recipe you already " +
+      "know. If part of the photo is unreadable, leave that field empty rather than inventing it.",
     tail: "Recipe to convert: the attached photo."
   },
   chat: {
@@ -1359,6 +1421,10 @@ const state = {
   meals: [],
   mealDraft: null,
   mealFocus: null,
+  /* The guest picker's own search box. Kept off the draft because it is a
+     view of the list rather than part of the meal being written, and it is
+     cleared whenever either sheet opens. */
+  mealFriendSearch: "",
   mealDishSearch: {},
   mealDishPick: {},
   mealPastOpen: {}
@@ -2350,6 +2416,24 @@ function rawNotifications() {
       who: m.ownerLabel, title: m.title, mealId: m.mealId, when: m.date
     });
   });
+  /* The other direction: somebody said yes to a meal we are hosting. Worth
+     telling the host about because it is the answer to a question they
+     asked, unlike a new dish or a cancellation, which are things the tile
+     already shows. Only the host, and only an acceptance - a decline is a
+     quiet no, and a host who wants the full count has the guest list. The
+     seat's own timestamp is in the id, so being asked again after a decline
+     and accepting the second time still gets through. */
+  state.meals.forEach(function (m) {
+    if (m.myStatus !== "owner") return;
+    m.guests.forEach(function (g) {
+      if (g.mine || g.status !== "accepted") return;
+      out.push({
+        id: "mealAccept:" + m.mealId + ":" + g.label + ":" + (g.updatedAt || ""),
+        kind: "mealAccept", at: g.updatedAt || m.createdAt,
+        who: g.label, title: m.title, mealId: m.mealId, when: m.date
+      });
+    });
+  });
 
   Object.keys(state.comments).forEach(function (rid) {
     const mine = ours[rid];
@@ -2829,7 +2913,7 @@ function GroceryEditHTML(L, item) {
       'value="' + esc(item.name) + '" maxlength="120" aria-label="Name of this line" ' +
       'onchange="Actions.setGroceryName(\\'' + L + '\\',\\'' + item.id + '\\',this.value)" />' +
     ((item.from && item.from.length)
-      ? '<p class="groc-from">From ' + esc(item.from.join(", ")) + '</p>'
+      ? '<p class="groc-from">For ' + esc(item.from.join(", ")) + '</p>'
       : '<p class="groc-from">Added by hand</p>') +
     '<div class="groc-qty">' + fields + '</div>' +
     '<div class="groc-edit-acts">' + acts + '</div>' +
@@ -3034,10 +3118,12 @@ function MealDishesHTML(m) {
   return '<ul class="meal-dishes">' + m.dishes.map(function (d) {
     const dup = counts[String(d.title).trim().toLowerCase()] > 1;
     return '<li class="meal-dish">' +
-      '<span>' + esc(dishDisplayTitle(m, d, counts)) + '</span>' +
+      '<span class="what">' + esc(dishDisplayTitle(m, d, counts)) + '</span>' +
       (dup ? '<span class="lots">×' + counts[String(d.title).trim().toLowerCase()] + '</span>' : "") +
-      '<span class="who">' + esc(d.label) +
-        (d.mine ? ' <button class="icon-btn" title="Take this off" onclick="Actions.removeMealDish(\\'' +
+      /* Cook and remove in one box, so the x cannot end up on a line of its
+         own underneath the name it belongs to. */
+      '<span class="meal-dish-who">' + esc(d.label) +
+        (d.mine ? '<button class="icon-btn" title="Take this off" onclick="Actions.removeMealDish(\\'' +
           m.mealId + '\\',\\'' + d.dishId + '\\')">' + icon("x", 13) + '</button>' : "") +
       '</span>' +
     '</li>';
@@ -3068,25 +3154,29 @@ function MealDishResultsHTML(m) {
         '<input type="number" step="any" min="0" id="meal-serv-' + m.mealId + '" ' +
           'aria-label="How many ' + esc(r ? r.servings.unit : "servings") + '" ' +
           'value="' + esc(String(picked.servings)) + '" />' +
-        '<span style="font-size:12.5px;color:var(--ink-muted)">' +
-          esc(r ? r.servings.unit : "servings") + '</span>' +
+        '<span class="unit">' + esc(r ? r.servings.unit : "servings") + '</span>' +
         '<button class="btn btn-sm btn-meal" onclick="Actions.addMealDish(\\'' + m.mealId + '\\')">' +
           icon("plus", 14) + ' Add</button>' +
-        '<button class="btn btn-sm btn-ghost" onclick="Actions.clearMealDishPick(\\'' + m.mealId + '\\')">' +
-          'Cancel</button>' +
+        '<button class="icon-btn" title="Pick something else" ' +
+          'onclick="Actions.clearMealDishPick(\\'' + m.mealId + '\\')">' + icon("x", 15) + '</button>' +
       '</div>';
   }
   if (!q.trim()) return "";
   const all = mealDishMatches(q);
   if (all.length === 0) return '<p class="no-rating">Nothing matches "' + esc(q.trim()) + '".</p>';
   return '<ul class="groc-list">' + all.slice(0, MEAL_RESULT_MAX).map(function (r) {
+      /* The plus is the part of the row that looks like the button, so it is
+         wired to the same thing the rest of the row does rather than being a
+         decoration you can tap all day without effect. */
       return '<li class="groc-entry">' +
         '<button class="groc-entry-main" onclick="Actions.pickMealDish(\\'' + m.mealId +
           '\\',\\'' + r.recipeId + '\\')">' +
           '<div class="groc-entry-label">' + esc(r.title) + '</div>' +
           '<div class="groc-entry-sub">' + esc(r.household) + '</div>' +
         '</button>' +
-        '<span style="color:var(--ink-muted);flex-shrink:0">' + icon("plus", 16) + '</span>' +
+        '<button class="groc-entry-plus" aria-label="Bring ' + esc(r.title) + '" ' +
+          'onclick="Actions.pickMealDish(\\'' + m.mealId + '\\',\\'' + r.recipeId + '\\')">' +
+          icon("plus", 16) + '</button>' +
       '</li>';
     }).join("") + '</ul>' +
     (all.length > MEAL_RESULT_MAX
@@ -3104,6 +3194,7 @@ function MealDishPickerHTML(m) {
       '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
         '<input id="meal-search-' + m.mealId + '" type="text" ' +
           'placeholder="Search everyone\\'s recipes..." value="' + esc(q) + '" ' +
+          'onfocus="Actions.focusMealSearch(\\'meal-search-' + m.mealId + '\\')" ' +
           'oninput="Actions.onMealDishInput(\\'' + m.mealId + '\\', this.value)" />' +
       '</div>' +
     '</div>' +
@@ -3133,16 +3224,22 @@ function MealTileHTML(m) {
       '<div class="meal-when">' + esc(mealWhen(m)) + '</div>' +
       '<div class="meal-host">Hosted by ' + esc(m.ownerLabel) +
         (owner ? " — that's you" : "") + '</div>' +
+      /* Neither of these is required of a meal, so neither leaves a gap when
+         the host had nothing to say or everybody already knows the address. */
+      (m.location ? '<div class="meal-where">' + icon("mapPin", 13) + '<span>' + esc(m.location) + '</span></div>' : "") +
+      (m.description ? '<p class="meal-note">' + esc(m.description) + '</p>' : "") +
     '</div>';
   /* An invitation is a question, so the tile asks it before it shows the
      sign-up box. You cannot put a dish on a table you have not said yes to. */
   const ask = invited
     ? '<div class="meal-invite">' +
         '<span class="grow">' + esc(m.ownerLabel) + ' has invited you.</span>' +
-        '<button class="btn btn-sm btn-meal" onclick="Actions.respondMeal(\\'' + m.mealId + '\\',\\'accept\\')">' +
-          icon("check", 14) + ' Accept</button>' +
-        '<button class="btn btn-sm btn-ghost" onclick="Actions.respondMeal(\\'' + m.mealId + '\\',\\'decline\\')">' +
-          icon("x", 14) + ' Decline</button>' +
+        '<div class="meal-invite-acts">' +
+          '<button class="btn btn-sm btn-meal" onclick="Actions.respondMeal(\\'' + m.mealId + '\\',\\'accept\\')">' +
+            icon("check", 14) + ' Accept</button>' +
+          '<button class="btn btn-sm btn-ghost" onclick="Actions.respondMeal(\\'' + m.mealId + '\\',\\'decline\\')">' +
+            icon("x", 14) + ' Decline</button>' +
+        '</div>' +
       '</div>'
     : "";
   const actions = '<div class="meal-actions">' +
@@ -3278,7 +3375,9 @@ function DayResultsHTML() {
         '<div class="groc-entry-sub">' + esc(r.household) +
           ' · ' + (r.servings.base || 1) + ' ' + esc(r.servings.unit) + '</div>' +
       '</button>' +
-      '<span style="color:var(--ink-muted);flex-shrink:0">' + icon("plus", 16) + '</span>' +
+      '<button class="groc-entry-plus" aria-label="Schedule ' + esc(r.title) + '" ' +
+        'onclick="Actions.scheduleFromDay(\\'' + r.recipeId + '\\')">' +
+        icon("plus", 16) + '</button>' +
     '</li>';
   }).join("") + '</ul>' + more;
 }
@@ -3401,6 +3500,10 @@ function NotificationsPanelHTML() {
       open = openBtn("Open recipe");
     } else if (n.kind === "meal") {
       line = '<b>' + esc(n.who) + '</b> invited you to <b>' + esc(n.title) + '</b>' +
+        (n.when ? ' on ' + esc(shortDate(n.when)) : "");
+      open = openBtn("Open meal");
+    } else if (n.kind === "mealAccept") {
+      line = '<b>' + esc(n.who) + '</b> is coming to <b>' + esc(n.title) + '</b>' +
         (n.when ? ' on ' + esc(shortDate(n.when)) : "");
       open = openBtn("Open meal");
     } else {
@@ -3611,7 +3714,18 @@ function RecipeBodyHTML(r) {
     '</div>' +
     '<div class="cook-columns">' +
       '<div class="cook-col-left"><h2 class="col-title font-display">Ingredients</h2><ul class="ing-list">' + ingItems + '</ul></div>' +
-      '<div class="cook-col-right"><h2 class="col-title font-display">Steps</h2><ol class="step-list" style="list-style:none;padding:0;margin:0">' + stepItems + '</ol></div>' +
+      '<div class="cook-col-right"><h2 class="col-title font-display">Steps</h2><ol class="step-list" style="list-style:none;padding:0;margin:0">' + stepItems + '</ol>' +
+        /* Where it came from, under the method it produced. Only ever shown
+           where the field was actually filled in, so a recipe of your own
+           does not carry an empty credit. */
+        ((r.source && r.source.url)
+          ? '<div class="source-credit">' +
+              '<div class="small-label">Source of Inspiration</div>' +
+              '<a href="' + esc(r.source.url) + '" target="_blank" rel="noopener noreferrer">' +
+                esc(r.source.url) + '</a>' +
+            '</div>'
+          : "") +
+      '</div>' +
     '</div>' +
     (r.notes ? '<div class="notes-box"><b>Notes:</b> ' + esc(r.notes) + '</div>' : "") +
     CookLogHTML(r);
@@ -3796,6 +3910,11 @@ function EditViewHTML() {
       '<div id="ingredients-container">' + ingredientsHTML + '</div>' +
       '<div class="subhead-row" style="margin-top:16px"><span class="small-label">Steps</span><button class="btn btn-sm btn-ghost" onclick="Actions.addStep()">' + icon("plus", 14) + ' Add</button></div>' +
       '<div id="steps-container">' + stepsHTML + '</div>' +
+      '<div class="field" style="margin-top:16px"><label>Source URL (optional)</label>' +
+        '<input type="url" id="f-source-url" inputmode="url" autocomplete="off" ' +
+          'placeholder="https://..." value="' + esc((d.source && d.source.url) || "") + '" />' +
+        '<p class="helper-text">Filled in for you when a recipe is imported from a website. ' +
+          'Shown under the steps as Source of Inspiration.</p></div>' +
       '<div class="field" style="margin-top:16px"><label>Notes</label><textarea id="f-notes" rows="2" placeholder="Anything worth remembering next time">' + esc(d.notes) + '</textarea></div>' +
     '</div>';
 }
@@ -3815,6 +3934,13 @@ function syncDraftFromDOM() {
   if (get("f-macro-carbs") !== undefined) d.macrosPerServing.carbsG = numOrEmpty(get("f-macro-carbs"));
   if (get("f-macro-source") !== undefined) d.macrosPerServing.source = get("f-macro-source");
   if (get("f-notes") !== undefined) d.notes = get("f-notes");
+  /* normalizeBody drops the whole source object when the url is empty, so
+     clearing the field is how you take a credit off a recipe. The site name
+     is kept where the url has not changed, since only the url is editable. */
+  if (get("f-source-url") !== undefined) {
+    const url = String(get("f-source-url")).trim();
+    d.source = url ? { url: url, site: (d.source && d.source.site) || "" } : null;
+  }
   d.ingredients = d.ingredients.map((ing, idx) => {
     if (get("ing-name-" + idx) === undefined) return ing;
     return Object.assign({}, ing, {
@@ -4326,9 +4452,9 @@ function MealDraftDishesHTML() {
   const chosen = dr.dishes.length
     ? '<ul class="meal-dishes">' + dr.dishes.map(function (d, i) {
         return '<li class="meal-dish">' +
-          '<span>' + esc(d.title) + '</span>' +
-          '<span class="who">' + esc(String(d.servings)) + ' ' + esc(d.unit) +
-            ' <button class="icon-btn" title="Take this off" ' +
+          '<span class="what">' + esc(d.title) + '</span>' +
+          '<span class="meal-dish-who">' + esc(String(d.servings)) + ' ' + esc(d.unit) +
+            '<button class="icon-btn" title="Take this off" ' +
             'onclick="Actions.removeMealDraftDish(' + i + ')">' + icon("x", 13) + '</button>' +
           '</span>' +
         '</li>';
@@ -4340,6 +4466,7 @@ function MealDraftDishesHTML() {
       '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
         '<input id="meal-draft-search" type="text" ' +
           'placeholder="Search everyone\\'s recipes..." value="' + esc(dr.search || "") + '" ' +
+          'onfocus="Actions.focusMealSearch(\\'meal-draft-search\\')" ' +
           'oninput="Actions.onMealDishInput(\\'draft\\', this.value)" />' +
       '</div>' +
     '</div>' +
@@ -4363,12 +4490,11 @@ function MealDraftResultsHTML() {
         '<input type="number" step="any" min="0" id="meal-serv-draft" ' +
           'aria-label="How many ' + esc(r ? r.servings.unit : "servings") + '" ' +
           'value="' + esc(String(pick.servings)) + '" />' +
-        '<span style="font-size:12.5px;color:var(--ink-muted)">' +
-          esc(r ? r.servings.unit : "servings") + '</span>' +
+        '<span class="unit">' + esc(r ? r.servings.unit : "servings") + '</span>' +
         '<button class="btn btn-sm btn-meal" onclick="Actions.addMealDraftDish()">' +
           icon("plus", 14) + ' Add</button>' +
-        '<button class="btn btn-sm btn-ghost" onclick="Actions.clearMealDishPick(\\'draft\\')">' +
-          'Cancel</button>' +
+        '<button class="icon-btn" title="Pick something else" ' +
+          'onclick="Actions.clearMealDishPick(\\'draft\\')">' + icon("x", 15) + '</button>' +
       '</div>';
   }
   const q = String(dr.search || "");
@@ -4382,41 +4508,78 @@ function MealDraftResultsHTML() {
           '<div class="groc-entry-label">' + esc(r.title) + '</div>' +
           '<div class="groc-entry-sub">' + esc(r.household) + '</div>' +
         '</button>' +
-        '<span style="color:var(--ink-muted);flex-shrink:0">' + icon("plus", 16) + '</span>' +
+        '<button class="groc-entry-plus" aria-label="Bring ' + esc(r.title) + '" ' +
+          'onclick="Actions.pickMealDish(\\'draft\\',\\'' + r.recipeId + '\\')">' +
+          icon("plus", 16) + '</button>' +
       '</li>';
     }).join("") + '</ul>' +
     (all.length > MEAL_RESULT_MAX
       ? '<p class="no-rating">' + (all.length - MEAL_RESULT_MAX) + ' more — keep typing.</p>' : "");
 }
 
+/* The guest list, for both sheets that ask for one. A cookbook of friends
+   gets long enough to bury the rest of the form, so it searches the way the
+   Whose recipes picker does and scrolls three rows at a time. The already
+   argument maps a label to the status of somebody the meal has - those
+   rows are shown but inert, so the list reads as the whole guest list rather
+   than as a puzzle about who is missing from it. */
+function MealFriendPickerHTML(already) {
+  const dr = state.mealDraft;
+  if (!state.friends.length) {
+    return '<p class="helper-text">No friends yet. Add someone on the Friends page first — a ' +
+      'community meal is cooked between cookbooks that are already linked.</p>';
+  }
+  const q = (state.mealFriendSearch || "").trim().toLowerCase();
+  const picked = {};
+  ((dr && dr.guests) || []).forEach(function (u) { picked[u.toLowerCase()] = 1; });
+  const rows = state.friends.map(function (f) {
+    /* One row per cookbook, keyed on any one of its members - inviting a
+       cookbook invites everybody in it, which is what the sub-line says
+       where a cookbook has more than one person in it. */
+    const key = f.members[0] || "";
+    if (!key) return "";
+    if (q && f.label.toLowerCase().indexOf(q) < 0) return "";
+    const settled = already && already[f.label];
+    if (settled) {
+      return '<div class="pick-row" style="opacity:.55">' + esc(f.label) +
+        '<div class="friend-sub">' +
+          (settled === "accepted" ? "Already coming" : settled === "owner" ? "Hosting" : "Already asked") +
+        '</div></div>';
+    }
+    const on = !!picked[key.toLowerCase()];
+    return '<button class="pick-row' + (on ? " on" : "") + '" ' +
+      'onclick="Actions.toggleMealGuest(\\'' + esc(key) + '\\')">' +
+      esc(f.label) +
+      (f.members.length > 1
+        ? '<div class="friend-sub">One cookbook — all of them are invited</div>' : "") +
+    '</button>';
+  }).join("");
+  return '<input type="text" id="meal-friend-search" autocomplete="off" ' +
+      'placeholder="Search friends..." value="' + esc(state.mealFriendSearch || "") + '" ' +
+      'oninput="Actions.mealFriendSearch(this.value)" />' +
+    '<div class="pick-list pick-list-3">' +
+      (rows ||
+        (q ? '<p class="helper-text">No one by that name.</p>'
+           : '<p class="helper-text">Nobody left to invite.</p>')) + '</div>';
+}
+
 function MealModalHTML() {
   const dr = state.mealDraft;
   if (!dr) return modalShell("Community Meal", "");
   const editing = !!dr.mealId;
-  const picked = {};
-  (dr.guests || []).forEach(function (u) { picked[u.toLowerCase()] = 1; });
-  const friends = state.friends.length
-    ? state.friends.map(function (f) {
-        /* One row per cookbook, keyed on any one of its members - inviting a
-           cookbook invites everybody in it, which is what the sub-line says
-           where a cookbook has more than one person in it. */
-        const key = f.members[0] || "";
-        if (!key) return "";
-        const on = !!picked[key.toLowerCase()];
-        return '<button class="pick-row' + (on ? " on" : "") + '" ' +
-          'onclick="Actions.toggleMealGuest(\\'' + esc(key) + '\\')">' +
-          esc(f.label) +
-          (f.members.length > 1
-            ? '<div class="friend-sub">One cookbook — all of them are invited</div>' : "") +
-        '</button>';
-      }).join("")
-    : '<p class="helper-text">No friends yet. Add someone on the Friends page first — a ' +
-        'community meal is cooked between cookbooks that are already linked.</p>';
   return modalShell(editing ? "Edit this meal" : "New Community Meal",
     (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
     '<div class="field"><label>What is it called</label>' +
       '<input type="text" id="meal-title" maxlength="120" placeholder="Sunday cookout" ' +
         'value="' + esc(dr.title) + '" /></div>' +
+    /* Both optional. A meal with a name and a day is already a meal; these
+       two only save somebody asking in a group chat. */
+    '<div class="field"><label>Anything to say about it (optional)</label>' +
+      '<textarea id="meal-desc" rows="2" maxlength="500" ' +
+        'placeholder="Bring a chair — we are eating outside">' + esc(dr.description || "") + '</textarea></div>' +
+    '<div class="field"><label>Where (optional)</label>' +
+      '<input type="text" id="meal-loc" maxlength="200" placeholder="Ours, or 12 Elm St" ' +
+        'value="' + esc(dr.location || "") + '" /></div>' +
     '<div class="groc-range">' +
       '<div class="field"><label>Day</label>' +
         '<input type="date" id="meal-date" value="' + esc(dr.date) + '" /></div>' +
@@ -4424,7 +4587,7 @@ function MealModalHTML() {
         '<input type="time" id="meal-time" value="' + esc(dr.time) + '" /></div>' +
     '</div>' +
     '<div class="step-block"><div class="step-label">Who to invite</div>' +
-      '<div class="pick-list">' + friends + '</div>' +
+      MealFriendPickerHTML(null) +
     '</div>' +
     (editing ? "" : MealDraftDishesHTML()) +
     (editing
@@ -4447,24 +4610,9 @@ function MealGuestsModalHTML() {
   if (!m) return modalShell("Invite", "");
   const already = {};
   m.guests.forEach(function (g) { already[g.label] = g.status; });
-  const picked = {};
-  (state.mealDraft.guests || []).forEach(function (u) { picked[u.toLowerCase()] = 1; });
-  const rows = state.friends.map(function (f) {
-    const key = f.members[0] || "";
-    if (!key) return "";
-    if (already[f.label]) {
-      return '<div class="pick-row" style="opacity:.55">' + esc(f.label) +
-        '<div class="friend-sub">' +
-          (already[f.label] === "accepted" ? "Already coming" : "Already asked") +
-        '</div></div>';
-    }
-    const on = !!picked[key.toLowerCase()];
-    return '<button class="pick-row' + (on ? " on" : "") + '" ' +
-      'onclick="Actions.toggleMealGuest(\\'' + esc(key) + '\\')">' + esc(f.label) + '</button>';
-  }).join("");
   return modalShell("Invite to " + m.title,
     (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
-    '<div class="pick-list">' + (rows || '<p class="helper-text">Nobody left to invite.</p>') + '</div>' +
+    MealFriendPickerHTML(already) +
     '<div class="edit-actions">' +
       '<button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
       '<button class="btn btn-primary" onclick="Actions.sendMealInvites()">Send invitations</button>' +
@@ -4974,7 +5122,7 @@ Actions.openNotification = function(id) {
     renderApp();
     return;
   }
-  if (n.kind === "meal") {
+  if (n.kind === "meal" || n.kind === "mealAccept") {
     if (!mealById(n.mealId)) {
       toast("That meal is no longer there");
       renderApp();
@@ -5960,9 +6108,11 @@ Actions.openNewMeal = function() {
     return;
   }
   state.mealDraft = {
-    mealId: null, title: "", date: localToday(), time: "18:00",
+    mealId: null, title: "", description: "", location: "",
+    date: localToday(), time: "18:00",
     guests: [], dishes: [], search: "", pick: null
   };
+  state.mealFriendSearch = "";
   state.modalError = "";
   Actions.openModal("meal");
 };
@@ -5970,11 +6120,24 @@ Actions.openEditMeal = function(mealId) {
   const m = mealById(mealId);
   if (!m) return;
   state.mealDraft = {
-    mealId: mealId, title: m.title, date: m.date, time: m.time || "",
+    mealId: mealId, title: m.title,
+    description: m.description || "", location: m.location || "",
+    date: m.date, time: m.time || "",
     guests: [], dishes: [], search: "", pick: null
   };
+  state.mealFriendSearch = "";
   state.modalError = "";
   Actions.openModal("meal");
+};
+/* Typing in the guest search redraws the sheet, which replaces the field
+   underneath the cursor, so the caret is put back where it was. Same shape
+   as the Whose recipes picker this was lifted from. */
+Actions.mealFriendSearch = function(v) {
+  state.mealFriendSearch = v;
+  readMealDraftFields();
+  renderModal();
+  const el = document.getElementById("meal-friend-search");
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
 };
 Actions.toggleMealGuest = function(username) {
   const dr = state.mealDraft;
@@ -5992,9 +6155,13 @@ function readMealDraftFields() {
   const t = document.getElementById("meal-title");
   const d = document.getElementById("meal-date");
   const h = document.getElementById("meal-time");
+  const ds = document.getElementById("meal-desc");
+  const lo = document.getElementById("meal-loc");
   if (t) dr.title = t.value;
   if (d) dr.date = d.value;
   if (h) dr.time = h.value;
+  if (ds) dr.description = ds.value;
+  if (lo) dr.location = lo.value;
 }
 Actions.saveMeal = async function() {
   const dr = state.mealDraft;
@@ -6005,10 +6172,14 @@ Actions.saveMeal = async function() {
   if (!dr.date) { state.modalError = "Pick a day."; renderModal(); return; }
   try {
     if (dr.mealId) {
-      await API("meal/update", { mealId: dr.mealId, title, date: dr.date, time: dr.time || "" });
+      await API("meal/update", {
+        mealId: dr.mealId, title, date: dr.date, time: dr.time || "",
+        description: dr.description || "", location: dr.location || ""
+      });
     } else {
       const made = await API("meal/create", {
-        title, date: dr.date, time: dr.time || "", guests: dr.guests
+        title, date: dr.date, time: dr.time || "", guests: dr.guests,
+        description: dr.description || "", location: dr.location || ""
       });
       /* The dishes were staged against a meal that did not exist yet, so
          they are committed one at a time now that it does. A dish that fails
@@ -6040,6 +6211,7 @@ Actions.openMealGuests = function(mealId) {
   const m = mealById(mealId);
   if (!m) return;
   state.mealDraft = { mealId: mealId, guests: [], dishes: [], search: "", pick: null };
+  state.mealFriendSearch = "";
   state.modalError = "";
   Actions.openModal("mealGuests");
 };
@@ -6152,6 +6324,40 @@ Actions.onMealDishInput = function(mealId, v) {
   const m = mealById(mealId);
   if (box && m) box.innerHTML = MealDishResultsHTML(m);
 };
+/* Tapping the bringing box on a tile halfway down a long meals page puts the
+   iOS keyboard over the field you just tapped, and the browser's own scroll
+   correction fires before the keyboard has finished coming up, so the field
+   lands wherever the page happened to be. Nudging it into the middle of what
+   is left of the viewport after the keyboard settles is the fix: block
+   "center" rather than "nearest", because "nearest" considers a field hidden
+   behind the keyboard to be already in view. */
+function bringIntoView(el) {
+  if (!el || !el.scrollIntoView) return;
+  try { el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  catch (e) { el.scrollIntoView(); }
+}
+Actions.focusMealSearch = function(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  /* Two passes. The first is for the case where the keyboard is already up
+     and nothing is going to move; the second catches the resize after it
+     opens, which is what actually shifts the field out from under the
+     cursor. */
+  bringIntoView(el);
+  setTimeout(function () { bringIntoView(document.getElementById(id)); }, 320);
+};
+/* Having picked a recipe, the one thing still being asked for is how many you
+   are making, so the cursor goes there rather than leaving you to hunt for a
+   58px box that has just appeared below the fold. */
+function focusMealServings(mealId) {
+  setTimeout(function () {
+    const el = document.getElementById("meal-serv-" + mealId);
+    if (!el) return;
+    el.focus();
+    if (el.setSelectionRange) { try { el.setSelectionRange(0, String(el.value).length); } catch (e) {} }
+    bringIntoView(el);
+  }, 0);
+}
 Actions.pickMealDish = function(mealId, recipeId) {
   const r = recipeById(recipeId);
   if (!r) { toast("That recipe is no longer there"); return; }
@@ -6161,10 +6367,12 @@ Actions.pickMealDish = function(mealId, recipeId) {
     readMealDraftFields();
     state.mealDraft.pick = pick;
     renderModal();
+    focusMealServings("draft");
     return;
   }
   state.mealDishPick[mealId] = pick;
   renderApp();
+  focusMealServings(mealId);
 };
 Actions.clearMealDishPick = function(mealId) {
   if (mealId === "draft") {
@@ -7308,6 +7516,7 @@ const LATER_TABLES = [
      at six wherever you are reading about it from. */
   "CREATE TABLE IF NOT EXISTS community_meals ( meal_id TEXT PRIMARY KEY, owner_cb TEXT NOT NULL, " +
     "title TEXT NOT NULL DEFAULT '', on_date TEXT NOT NULL, at_time TEXT NOT NULL DEFAULT '', " +
+    "description TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '', " +
     "created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )",
   "CREATE INDEX IF NOT EXISTS idx_meals_owner ON community_meals(owner_cb, on_date)",
   /* One row per cookbook on the guest list, the owner included. Membership is
@@ -7338,9 +7547,29 @@ const LATER_TABLES = [
 const DEFAULT_EXCLUSIONS = ["Water", "Salt", "Black pepper", "Baking soda", "Ice"];
 const MAX_EXCLUSIONS = 200;
 let schemaReady = false;
+/* community_meals shipped before it had anything to say beyond a name and a
+   day. The table is already live, so the two later columns are added rather
+   than declared: CREATE TABLE IF NOT EXISTS never runs again once the table
+   exists, and would leave a cookbook created last month without them. SQLite
+   has no ADD COLUMN IF NOT EXISTS, and a duplicate column is the expected
+   result on every run after the first, so that one error is swallowed and
+   anything else is not. */
+const LATER_COLUMNS = [
+  "ALTER TABLE community_meals ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE community_meals ADD COLUMN location TEXT NOT NULL DEFAULT ''"
+];
+async function addLaterColumns(env) {
+  for (const sql of LATER_COLUMNS) {
+    try { await env.DB.prepare(sql).run(); }
+    catch (e) {
+      if (!/duplicate column/i.test(String(e && e.message))) throw e;
+    }
+  }
+}
 async function ensureSchema(env) {
   if (schemaReady) return;
   for (const sql of LATER_TABLES) await env.DB.prepare(sql).run();
+  await addLaterColumns(env);
   schemaReady = true;
 }
 
@@ -7363,11 +7592,12 @@ async function mealsFor(env, cookbookId) {
   for (const r of mine) { myStatus[r.meal_id] = r.status; myAt[r.meal_id] = r.updated_at; }
 
   const metaRows = (await env.DB.prepare(
-    "SELECT meal_id, owner_cb, title, on_date, at_time, created_by, created_at, updated_at " +
+    "SELECT meal_id, owner_cb, title, on_date, at_time, description, location, " +
+    "created_by, created_at, updated_at " +
     "FROM community_meals WHERE meal_id IN (" + placeholders(ids.length) + ")"
   ).bind(...ids).all()).results || [];
   const guestRows = (await env.DB.prepare(
-    "SELECT meal_id, cookbook_id, status FROM meal_guests WHERE meal_id IN (" +
+    "SELECT meal_id, cookbook_id, status, updated_at FROM meal_guests WHERE meal_id IN (" +
     placeholders(ids.length) + ")"
   ).bind(...ids).all()).results || [];
   const dishRows = (await env.DB.prepare(
@@ -7394,6 +7624,11 @@ function shapeMeals(raw, labelFor, cookbookId) {
   return metaRows.map(m => ({
     mealId: m.meal_id,
     title: m.title,
+    /* Both arrived after the table did, so a meal written before they existed
+       reads as an empty string rather than a null the tile would have to
+       guard against. */
+    description: m.description || "",
+    location: m.location || "",
     date: m.on_date,
     time: m.at_time,
     ownerLabel: labelFor(m.owner_cb),
@@ -7406,7 +7641,14 @@ function shapeMeals(raw, labelFor, cookbookId) {
     createdBy: m.created_by,
     createdAt: m.created_at,
     guests: (byMeal[m.meal_id] || [])
-      .map(g => ({ label: labelFor(g.cookbook_id), status: g.status, mine: g.cookbook_id === cookbookId }))
+      /* updatedAt is what lets the host be told about an acceptance exactly
+         once: it is the stamp on that one seat, so a guest who declines and
+         is asked again and then accepts raises a second piece of news rather
+         than being swallowed by the first. */
+      .map(g => ({
+        label: labelFor(g.cookbook_id), status: g.status,
+        mine: g.cookbook_id === cookbookId, updatedAt: g.updated_at
+      }))
       .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
     dishes: (dishesBy[m.meal_id] || []).map(d => ({
       dishId: d.dish_id,
@@ -7980,6 +8222,11 @@ async function handleApi(route, body, env, request) {
     const title = cleanString(body.title, 120) || "Community Meal";
     const date = cleanString(body.date, 10);
     const time = cleanString(body.time, 5);
+    /* Both optional, so an empty one is stored as an empty string rather than
+       being rejected. Lengths are generous enough for a sentence and an
+       address and no more. */
+    const description = cleanString(body.description, 500);
+    const location = cleanString(body.location, 200);
     if (!DATE_RE.test(date)) throw new ApiError(400, "That is not a day.");
     if (time && !TIME_RE.test(time)) throw new ApiError(400, "That is not a time.");
     const count = await env.DB.prepare(
@@ -7995,9 +8242,10 @@ async function handleApi(route, body, env, request) {
     const mealId = newMealId();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT INTO community_meals (meal_id, owner_cb, title, on_date, at_time, created_by, created_at, updated_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(mealId, me.cookbookId, title, date, time, me.username, now, now).run();
+      "INSERT INTO community_meals (meal_id, owner_cb, title, on_date, at_time, description, location, " +
+      "created_by, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(mealId, me.cookbookId, title, date, time, description, location, me.username, now, now).run();
     await env.DB.prepare(
       "INSERT INTO meal_guests (meal_id, cookbook_id, status, invited_by, responded_by, updated_at) " +
       "VALUES (?, ?, 'owner', ?, ?, ?)"
@@ -8022,12 +8270,15 @@ async function handleApi(route, body, env, request) {
     const title = cleanString(body.title, 120) || seat.meal.title || "Community Meal";
     const date = cleanString(body.date, 10);
     const time = cleanString(body.time, 5);
+    const description = cleanString(body.description, 500);
+    const location = cleanString(body.location, 200);
     if (!DATE_RE.test(date)) throw new ApiError(400, "That is not a day.");
     if (time && !TIME_RE.test(time)) throw new ApiError(400, "That is not a time.");
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "UPDATE community_meals SET title = ?, on_date = ?, at_time = ?, updated_at = ? WHERE meal_id = ?"
-    ).bind(title, date, time, now, mealId).run();
+      "UPDATE community_meals SET title = ?, on_date = ?, at_time = ?, description = ?, " +
+      "location = ?, updated_at = ? WHERE meal_id = ?"
+    ).bind(title, date, time, description, location, now, mealId).run();
     if (date !== seat.meal.on_date) {
       const entries = ((await env.DB.prepare(
         "SELECT entry_id FROM meal_dishes WHERE meal_id = ? AND entry_id IS NOT NULL"
@@ -8039,7 +8290,7 @@ async function handleApi(route, body, env, request) {
         ).bind(date, ...entries).run();
       }
     }
-    return jsonResponse({ mealId, title, date, time });
+    return jsonResponse({ mealId, title, date, time, description, location });
   }
 
   if (route === "meal/invite") {
