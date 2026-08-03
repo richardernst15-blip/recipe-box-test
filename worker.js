@@ -3852,10 +3852,22 @@ function DetailViewHTML(r) {
       '<div id="recipe-body">' + RecipeBodyHTML(r) + '</div>' +
     '</div>';
 }
+/* The one path every control inside the recipe body re-renders through:
+   the scale presets, the custom multiplier, the show-all-logs toggle. It
+   resolved the recipe out of the library, which is exactly where a linked
+   recipe is not - so on a link view it found nothing and every one of those
+   buttons did nothing at all. Where a recipe had been opened earlier in the
+   session it was worse than nothing: activeId still pointed at that one, so
+   the row would have redrawn somebody else's food under the linked title.
+   hideLog has to travel with it too, or re-scaling a bare link would sprout
+   a cook log the first render deliberately withheld. */
 function updateRecipeBody() {
   const el = document.getElementById("recipe-body");
-  const r = getActiveRecipe();
-  if (el && r) el.innerHTML = RecipeBodyHTML(r);
+  if (!el) return;
+  const linked = (state.view === "link" && state.linkRecipe) ? state.linkRecipe.body : null;
+  const r = linked || getActiveRecipe();
+  if (!r) return;
+  el.innerHTML = RecipeBodyHTML(r, !!linked);
 }
 
 /* ====================================================================== */
