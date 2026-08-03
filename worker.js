@@ -879,6 +879,22 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
   text-align:left; word-break:break-all; line-height:1.35; }
 .qr-share .qr-holder{ line-height:0; background:#fff; border-radius:6px; }
 .qr-share-note{ margin:9px 0 0; }
+/* The three tiers, as rows you pick rather than a switch you flip. A switch
+   only ever expressed two of them. */
+.vis-rows{ display:flex; flex-direction:column; gap:8px; }
+.vis-row{ text-align:left; border:1px solid var(--border-light); background:var(--card);
+  border-radius:10px; padding:10px 12px; cursor:pointer; width:100%; }
+.vis-row.on{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.vis-row-head{ display:flex; align-items:center; gap:7px; font-weight:600; font-size:14px; color:var(--ink); }
+.vis-row-sub{ font-size:12px; color:var(--ink-muted); margin-top:3px; line-height:1.4; }
+.pill-select{ background:var(--meal-soft); border-color:var(--meal-line); color:var(--meal-dark); }
+/* The author's name, when tapping it would do something. Reads as the same
+   badge either way; only the pointer and the small plus say it is live. */
+.owner-badge-btn{ cursor:pointer; border:1px solid var(--border-light); }
+.owner-badge-btn svg{ vertical-align:-1px; margin-left:2px; }
+/* The offer of an account, shown to somebody reading a link with none. */
+.link-join{ background:var(--card); border:1px solid var(--border-light);
+  border-radius:12px; padding:12px; margin:12px 0; }
 
 /* tabs */
 .tabs{ display:flex; gap:6px; border-bottom:1px solid var(--border); margin:4px 0 18px; }
@@ -1365,6 +1381,15 @@ const state = {
   myHousehold: "",
   marks: { pin: [], star: [], later: [] },
   shares: {},
+  /* Which friends are ticked in the visibility sheet, while it is open. */
+  visDraft: [],
+  /* A recipe arrived at by share link. Held apart from state.recipes because
+     it is not in this cookbook and may never be - the library is what you
+     own or were given, and this is neither until it is pinned. */
+  linkRecipe: null,
+  linkError: "",
+  /* Autofills the friends page when an author's name is tapped. */
+  friendPrefill: "",
   pickSearch: "",
   sort: "newest",
   scale: 1,
@@ -1994,6 +2019,16 @@ function starsOnly(rating) {
 /* In a shared cookbook, "private" would be a lie: everyone in the cookbook
    can already see and edit it. */
 function privateLabel() { return state.mates.length ? "Just us" : "Private"; }
+/* The three tiers, named for what they do rather than what they hide.
+   Selective and All friends can both be handed out as a link or a code;
+   private cannot, so a private recipe shows neither. */
+function visibilityLabel(v) {
+  return v === "friends" ? "All friends" : v === "selective" ? "Selective share" : privateLabel();
+}
+function visibilityIcon(v, px) {
+  return v === "friends" ? icon("globe", px) : v === "selective" ? icon("userPlus", px) : icon("lock", px);
+}
+function canShareRecipe(r) { return !!r && (r.visibility === "friends" || r.visibility === "selective"); }
 /* ====================================================================== */
 /* QR codes                                                                */
 /* ====================================================================== */
@@ -2538,7 +2573,7 @@ function activeTab() {
 /* Hidden while editing: the bar is one tap from throwing away a half-written
    recipe, and the Cancel button is right there for leaving on purpose. */
 function tabsVisible() {
-  return !!state.session && !state.loading && state.view !== "edit";
+  return !!state.session && !state.loading && state.view !== "edit" && state.view !== "link";
 }
 function TabBarHTML() {
   if (!tabsVisible()) return "";
@@ -2556,12 +2591,12 @@ function renderTabBar() {
 }
 
 function visibilityPill(r, clickable) {
-  const shared = r.visibility === "friends";
-  const label = shared ? "Shared with friends" : privateLabel();
-  const glyph = shared ? icon("globe", 12) : icon("lock", 12);
-  const cls = "pill" + (shared ? " pill-shared" : "");
+  const v = r.visibility;
+  const label = visibilityLabel(v);
+  const glyph = visibilityIcon(v, 12);
+  const cls = "pill" + (v === "friends" ? " pill-shared" : v === "selective" ? " pill-select" : "");
   if (!clickable) return '<span class="' + cls + '">' + glyph + " " + label + '</span>';
-  return '<button class="' + cls + '" onclick="Actions.toggleVisibility()">' + glyph + " " + label + '</button>';
+  return '<button class="' + cls + '" onclick="Actions.openModal(\\'visibility\\')">' + glyph + " " + label + '</button>';
 }
 
 function RecipeCardHTML(r) {
@@ -3442,7 +3477,7 @@ function FriendsViewHTML() {
     '<p class="helper-text">Friendships link whole cookbooks. Add one person and you are linked to everyone who shares their cookbook, and they to everyone in yours. Recipes set to ' +
       esc(privateLabel()) + ' stay hidden either way.</p>' +
     '<div class="add-friend-row">' +
-      '<input type="text" id="friend-name" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Their username" />' +
+      '<input type="text" id="friend-name" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Their username" value="' + esc(state.friendPrefill || "") + '" />' +
       '<button class="btn btn-primary" onclick="Actions.sendFriendRequest()">' + icon("userPlus", 16) + ' Add</button>' +
     '</div>' +
     '<div class="section-label">Or have them scan this</div>' +
@@ -3683,7 +3718,10 @@ function CookLogHTML(r) {
     '</div>';
 }
 
-function RecipeBodyHTML(r) {
+/* hideLog suppresses the cook log for a reader who is not linked to the
+   owner's cookbook. Ratings and comments stay between friends, so a recipe
+   reached by a bare link shows the food and none of the conversation. */
+function RecipeBodyHTML(r, hideLog) {
   const scale = state.scale;
   const scaledServings = Math.round(r.servings.base * scale * 100) / 100;
   const m = r.macrosPerServing || {};
@@ -3741,7 +3779,7 @@ function RecipeBodyHTML(r) {
       '</div>' +
     '</div>' +
     (r.notes ? '<div class="notes-box"><b>Notes:</b> ' + esc(r.notes) + '</div>' : "") +
-    CookLogHTML(r);
+    (hideLog ? "" : CookLogHTML(r));
 }
 
 function DetailViewHTML(r) {
@@ -3751,10 +3789,16 @@ function DetailViewHTML(r) {
   const action = r.ours
     ? '<button class="btn btn-sm" onclick="Actions.openEdit(\\'' + r.recipeId + '\\')">' + icon("pencil", 14) + ' Edit</button>'
     : "";
-  /* Who and how well it went, straight under the name. */
+  /* Who and how well it went, straight under the name. Where the recipe came
+     from a cookbook we are not linked to - a pin taken from a share link -
+     the name is a button that asks to be friends. */
+  const knownHousehold = state.friends.some(function (f) { return f.label === r.household; });
   const credit = r.ours
     ? (r.owner === state.session.username ? "" : '<span class="owner-badge">' + icon("chain", 11) + ' ' + esc(r.owner) + '</span>')
-    : '<span class="owner-badge">from ' + esc(r.household) + '</span>';
+    : knownHousehold
+      ? '<span class="owner-badge">from ' + esc(r.household) + '</span>'
+      : '<button class="owner-badge owner-badge-btn" onclick="Actions.askToBeFriends(\\'' + esc(r.owner) + '\\')">' +
+          'from ' + esc(r.household) + ' ' + icon("userPlus", 11) + '</button>';
   const creditRow = '<div class="detail-meta" style="margin-bottom:10px">' + credit +
     ratingHTML(st.avg, st.count) +
     (st.count ? '<span class="cooked-count">cooked ' + st.count + '×</span>' : "") +
@@ -3778,28 +3822,7 @@ function DetailViewHTML(r) {
         icon("x", 13) + ' Unschedule</button>' +
       '</div>'
     : "";
-  /* The code and the link carry the same URL and do the same thing: scanning
-     it or opening it asks this recipe's owner to be friends and queues the
-     pin. The link is built from the same function the code is drawn from, so
-     the two cannot drift apart. Side by side because a camera is only the
-     right answer when the other person is in the room. */
-  const shareUrl = recipeQrUrl(r.recipeId);
-  const qrBlock =
-    '<div class="qr-share" style="margin:14px 0 16px">' +
-      '<div class="qr-side-text">' +
-        '<div class="small-label" style="margin-bottom:5px">Share URL</div>' +
-        '<div class="code-box font-mono">' + esc(shareUrl) + '</div>' +
-        '<button class="btn btn-sm btn-block" onclick="Actions.copyRecipeUrl(\\'' + r.recipeId + '\\')">' +
-          icon("copy", 14) + ' Copy link</button>' +
-      '</div>' +
-      '<div class="qr-holder">' + recipeQrHTML(r.recipeId, 112) + '</div>' +
-    '</div>' +
-    (r.description ? '<p class="detail-desc" style="margin:0 0 6px">' + esc(r.description) + '</p>' : "") +
-    '<p class="helper-text qr-share-note">Send the link, or point a friend\\'s camera at the code — ' +
-      'either one opens this recipe for them.' +
-      (r.ours && r.visibility !== "friends"
-        ? ' It is ' + esc(privateLabel().toLowerCase()) + ' at the moment, so they will not see it until you share it with them.'
-        : "") + '</p>';
+  const qrBlock = ShareBlockHTML(r.recipeId, r.visibility, r.ours);
   const tags = r.tags.length
     ? '<div class="detail-tags">' + r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join("") + '</div>'
     : "";
@@ -3906,10 +3929,11 @@ function EditViewHTML() {
       '<div class="field"><label>Who can see this recipe</label>' +
         '<div class="seg">' +
           '<button class="' + (d.visibility === "private" ? "active" : "") + '" onclick="Actions.setDraftVisibility(\\'private\\')">' + icon("lock", 15) + ' ' + privateLabel() + '</button>' +
-          '<button class="' + (d.visibility === "friends" ? "active" : "") + '" onclick="Actions.setDraftVisibility(\\'friends\\')">' + icon("globe", 15) + ' Shared with friends</button>' +
+          '<button class="' + (d.visibility === "selective" ? "active" : "") + '" onclick="Actions.setDraftVisibility(\\'selective\\')">' + icon("userPlus", 15) + ' Selective share</button>' +
+          '<button class="' + (d.visibility === "friends" ? "active" : "") + '" onclick="Actions.setDraftVisibility(\\'friends\\')">' + icon("globe", 15) + ' All friends</button>' +
         '</div>' +
         (d.visibility ? "" : '<p class="req-note">Pick one before saving.</p>') +
-        (d.visibility === "private" ? PrivateShareHTML(d) : "") +
+        (d.visibility === "selective" ? PrivateShareHTML(d) : "") +
       '</div>' +
       '<div class="field"><label>Title</label><input type="text" id="f-title" value="' + esc(d.title) + '" placeholder="Braised beef short ribs" /></div>' +
       '<div class="field"><label>Description</label><textarea id="f-description" rows="2">' + esc(d.description) + '</textarea></div>' +
@@ -4185,7 +4209,7 @@ function PrivateShareHTML(d) {
     return '<label class="share-row"><input type="checkbox"' + (on ? " checked" : "") +
       ' onchange="Actions.toggleShare(' + i + ')" /> ' + esc(f.label) + '</label>';
   }).join("");
-  return '<p class="helper-text" style="margin-top:10px">Hidden from everyone except your cookbook, plus anyone you tick here.</p>' +
+  return '<p class="helper-text" style="margin-top:10px">Only your cookbook and the friends you tick here. They can open it by link or code.</p>' +
     '<div>' + rows + '</div>';
 }
 
@@ -4686,7 +4710,7 @@ function ImportModalHTML() {
     summary +
     '<div class="field"><label>Who can see these recipes</label><div class="seg">' +
       '<button class="' + (state.importVisibility === "private" ? "active" : "") + '" onclick="Actions.setImportVisibility(\\'private\\')">' + icon("lock", 15) + ' ' + privateLabel() + '</button>' +
-      '<button class="' + (state.importVisibility === "friends" ? "active" : "") + '" onclick="Actions.setImportVisibility(\\'friends\\')">' + icon("globe", 15) + ' Shared with friends</button>' +
+      '<button class="' + (state.importVisibility === "friends" ? "active" : "") + '" onclick="Actions.setImportVisibility(\\'friends\\')">' + icon("globe", 15) + ' All friends</button>' +
     '</div></div>' +
     '<button class="btn btn-primary btn-block" ' + (parsed.length === 0 || !state.importVisibility ? "disabled" : "") +
       ' onclick="Actions.confirmImport()">Import ' + (parsed.length || "") + ' recipe' + (parsed.length === 1 ? "" : "s") + '</button>');
@@ -4791,42 +4815,132 @@ function ConflictModalHTML() {
 
 /* Neither code acts on its own. A recipe code asks its owner to be friends,
    which is a thing done in somebody else's name, so it gets a yes first. */
+/* Only the friend code raises this now. A recipe link opens the recipe
+   itself, so the recipe branch that used to live here is gone. */
 function ConfirmIntentModalHTML() {
   const c = state.intent || {};
-  if (c.type === "friend") {
-    return modalShell("Add a friend",
-      (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
-      '<p style="margin:0 0 14px">Send <b>' + esc(c.name) + '</b> a friend request?</p>' +
-      '<p class="helper-text">They have to accept before either of you sees the other\\'s shared recipes. ' +
-      'Friendships link whole cookbooks, so anyone sharing theirs comes with them.</p>' +
-      '<div style="display:flex; gap:8px; margin-top:16px">' +
-        '<button class="btn btn-primary" style="flex:1" ' + (state.busy ? "disabled" : "") +
-          ' onclick="Actions.runIntent()">' + icon("userPlus", 15) + ' Send request</button>' +
-        '<button class="btn" onclick="Actions.dismissIntent()">Not now</button>' +
-      '</div>');
-  }
-  const p = c.preview || {};
-  return modalShell("A recipe was shared with you",
+  return modalShell("Add a friend",
     (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
-    (p.title
-      ? '<p style="margin:0 0 6px"><b>' + esc(p.title) + '</b></p>' +
-        '<p class="helper-text" style="margin:0 0 14px">From ' + esc(p.household || p.owner || "another cookbook") + '</p>'
-      : '<p style="margin:0 0 14px">Someone shared a recipe with you.</p>') +
-    (p.mine
-      ? '<p class="helper-text">This one is already in your own cookbook.</p>'
-      : p.friends
-        ? '<p class="helper-text">You are already friends, so this will pin it to your cookbook and open it. Pinning is a live view of their recipe, not a copy - their edits show, and it goes if they delete it.</p>'
-        : '<p class="helper-text">To see it you need to be friends. This sends ' +
-          esc(p.owner || "them") + ' a friend request and remembers the recipe - it pins itself to your cookbook the moment they accept.' +
-          (p.visibility && p.visibility !== "friends"
-            ? ' Note it is private at the moment, so they will also need to share it with you.' : "") +
-          '</p>') +
+    '<p style="margin:0 0 14px">Send <b>' + esc(c.name || "") + '</b> a friend request?</p>' +
+    '<p class="helper-text">They have to accept before either of you sees the other\'s shared recipes. ' +
+    'Friendships link whole cookbooks, so anyone sharing theirs comes with them.</p>' +
     '<div style="display:flex; gap:8px; margin-top:16px">' +
       '<button class="btn btn-primary" style="flex:1" ' + (state.busy ? "disabled" : "") +
-        ' onclick="Actions.runIntent()">' +
-        (p.mine ? "Open it" : p.friends ? "Pin and open" : icon("userPlus", 15) + " Ask and save it") + '</button>' +
+        ' onclick="Actions.runIntent()">' + icon("userPlus", 15) + ' Send request</button>' +
       '<button class="btn" onclick="Actions.dismissIntent()">Not now</button>' +
     '</div>');
+}
+
+/* Who can reach this recipe, as three rungs of a ladder. Selective opens a
+   list of friends underneath it, because picking that tier without picking
+   anybody would leave the recipe reaching nobody at all. */
+function VisibilityModalHTML() {
+  const r = getActiveRecipe();
+  if (!r || !r.ours) return modalShell("Who can see this", "");
+  const v = r.visibility;
+  const row = function (tier, blurb) {
+    return '<button class="vis-row' + (v === tier ? " on" : "") + '" ' +
+      'onclick="Actions.setVisibility(\\'' + tier + '\\')">' +
+      '<div class="vis-row-head">' + visibilityIcon(tier, 15) + ' ' + esc(visibilityLabel(tier)) + '</div>' +
+      '<div class="vis-row-sub">' + blurb + '</div>' +
+    '</button>';
+  };
+  const chosen = state.visDraft || [];
+  const picker = v !== "selective" ? "" :
+    (!state.friends.length
+      ? '<p class="helper-text">No friends yet, so there is nobody to hand it to. It stays inside your cookbook until you add one.</p>'
+      : '<div class="section-label">Hand it to</div>' +
+        '<div>' + state.friends.map(function (f, i) {
+          const on = chosen.indexOf(f.members[0] || "") >= 0;
+          return '<label class="share-row"><input type="checkbox"' + (on ? " checked" : "") +
+            ' onchange="Actions.toggleVisShare(' + i + ')" /> ' + esc(f.label) + '</label>';
+        }).join("") + '</div>');
+  return modalShell("Who can see this",
+    '<div class="vis-rows">' +
+      row("private", "Only your cookbook. No link and no code — this one does not leave the house.") +
+      row("selective", "Your cookbook, plus the friends you tick. Can be handed out by link or code.") +
+      row("friends", "Every friend of your cookbook. Can be handed out by link or code.") +
+    '</div>' + picker);
+}
+
+/* A recipe somebody was sent. Readable with no account at all, which is the
+   point: the person you handed the link to should be able to cook from it
+   before deciding whether they want a cookbook of their own. What is missing
+   compared with the ordinary detail view is deliberate - no marks, no
+   scheduling and no cook log, because all of those are things you do to your
+   own box or say to a friend, and a link holder is neither yet. */
+function LinkRecipeViewHTML() {
+  const signedIn = !!state.session;
+  const back = signedIn
+    ? '<button class="back-link" onclick="Actions.leaveLinkView()">' + icon("chevronLeft", 18) + ' Recipe box</button>'
+    : '<button class="back-link" onclick="Actions.leaveLinkView()">' + icon("chevronLeft", 18) + ' Account Login</button>';
+  if (!state.linkRecipe) {
+    return '<div class="wrap"><div class="detail-top">' + back + '</div>' +
+      '<p style="padding-top:24px">' + esc(state.linkError || "That link could not be opened.") + '</p>' +
+      (signedIn ? "" : '<p class="helper-text">If you have a cookbook, sign in and try the link again.</p>') +
+    '</div>';
+  }
+  const lr = state.linkRecipe;
+  const r = lr.body;
+  const mine = signedIn && state.recipes.some(function (x) { return x.recipeId === lr.recipeId && x.ours; });
+  const already = signedIn && state.recipes.some(function (x) { return x.recipeId === lr.recipeId; });
+  /* Tapping the author asks to be friends. Only offered to somebody who has
+     an account and is not already linked to them - otherwise it is either
+     meaningless or already done. */
+  const known = signedIn && state.friends.some(function (f) { return f.label === lr.household; });
+  const credit = (signedIn && !mine && !known)
+    ? '<button class="owner-badge owner-badge-btn" onclick="Actions.askToBeFriends(\\'' + esc(lr.owner) + '\\')">' +
+        'from ' + esc(lr.household) + ' ' + icon("userPlus", 11) + '</button>'
+    : '<span class="owner-badge">from ' + esc(lr.household) + '</span>';
+  const pinRow = !signedIn ? ""
+    : mine ? '<p class="helper-text">This one is already yours.</p>'
+    : already ? '<p class="helper-text">Already in your cookbook.</p>'
+    : '<div class="detail-marks">' +
+        '<button class="mark-btn" ' + (state.busy ? "disabled" : "") + ' onclick="Actions.pinFromLink()">' +
+          icon("pin", 15) + ' Pin to my cookbook</button>' +
+      '</div>';
+  const joinRow = signedIn ? "" :
+    '<div class="link-join">' +
+      '<p class="helper-text" style="margin:0 0 8px">You are reading this without an account. ' +
+      'A cookbook of your own lets you pin this recipe, cook from it and keep your own notes.</p>' +
+      '<button class="btn btn-primary btn-block" onclick="Actions.leaveLinkView()">Make a cookbook</button>' +
+    '</div>';
+  const tags = r.tags && r.tags.length
+    ? '<div class="detail-tags">' + r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join("") + '</div>'
+    : "";
+  return '' +
+    '<div class="wrap">' +
+      '<div class="detail-top">' + back + '</div>' +
+      '<h1 class="detail-title font-display">' + esc(r.title) + '</h1>' +
+      '<div class="detail-meta" style="margin-bottom:10px">' + credit + '</div>' +
+      pinRow +
+      joinRow +
+      ShareBlockHTML(lr.recipeId, lr.visibility, false) +
+      tags +
+      '<div id="recipe-body">' + RecipeBodyHTML(r, true) + '</div>' +
+    '</div>';
+}
+
+/* Link and code, side by side, carrying the same URL. Private recipes get
+   neither: there is nothing to hand out, and offering a code for something
+   nobody else can open would only mislead. */
+function ShareBlockHTML(recipeId, visibility, ours) {
+  if (!(visibility === "friends" || visibility === "selective")) {
+    return ours
+      ? '<p class="helper-text" style="margin:14px 0 16px">This one is ' + esc(privateLabel().toLowerCase()) +
+        ', so it has no link or code. Change who can see it to share it.</p>'
+      : "";
+  }
+  const shareUrl = recipeQrUrl(recipeId);
+  return '<div class="qr-share" style="margin:14px 0 16px">' +
+      '<div class="qr-side-text">' +
+        '<div class="small-label" style="margin-bottom:5px">Share Recipe</div>' +
+        '<div class="code-box font-mono">' + esc(shareUrl) + '</div>' +
+        '<button class="btn btn-sm btn-block" onclick="Actions.copyRecipeUrl(\\'' + recipeId + '\\')">' +
+          icon("copy", 14) + ' Copy link</button>' +
+      '</div>' +
+      '<div class="qr-holder">' + recipeQrHTML(recipeId, 112) + '</div>' +
+    '</div>';
 }
 
 function ActionsModalHTML() {
@@ -4957,6 +5071,7 @@ function renderModal() {
   else if (state.modal === "account") root.innerHTML = AccountModalHTML();
   else if (state.modal === "shareApp") root.innerHTML = ShareAppModalHTML();
   else if (state.modal === "confirmIntent") root.innerHTML = ConfirmIntentModalHTML();
+  else if (state.modal === "visibility") root.innerHTML = VisibilityModalHTML();
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
   else if (state.modal === "filters") { root.innerHTML = FiltersModalHTML(); updateFilterScrollHint(); }
   else if (state.modal === "actions") root.innerHTML = ActionsModalHTML();
@@ -4981,6 +5096,14 @@ function renderModal() {
 /* ====================================================================== */
 function renderApp() {
   const app = document.getElementById("app");
+  /* A share link is readable before there is an account, so this comes ahead
+     of the sign-in wall rather than behind it. */
+  if (state.view === "link") {
+    app.innerHTML = LinkRecipeViewHTML();
+    renderTabBar();
+    renderModal();
+    return;
+  }
   if (!state.session) { app.innerHTML = WelcomeViewHTML(); renderTabBar(); renderModal(); return; }
   if (state.loading) { app.innerHTML = '<div class="loading">Loading your recipe box…</div>'; renderTabBar(); renderModal(); return; }
   if (state.view === "library") app.innerHTML = LibraryViewHTML();
@@ -5438,6 +5561,7 @@ Actions.sendFriendRequest = async function() {
   try {
     const res = await API("friend/request", { name });
     el.value = "";
+    state.friendPrefill = "";
     await refreshLibrary(false);
     const others = (res.members || []).filter(m => m !== res.username);
     if (res.accepted) {
@@ -5450,57 +5574,56 @@ Actions.sendFriendRequest = async function() {
   } catch (e) { toast(e.message); }
 };
 /* Held until there is a cookbook to act with, then offered as a question. */
+/* A recipe link now does one thing: it opens the recipe. It asks nobody to
+   be friends and pins nothing on its own. It works without a session, so
+   somebody who has never heard of the app can read what they were sent, and
+   the offer of an account is a back button rather than a wall. */
 Actions.beginIntent = async function(intent) {
   if (!intent) return;
+  if (intent.type === "recipe") {
+    /* Kept in storage either way: if they do go and make a cookbook, they
+       come back to the recipe they were sent rather than to an empty box. */
+    if (!state.session) stashIntent(intent);
+    try {
+      const p = await API("recipe/public", { recipeId: intent.recipeId });
+      state.linkRecipe = {
+        recipeId: p.recipeId, owner: p.owner, household: p.household,
+        visibility: p.visibility, body: normalizeBody(p.data || {})
+      };
+      state.linkError = "";
+    } catch (e) {
+      state.linkRecipe = null;
+      state.linkError = e.message || "That link could not be opened.";
+    }
+    state.view = "link";
+    state.scale = 1;
+    renderApp();
+    return;
+  }
   if (!state.session) { stashIntent(intent); return; }
   state.intent = intent;
   state.modalError = "";
-  if (intent.type === "recipe") {
-    try {
-      const p = await API("recipe/claim", { recipeId: intent.recipeId, preview: true });
-      state.intent.preview = p;
-    } catch (e) {
-      toast(e.message);
-      state.intent = null;
-      return;
-    }
-  }
   Actions.openModal("confirmIntent");
 };
 Actions.dismissIntent = function() {
   state.intent = null;
   Actions.closeModal();
 };
+/* Only the friend code reaches this now; a recipe link opens the recipe
+   directly and never raises the confirm sheet. */
 Actions.runIntent = async function() {
   const c = state.intent;
   if (!c || state.busy) return;
   state.busy = true;
   renderModal();
   try {
-    if (c.type === "friend") {
-      const res = await API("friend/request", { name: c.name });
-      state.intent = null;
-      state.modal = null;
-      await refreshLibrary(false);
-      toast(res.accepted
-        ? "You are now linked with " + res.username
-        : "Request sent to " + res.username + " — you will see their shared recipes once they accept");
-      return;
-    }
-    const res = await API("recipe/claim", { recipeId: c.recipeId });
+    const res = await API("friend/request", { name: c.name });
     state.intent = null;
     state.modal = null;
     await refreshLibrary(false);
-    if (res.recipeId && state.recipes.some(function (r) { return r.recipeId === res.recipeId; })) {
-      state._showAllLogs = false;
-      Actions.openDetail(res.recipeId);
-      toast(res.pinned ? "Pinned to your cookbook" : "Opened");
-      return;
-    }
-    renderApp();
-    toast(res.requested
-      ? "Asked " + (res.owner || "them") + " to be friends — the recipe pins itself when they accept"
-      : "Saved. It will appear once they share it with you.");
+    toast(res.accepted
+      ? "You are now linked with " + res.username
+      : "Request sent to " + res.username + " — you will see their shared recipes once they accept");
   } catch (e) {
     state.modalError = e.message;
     renderModal();
@@ -5783,7 +5906,7 @@ Actions.saveRecipeForm = async function() {
   syncDraftFromDOM();
   const d = state.editDraft;
   if (!d.title || !d.title.trim()) { toast("Give the recipe a title first"); return; }
-  if (!d.visibility) { toast("Choose " + privateLabel() + " or Shared with friends first"); return; }
+  if (!d.visibility) { toast("Choose who can see this first"); return; }
   if (state.busy) return;
   state.busy = true;
   const body = normalizeBody(Object.assign({}, d, {
@@ -5797,7 +5920,7 @@ Actions.saveRecipeForm = async function() {
       baseUpdatedAt: state.editBaseUpdatedAt,
       force: state.editForce
     });
-    if (d.visibility === "private") {
+    if (d.visibility === "selective") {
       await API("recipe/share", { recipeId: res.recipeId, usernames: d._shareWith || [] });
     }
     state.activeId = res.recipeId;
@@ -5859,17 +5982,100 @@ Actions.deleteRecipe = async function() {
     toast("Recipe deleted");
   } catch (e) { toast(e.message); }
 };
-Actions.toggleVisibility = async function() {
+/* state.shares holds household labels; recipe/share wants one member name per
+   cookbook, the same translation openEdit makes. */
+function shareKeysFor(recipeId) {
+  return (state.shares[recipeId] || []).map(function (label) {
+    const f = state.friends.filter(x => x.label === label)[0];
+    return f ? (f.members[0] || "") : "";
+  }).filter(Boolean);
+}
+Actions.setVisibility = async function(next) {
   const r = getActiveRecipe();
   if (!r || !r.ours) return;
-  const next = r.visibility === "friends" ? "private" : "friends";
+  if (["private", "selective", "friends"].indexOf(next) < 0) return;
   try {
     await API("recipe/visibility", { recipeId: r.recipeId, visibility: next });
+    /* Selective without anybody ticked reaches nobody, so the sheet stays
+       open on the list of friends rather than closing on a recipe that is
+       shared with no one. */
+    if (next === "selective") {
+      await refreshLibrary(false);
+      state.visDraft = shareKeysFor(r.recipeId);
+      setWatch(r.recipeId);
+      renderApp();
+      return;
+    }
+    Actions.closeModal();
     await refreshLibrary(false);
     setWatch(r.recipeId);
-    toast(next === "friends" ? "Shared with your friends" : "Now " + privateLabel().toLowerCase());
+    toast(next === "friends" ? "Shared with all your friends" : "Now " + privateLabel().toLowerCase());
   } catch (e) { toast(e.message); }
 };
+/* Ticking a friend on an already-saved recipe writes straight through - there
+   is no Save button on this sheet, so the tick is the commitment. */
+Actions.toggleVisShare = async function(i) {
+  const r = getActiveRecipe();
+  const f = state.friends[i];
+  if (!r || !r.ours || !f) return;
+  const key = f.members[0] || "";
+  const list = (state.visDraft || []).slice();
+  const at = list.indexOf(key);
+  if (at >= 0) list.splice(at, 1); else list.push(key);
+  state.visDraft = list;
+  renderModal();
+  try {
+    await API("recipe/share", { recipeId: r.recipeId, usernames: list });
+    await refreshLibrary(false);
+  } catch (e) { toast(e.message); }
+};
+/* Leaving a shared recipe. With an account that means the recipe box; with
+   none it means the sign-in screen, which is what the back button offers to
+   somebody reading a link cold. The stashed intent survives either way, so
+   making a cookbook lands them back on the recipe they came for. */
+Actions.leaveLinkView = function() {
+  state.linkRecipe = null;
+  state.linkError = "";
+  state.view = state.session ? "library" : "welcome";
+  renderApp();
+};
+Actions.pinFromLink = async function() {
+  const lr = state.linkRecipe;
+  if (!lr || !state.session || state.busy) return;
+  state.busy = true;
+  renderApp();
+  try {
+    const res = await API("recipe/claim", { recipeId: lr.recipeId });
+    await refreshLibrary(false);
+    state.linkRecipe = null;
+    state.busy = false;
+    if (res.recipeId && state.recipes.some(function (r) { return r.recipeId === res.recipeId; })) {
+      state._showAllLogs = false;
+      Actions.openDetail(res.recipeId);
+      toast(res.mine ? "Opened" : "Pinned to your cookbook");
+      return;
+    }
+    state.view = "library";
+    renderApp();
+  } catch (e) {
+    state.busy = false;
+    toast(e.message);
+    renderApp();
+  }
+};
+/* Tapping who a recipe came from. Lands on the friends page with their name
+   already in the box, so the whole gesture is tap-the-name then tap Add. */
+Actions.askToBeFriends = function(name) {
+  if (!state.session) return;
+  state.linkRecipe = null;
+  state.friendPrefill = String(name || "");
+  state.view = "friends";
+  state.friendsTab = "friends";
+  renderApp();
+  const el = document.getElementById("friend-name");
+  if (el) { el.value = state.friendPrefill; el.focus(); }
+};
+
 Actions.mergeRecipe = async function(id) {
   const r = state.recipes.find(x => x.recipeId === id);
   if (!r) return;
@@ -7294,8 +7500,12 @@ if (typeof document !== "undefined" && document.addEventListener) {
   const scanned = readIntentFromUrl();
   state.session = loadSession();
   if (!state.session) {
-    if (scanned) { stashIntent(scanned); state._arrivedByScan = true; }
     state.loading = false;
+    /* A recipe link is readable without an account, so it opens rather than
+       waiting behind the sign-in screen. A friend code still has to wait -
+       there is no one to send the request from yet. */
+    if (scanned && scanned.type === "recipe") { await Actions.beginIntent(scanned); return; }
+    if (scanned) { stashIntent(scanned); state._arrivedByScan = true; }
     renderApp();
     return;
   }
@@ -7346,7 +7556,23 @@ const newDishId = () => randomFrom(RECIPE_ALPHABET, 16);
 
 const USERNAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,19}$/;
 const COOKBOOK_RE = /^[A-Z0-9]{10}$/;
-const VISIBILITIES = ["private", "friends"];
+/* Three tiers, in increasing order of reach:
+     private   - nobody outside the cookbook. No link, no code, no handing out.
+     selective - only the cookbooks the owner ticked. Link and code allowed.
+     friends   - every friend of the cookbook. Link and code allowed.
+   "selective" arrived after the other two. Before it existed, handing a
+   recipe to particular friends was expressed as private-plus-rows-in-
+   recipe_shares, which is exactly what selective means, so those recipes are
+   migrated across. The migration is safe to run repeatedly because setting a
+   recipe back to private clears its shares, which keeps the invariant it
+   relies on: a private recipe never has share rows. */
+const VISIBILITIES = ["private", "selective", "friends"];
+const VISIBILITY_MIGRATION =
+  "UPDATE recipes SET visibility = 'selective' WHERE visibility = 'private' " +
+  "AND recipe_id IN (SELECT recipe_id FROM recipe_shares)";
+/* Only these two can be handed out beyond the cookbook, so only these two get
+   a link and a QR code. */
+function isShareable(visibility) { return visibility === "friends" || visibility === "selective"; }
 const MAX_RECIPE_BYTES = 96 * 1024;
 const MAX_IMPORT_RECIPES = 400;
 const MAX_COMMENT_CHARS = 2000;
@@ -7471,6 +7697,19 @@ async function resolveCookbook(env, name) {
 }
 
 /* ---------------------------------------------------------- recipe rows -- */
+/* Private has to mean private by whichever door it was set. Withdrawing the
+   individual hand-outs and the link pins is not housekeeping - it is what
+   the tier means, and the library query reads both tables. It also keeps the
+   invariant the selective migration leans on: a private recipe never has
+   share rows. Miss this on one route and a recipe edited down to private
+   would keep its old audience and then be promoted back to selective on the
+   next cold start. */
+async function applyVisibilityReach(env, recipeId, visibility) {
+  if (visibility !== "private") return;
+  await env.DB.prepare("DELETE FROM recipe_shares WHERE recipe_id = ?").bind(recipeId).run();
+  await env.DB.prepare("DELETE FROM link_grants WHERE recipe_id = ?").bind(recipeId).run();
+}
+
 async function loadRecipeForReader(env, me, recipeId) {
   const row = await env.DB.prepare(
     "SELECT recipe_id, cookbook_id, owner_username, owner_lc, visibility, data, created_at, updated_at, updated_by, locked_by, locked_at " +
@@ -7478,9 +7717,9 @@ async function loadRecipeForReader(env, me, recipeId) {
   ).bind(recipeId).first();
   if (!row) throw new ApiError(404, "That recipe is no longer there.");
   if (row.cookbook_id === me.cookbookId) return { row, ours: true };
-  const friendCbs = await friendCookbooks(env, me.cookbookId);
-  const linked = friendCbs.indexOf(row.cookbook_id) >= 0;
-  if (!linked || row.visibility !== "friends") throw new ApiError(403, "That recipe isn't shared with you.");
+  if (!(await reachesReader(env, me.cookbookId, row, recipeId))) {
+    throw new ApiError(403, "That recipe isn't shared with you.");
+  }
   return { row, ours: false };
 }
 
@@ -7513,6 +7752,14 @@ const LATER_TABLES = [
   "CREATE TABLE IF NOT EXISTS recipe_shares ( recipe_id TEXT NOT NULL, cookbook_id TEXT NOT NULL, " +
     "created_at TEXT NOT NULL, PRIMARY KEY (recipe_id, cookbook_id) )",
   "CREATE INDEX IF NOT EXISTS idx_shares_cookbook ON recipe_shares(cookbook_id)",
+  /* Someone opened a share link and pinned what they found. That has to be
+     recorded somewhere the owner's own sharing checkboxes cannot destroy:
+     recipe/share rewrites recipe_shares for a recipe wholesale, so a grant
+     kept there would vanish out of a stranger's cookbook the next time the
+     owner edited who they had ticked. Hence a table of its own. */
+  "CREATE TABLE IF NOT EXISTS link_grants ( recipe_id TEXT NOT NULL, cookbook_id TEXT NOT NULL, " +
+    "created_at TEXT NOT NULL, PRIMARY KEY (recipe_id, cookbook_id) )",
+  "CREATE INDEX IF NOT EXISTS idx_grants_cookbook ON link_grants(cookbook_id)",
   /* A pin that is waiting on a friendship. Scanning a recipe code from
      outside somebody's circle cannot pin anything yet, so the wish is kept
      here and settled the moment the link exists. */
@@ -7598,6 +7845,7 @@ async function addLaterColumns(env) {
       if (!/duplicate column/i.test(String(e && e.message))) throw e;
     }
   }
+  await env.DB.prepare(VISIBILITY_MIGRATION).run();
 }
 async function ensureSchema(env) {
   if (schemaReady) return;
@@ -7750,13 +7998,7 @@ async function canSeeRecipe(env, cookbookId, recipeId) {
   ).bind(recipeId).first();
   if (!row) return false;
   if (row.cookbook_id === cookbookId) return true;
-  const handed = await env.DB.prepare(
-    "SELECT recipe_id FROM recipe_shares WHERE recipe_id = ? AND cookbook_id = ?"
-  ).bind(recipeId, cookbookId).first();
-  if (handed) return true;
-  if (row.visibility !== "friends") return false;
-  const friends = await friendCookbooks(env, cookbookId);
-  return friends.indexOf(row.cookbook_id) >= 0;
+  return reachesReader(env, cookbookId, row, recipeId);
 }
 
 /* A shopping list comes in already added up, so this checks the shape rather
@@ -7805,21 +8047,34 @@ function validateGroceryItems(raw) {
   return out;
 }
 
-/* Is a recipe actually readable by this cookbook? Shared with friends and
-   linked, or handed over individually. Mirrors what recipe/mark allows. */
+/* Can this cookbook read somebody else's recipe? Three ways in, checked
+   cheapest first: it was handed to them individually (which is what
+   "selective" means), they pinned it from a share link, or it is on the
+   friends tier and the two cookbooks are linked. Private reaches none of
+   these, which is the whole point of it. */
+async function reachesReader(env, cookbookId, row, recipeId) {
+  const handed = await env.DB.prepare(
+    "SELECT recipe_id FROM recipe_shares WHERE recipe_id = ? AND cookbook_id = ?"
+  ).bind(recipeId, cookbookId).first();
+  if (handed) return true;
+  const granted = await env.DB.prepare(
+    "SELECT recipe_id FROM link_grants WHERE recipe_id = ? AND cookbook_id = ?"
+  ).bind(recipeId, cookbookId).first();
+  if (granted) return true;
+  if (row.visibility !== "friends") return false;
+  const friends = await friendCookbooks(env, cookbookId);
+  return friends.indexOf(row.cookbook_id) >= 0;
+}
+
+/* Is a recipe actually readable by this cookbook? Mirrors what recipe/mark
+   allows. */
 async function pinIsAllowed(env, cookbookId, recipeId) {
   const row = await env.DB.prepare(
     "SELECT cookbook_id, visibility FROM recipes WHERE recipe_id = ?"
   ).bind(recipeId).first();
   if (!row) return false;
   if (row.cookbook_id === cookbookId) return false;      /* already theirs */
-  const handed = await env.DB.prepare(
-    "SELECT recipe_id FROM recipe_shares WHERE recipe_id = ? AND cookbook_id = ?"
-  ).bind(recipeId, cookbookId).first();
-  if (handed) return true;
-  if (row.visibility !== "friends") return false;
-  const friends = await friendCookbooks(env, cookbookId);
-  return friends.indexOf(row.cookbook_id) >= 0;
+  return reachesReader(env, cookbookId, row, recipeId);
 }
 
 /* Called whenever two cookbooks become linked. Any pin either of them was
@@ -7848,41 +8103,10 @@ async function resolvePendingPins(env, cbA, cbB) {
   }
 }
 
-/* The friendship half of a scanned link. Same rules as friend/request, but
-   reached with a cookbook rather than a username, and it reports back what
-   it found rather than throwing at the caller. */
-async function ensureFriendLink(env, me, theirCb) {
-  if (theirCb === me.cookbookId) return { already: true };
-  const now = new Date().toISOString();
-  const rows = (await env.DB.prepare(
-    "SELECT requester_cb, addressee_cb, status FROM friendships " +
-    "WHERE (requester_cb = ? AND addressee_cb = ?) OR (requester_cb = ? AND addressee_cb = ?)"
-  ).bind(me.cookbookId, theirCb, theirCb, me.cookbookId).all()).results || [];
-  for (const row of rows) {
-    if (row.status === "accepted") return { accepted: true };
-    if (row.status === "pending" && row.requester_cb === me.cookbookId) return { requested: true };
-    if (row.status === "pending" && row.requester_cb === theirCb) {
-      /* They had already asked us, so scanning their code answers it. */
-      await env.DB.prepare(
-        "UPDATE friendships SET status = 'accepted', responded_by = ?, updated_at = ? " +
-        "WHERE requester_cb = ? AND addressee_cb = ?"
-      ).bind(me.username, now, theirCb, me.cookbookId).run();
-      await resolvePendingPins(env, me.cookbookId, theirCb);
-      return { accepted: true };
-    }
-    /* We were turned down once; nothing about that is worth spelling out. */
-    if (row.status === "declined" && row.requester_cb === me.cookbookId) return { blocked: true };
-    if (row.status === "declined" && row.requester_cb === theirCb) {
-      await env.DB.prepare("DELETE FROM friendships WHERE requester_cb = ? AND addressee_cb = ?")
-        .bind(theirCb, me.cookbookId).run();
-    }
-  }
-  await env.DB.prepare(
-    "INSERT INTO friendships (requester_cb, addressee_cb, status, requested_by, created_at, updated_at) " +
-    "VALUES (?, ?, 'pending', ?, ?, ?)"
-  ).bind(me.cookbookId, theirCb, me.username, now, now).run();
-  return { requested: true };
-}
+/* Nothing writes pending_pins any more: a share link pins on the spot rather
+   than waiting on a friendship. resolvePendingPins stays because cookbooks
+   upgraded from the old behaviour may still have wishes sitting in that
+   table, and accepting a friend request ought to settle them. */
 
 async function handleApi(route, body, env, request) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
@@ -7928,6 +8152,35 @@ async function handleApi(route, body, env, request) {
     ).bind(username.toLowerCase(), username, cookbookId, new Date().toISOString()).run();
     return jsonResponse({
       username, cookbookId, created: existing === 0, joined: existing > 0, members: existing + 1
+    });
+  }
+
+  /* ---- a shared link, opened by anybody ----
+     The only route that answers without a session. A share link is a
+     capability: recipe ids are 14 characters of [a-z0-9], so holding one is
+     evidence somebody handed it over. Private recipes are refused outright -
+     they generate no link in the first place, so a link to one is either
+     stale or guessed. Ratings and comments are deliberately not included;
+     those stay between linked cookbooks. */
+  if (route === "recipe/public") {
+    await throttleGuard(env, ["ip:" + ip]);
+    const recipeId = cleanString(body.recipeId, 64);
+    const row = await env.DB.prepare(
+      "SELECT recipe_id, cookbook_id, owner_username, visibility, data FROM recipes WHERE recipe_id = ?"
+    ).bind(recipeId).first();
+    if (!row) throw new ApiError(404, "That link points at a recipe that is no longer there.");
+    if (!isShareable(row.visibility)) {
+      throw new ApiError(403, "The owner has not shared this recipe.");
+    }
+    let data = null;
+    try { data = JSON.parse(row.data); } catch (e) { throw new ApiError(500, "That recipe could not be read."); }
+    const map = await membersOf(env, [row.cookbook_id]);
+    return jsonResponse({
+      recipeId: row.recipe_id,
+      owner: row.owner_username,
+      household: householdLabel(map[row.cookbook_id] || [row.owner_username]),
+      visibility: row.visibility,
+      data
     });
   }
 
@@ -7977,8 +8230,11 @@ async function handleApi(route, body, env, request) {
       sql += " OR (visibility = 'friends' AND cookbook_id IN (" + placeholders(friendCbs.length) + "))";
       binds.push(...friendCbs);
     }
-    /* A private recipe someone chose to share with this cookbook specifically. */
+    /* A recipe handed to this cookbook specifically - which is what the
+       selective tier is - or one they pinned from a share link. */
     sql += " OR recipe_id IN (SELECT recipe_id FROM recipe_shares WHERE cookbook_id = ?)";
+    binds.push(me.cookbookId);
+    sql += " OR recipe_id IN (SELECT recipe_id FROM link_grants WHERE cookbook_id = ?)";
     binds.push(me.cookbookId);
     const recipeRows = (await env.DB.prepare(sql).bind(...binds).all()).results || [];
 
@@ -8121,23 +8377,28 @@ async function handleApi(route, body, env, request) {
     const recipeId = cleanString(body.recipeId, 64);
     const kind = cleanString(body.kind, 12);
     if (MARK_KINDS.indexOf(kind) < 0) throw new ApiError(400, "Unknown mark.");
-    const friendCbs = await friendCookbooks(env, me.cookbookId);
     const visible = await env.DB.prepare(
       "SELECT cookbook_id, visibility FROM recipes WHERE recipe_id = ?"
     ).bind(recipeId).first();
     if (!visible) throw new ApiError(404, "That recipe is gone.");
     const mine = visible.cookbook_id === me.cookbookId;
-    const shared = visible.visibility === "friends" && friendCbs.indexOf(visible.cookbook_id) >= 0;
-    const handed = !!(await env.DB.prepare(
-      "SELECT recipe_id FROM recipe_shares WHERE recipe_id = ? AND cookbook_id = ?"
-    ).bind(recipeId, me.cookbookId).first());
-    if (!mine && !shared && !handed) throw new ApiError(403, "That recipe is not yours to mark.");
+    if (!mine && !(await reachesReader(env, me.cookbookId, visible, recipeId))) {
+      throw new ApiError(403, "That recipe is not yours to mark.");
+    }
     if (kind === "pin" && mine) throw new ApiError(400, "That one is already in your cookbook.");
 
     if (body.on === false) {
       await env.DB.prepare(
         "DELETE FROM recipe_marks WHERE cookbook_id = ? AND recipe_id = ? AND kind = ?"
       ).bind(me.cookbookId, recipeId, kind).run();
+      /* A recipe reached by link is in this library only because it was
+         pinned. Taking the pin off takes the grant with it, otherwise it
+         would sit there unpinned and unremovable. */
+      if (kind === "pin") {
+        await env.DB.prepare(
+          "DELETE FROM link_grants WHERE recipe_id = ? AND cookbook_id = ?"
+        ).bind(recipeId, me.cookbookId).run();
+      }
     } else {
       await env.DB.prepare(
         "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
@@ -8716,6 +8977,7 @@ async function handleApi(route, body, env, request) {
         "UPDATE recipes SET data = ?, title = ?, visibility = ?, updated_at = ?, updated_by = ?, " +
         "locked_by = NULL, locked_at = NULL WHERE recipe_id = ?"
       ).bind(text, title, visibility, now, me.username, String(body.recipeId)).run();
+      await applyVisibilityReach(env, String(body.recipeId), visibility);
       return jsonResponse({ recipeId: String(body.recipeId), updatedAt: now });
     }
 
@@ -8844,11 +9106,13 @@ async function handleApi(route, body, env, request) {
   /* ---- privacy toggle ---- */
   if (route === "recipe/visibility") {
     const visibility = VISIBILITIES.indexOf(body.visibility) >= 0 ? body.visibility : null;
-    if (!visibility) throw new ApiError(400, "Choose private or shared with friends.");
+    if (!visibility) throw new ApiError(400, "Choose private, selective or shared with friends.");
+    const recipeId = String(body.recipeId || "");
     const res = await env.DB.prepare(
       "UPDATE recipes SET visibility = ?, updated_at = ?, updated_by = ? WHERE recipe_id = ? AND cookbook_id = ?"
-    ).bind(visibility, new Date().toISOString(), me.username, String(body.recipeId || ""), me.cookbookId).run();
+    ).bind(visibility, new Date().toISOString(), me.username, recipeId, me.cookbookId).run();
     if (!res.meta || res.meta.changes === 0) throw new ApiError(403, "You can only change recipes in your own cookbook.");
+    await applyVisibilityReach(env, recipeId, visibility);
     return jsonResponse({ ok: true, visibility });
   }
 
@@ -8870,6 +9134,7 @@ async function handleApi(route, body, env, request) {
       env.DB.prepare("DELETE FROM recipe_marks WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM pending_pins WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM recipe_shares WHERE recipe_id = ?").bind(recipeId),
+      env.DB.prepare("DELETE FROM link_grants WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM recipes WHERE recipe_id = ?").bind(recipeId)
     ]);
     return jsonResponse({ ok: true });
@@ -8880,53 +9145,35 @@ async function handleApi(route, body, env, request) {
      app can ask before acting in somebody's name; the real call then does
      whichever of the three things applies: open it, pin it, or ask to be
      friends and remember the pin for when they say yes. */
+  /* ---- pin something arrived at by link ----
+     A link no longer asks anybody to be friends. It hands over one recipe and
+     nothing else, so pinning what it points at writes a grant for that single
+     recipe. The grant lives in its own table because the owner's sharing
+     checkboxes rewrite recipe_shares wholesale, and a pin somebody took ought
+     not to evaporate the next time the owner edits who they ticked. */
   if (route === "recipe/claim") {
     const recipeId = cleanString(body.recipeId, 64);
     const row = await env.DB.prepare(
       "SELECT recipe_id, cookbook_id, owner_username, visibility, title FROM recipes WHERE recipe_id = ?"
     ).bind(recipeId).first();
     if (!row) throw new ApiError(404, "That link points at a recipe that is no longer there.");
-
-    const mine = row.cookbook_id === me.cookbookId;
-    const friendCbs = await friendCookbooks(env, me.cookbookId);
-    const linked = friendCbs.indexOf(row.cookbook_id) >= 0;
-    const map = await membersOf(env, [row.cookbook_id]);
-    const household = householdLabel(map[row.cookbook_id] || [row.owner_username]);
-
-    if (body.preview) {
-      return jsonResponse({
-        recipeId, title: row.title, owner: row.owner_username, household,
-        visibility: row.visibility, mine, friends: linked,
-        canSee: mine || (await pinIsAllowed(env, me.cookbookId, recipeId))
-      });
+    if (row.cookbook_id === me.cookbookId) {
+      return jsonResponse({ recipeId, mine: true, owner: row.owner_username });
     }
-
-    if (mine) return jsonResponse({ recipeId, mine: true, owner: row.owner_username });
-
-    if (await pinIsAllowed(env, me.cookbookId, recipeId)) {
-      await env.DB.prepare(
-        "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
-        "VALUES (?, ?, 'pin', ?, ?)"
-      ).bind(me.cookbookId, recipeId, me.username, new Date().toISOString()).run();
-      return jsonResponse({ recipeId, pinned: true, owner: row.owner_username });
-    }
-
-    /* Not visible yet. Ask, and keep the wish. */
+    if (!isShareable(row.visibility)) throw new ApiError(403, "The owner has not shared this recipe.");
     await throttleGuard(env, ["cb:" + me.cookbookId, "ip:" + ip]);
-    const link = await ensureFriendLink(env, me, row.cookbook_id);
-    if (link.blocked) throw new ApiError(403, "That recipe cannot be added.");
+    const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO pending_pins (cookbook_id, recipe_id, created_at) VALUES (?, ?, ?)"
-    ).bind(me.cookbookId, recipeId, new Date().toISOString()).run();
-    /* Accepting an outstanding request can make it visible straight away. */
-    if (link.accepted) await resolvePendingPins(env, me.cookbookId, row.cookbook_id);
-    const nowVisible = await pinIsAllowed(env, me.cookbookId, recipeId);
+      "INSERT OR IGNORE INTO link_grants (recipe_id, cookbook_id, created_at) VALUES (?, ?, ?)"
+    ).bind(recipeId, me.cookbookId, now).run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO recipe_marks (cookbook_id, recipe_id, kind, created_by, created_at) " +
+      "VALUES (?, ?, 'pin', ?, ?)"
+    ).bind(me.cookbookId, recipeId, me.username, now).run();
+    const map = await membersOf(env, [row.cookbook_id]);
     return jsonResponse({
-      recipeId: nowVisible ? recipeId : null,
-      pinned: nowVisible, requested: !nowVisible,
-      owner: row.owner_username, household,
-      accepted: !!link.accepted,
-      needsSharing: row.visibility !== "friends"
+      recipeId, pinned: true, owner: row.owner_username,
+      household: householdLabel(map[row.cookbook_id] || [row.owner_username])
     });
   }
 
