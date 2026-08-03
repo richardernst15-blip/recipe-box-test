@@ -866,6 +866,19 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .qr-side-text{ min-width:0; flex:1; }
 .qr-side-text .code-box{ font-size:12.5px; letter-spacing:0; padding:9px; margin-bottom:8px; text-align:left; }
 @media (max-width: 430px){ .qr-side{ flex-direction:column; align-items:stretch; } .qr-holder{ align-self:center; } }
+/* The share row on a recipe: link on the left, code on the right. A grid
+   rather than the flex .qr-side above, because this pair must stay two
+   columns at every width - the whole point is being able to see the code and
+   the button that copies the same link at the same time. The left column
+   takes what is left after the code has been given its fixed size, and the
+   URL breaks anywhere because a recipe link is one long unbroken token. */
+.qr-share{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px;
+  align-items:start; background:var(--card); border:1px solid var(--border-light);
+  border-radius:12px; padding:12px; }
+.qr-share .code-box{ font-size:11px; letter-spacing:0; padding:7px 8px; margin:0 0 8px;
+  text-align:left; word-break:break-all; line-height:1.35; }
+.qr-share .qr-holder{ line-height:0; background:#fff; border-radius:6px; }
+.qr-share-note{ margin:9px 0 0; }
 
 /* tabs */
 .tabs{ display:flex; gap:6px; border-bottom:1px solid var(--border); margin:4px 0 18px; }
@@ -3765,19 +3778,28 @@ function DetailViewHTML(r) {
         icon("x", 13) + ' Unschedule</button>' +
       '</div>'
     : "";
-  /* The code carries a link to this recipe and nothing else. Scanning it
-     asks its owner to be friends and queues the pin. */
+  /* The code and the link carry the same URL and do the same thing: scanning
+     it or opening it asks this recipe's owner to be friends and queues the
+     pin. The link is built from the same function the code is drawn from, so
+     the two cannot drift apart. Side by side because a camera is only the
+     right answer when the other person is in the room. */
+  const shareUrl = recipeQrUrl(r.recipeId);
   const qrBlock =
-    '<div class="qr-side" style="margin:14px 0 16px">' +
-      '<div class="qr-holder">' + recipeQrHTML(r.recipeId, 112) + '</div>' +
+    '<div class="qr-share" style="margin:14px 0 16px">' +
       '<div class="qr-side-text">' +
-        (r.description ? '<p class="detail-desc" style="margin:0 0 6px">' + esc(r.description) + '</p>' : "") +
-        '<p class="helper-text" style="margin:0">Point a friend\\'s camera here to send them this recipe.' +
-        (r.ours && r.visibility !== "friends"
-          ? ' It is ' + esc(privateLabel().toLowerCase()) + ' at the moment, so they will not see it until you share it with them.'
-          : "") + '</p>' +
+        '<div class="small-label" style="margin-bottom:5px">Share URL</div>' +
+        '<div class="code-box font-mono">' + esc(shareUrl) + '</div>' +
+        '<button class="btn btn-sm btn-block" onclick="Actions.copyRecipeUrl(\\'' + r.recipeId + '\\')">' +
+          icon("copy", 14) + ' Copy link</button>' +
       '</div>' +
-    '</div>';
+      '<div class="qr-holder">' + recipeQrHTML(r.recipeId, 112) + '</div>' +
+    '</div>' +
+    (r.description ? '<p class="detail-desc" style="margin:0 0 6px">' + esc(r.description) + '</p>' : "") +
+    '<p class="helper-text qr-share-note">Send the link, or point a friend\\'s camera at the code — ' +
+      'either one opens this recipe for them.' +
+      (r.ours && r.visibility !== "friends"
+        ? ' It is ' + esc(privateLabel().toLowerCase()) + ' at the moment, so they will not see it until you share it with them.'
+        : "") + '</p>';
   const tags = r.tags.length
     ? '<div class="detail-tags">' + r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join("") + '</div>'
     : "";
@@ -5221,17 +5243,28 @@ Actions.runRetag = async function(apply) {
     out.textContent = "Failed: " + (e.message || String(e));
   }
 };
-Actions.copyAppUrl = async function() {
-  const url = appUrl();
-  try { await navigator.clipboard.writeText(url); toast("Link copied"); }
+/* Clipboard, with the old-browser fallback behind it. Written once because
+   the same dance was already spelled out in three places and a fourth would
+   have been three too many. The fallback tells you to select the text by
+   hand, which only works because every caller shows the text it is copying. */
+async function copyToClipboard(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); toast(okMsg); return true; }
   catch (e) {
     try {
       const ta = document.createElement("textarea");
-      ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
       document.body.appendChild(ta); ta.select(); document.execCommand("copy");
-      document.body.removeChild(ta); toast("Link copied");
-    } catch (e2) { toast("Couldn't copy - select the link and copy it manually"); }
+      document.body.removeChild(ta); toast(okMsg); return true;
+    } catch (e2) { toast("Couldn't copy - select the link and copy it manually"); return false; }
   }
+}
+Actions.copyAppUrl = async function() {
+  await copyToClipboard(appUrl(), "Link copied");
+};
+/* The same URL the recipe's QR code carries, for when the person you are
+   sending it to is not standing next to you. */
+Actions.copyRecipeUrl = async function(recipeId) {
+  await copyToClipboard(recipeQrUrl(recipeId), "Recipe link copied");
 };
 Actions.tagTypeahead = function(v) {
   const box = document.getElementById("tag-suggest");
