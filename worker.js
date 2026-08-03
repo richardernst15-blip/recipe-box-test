@@ -5094,7 +5094,26 @@ function renderModal() {
 /* ====================================================================== */
 /* Main render                                                             */
 /* ====================================================================== */
+/* A render that throws leaves whatever was on screen before it, which on
+   first load is nothing at all - a white page with no clue what went wrong.
+   That is exactly the failure that is hardest to report and hardest to
+   diagnose, so the outer render says so instead of dying quietly. */
 function renderApp() {
+  try { renderAppInner(); }
+  catch (e) {
+    const app = document.getElementById("app");
+    if (app) {
+      app.innerHTML = '<div class="wrap"><h1 class="detail-title font-display">Something broke</h1>' +
+        '<p class="helper-text">The page could not be drawn. This is a bug worth reporting.</p>' +
+        '<div class="code-box font-mono" style="text-align:left;word-break:break-word">' +
+          esc(String((e && e.message) || e)) + '</div>' +
+        '<button class="btn btn-primary btn-block" style="margin-top:12px" ' +
+          'onclick="Actions.recoverFromError()">Start again</button></div>';
+    }
+    throw e;   /* still reaches the console for anyone looking */
+  }
+}
+function renderAppInner() {
   const app = document.getElementById("app");
   /* A share link is readable before there is an account, so this comes ahead
      of the sign-in wall rather than behind it. */
@@ -6033,6 +6052,12 @@ Actions.toggleVisShare = async function(i) {
    none it means the sign-in screen, which is what the back button offers to
    somebody reading a link cold. The stashed intent survives either way, so
    making a cookbook lands them back on the recipe they came for. */
+/* Clears whatever the render choked on and goes back to the front door. */
+Actions.recoverFromError = function() {
+  state.linkRecipe = null; state.linkError = ""; state.modal = null;
+  state.view = state.session ? "library" : "welcome";
+  try { renderApp(); } catch (e) { location.href = "/"; }
+};
 Actions.leaveLinkView = function() {
   state.linkRecipe = null;
   state.linkError = "";
@@ -7497,6 +7522,7 @@ if (typeof document !== "undefined" && document.addEventListener) {
   document.addEventListener("touchcancel", release);
 }
 (async function init() {
+ try {
   const scanned = readIntentFromUrl();
   state.session = loadSession();
   if (!state.session) {
@@ -7513,6 +7539,20 @@ if (typeof document !== "undefined" && document.addEventListener) {
   /* A code scanned just now wins over one left over from an abandoned visit. */
   const intent = scanned || takeStashedIntent();
   if (intent) await Actions.beginIntent(intent);
+ } catch (e) {
+  /* Boot failing used to mean a white page and nothing else. Say what
+     happened, and leave a way back to the front door. */
+  const app = document.getElementById("app");
+  if (app) {
+    app.innerHTML = '<div class="wrap"><h1 class="detail-title font-display">Could not start</h1>' +
+      '<p class="helper-text">The app failed to load. This is a bug worth reporting.</p>' +
+      '<div class="code-box font-mono" style="text-align:left;word-break:break-word">' +
+        esc(String((e && e.message) || e)) + '</div>' +
+      '<button class="btn btn-primary btn-block" style="margin-top:12px" ' +
+        'onclick="location.href=\'/\'">Open the app</button></div>';
+  }
+  throw e;
+ }
 })();
 </script>
 </body>
