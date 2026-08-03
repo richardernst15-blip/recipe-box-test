@@ -4822,7 +4822,7 @@ function ConfirmIntentModalHTML() {
   return modalShell("Add a friend",
     (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
     '<p style="margin:0 0 14px">Send <b>' + esc(c.name || "") + '</b> a friend request?</p>' +
-    '<p class="helper-text">They have to accept before either of you sees the other\'s shared recipes. ' +
+    '<p class="helper-text">They have to accept before either of you sees the other\\'s shared recipes. ' +
     'Friendships link whole cookbooks, so anyone sharing theirs comes with them.</p>' +
     '<div style="display:flex; gap:8px; margin-top:16px">' +
       '<button class="btn btn-primary" style="flex:1" ' + (state.busy ? "disabled" : "") +
@@ -7549,7 +7549,7 @@ if (typeof document !== "undefined" && document.addEventListener) {
       '<div class="code-box font-mono" style="text-align:left;word-break:break-word">' +
         esc(String((e && e.message) || e)) + '</div>' +
       '<button class="btn btn-primary btn-block" style="margin-top:12px" ' +
-        'onclick="location.href=\'/\'">Open the app</button></div>';
+        'onclick="location.reload()">Try again</button></div>';
   }
   throw e;
  }
