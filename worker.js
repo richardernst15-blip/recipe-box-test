@@ -314,6 +314,15 @@ html.doc-scroll #app{ overflow-x:clip; }
 
 /* detail */
 .detail-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:20px 0 14px; }
+/* Cook mode, Share and Edit share the right-hand corner. Share is icon-only
+   because the glyph carries itself; Cook mode is labelled because a flame on
+   its own would be a guess. */
+.detail-top-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.cook-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(143,45,36,.14); }
+/* A private recipe has no link to hand out. The button stays where it is and
+   greys rather than vanishing, so the corner does not reshuffle between one
+   recipe and the next. */
+.icon-btn[disabled]{ opacity:.35; cursor:default; pointer-events:none; }
 /* Three things in a space-between row would spread the two controls to
    either end of it. They belong together, so they travel together. */
 .detail-tools{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
@@ -1152,6 +1161,13 @@ const ICONS = {
   qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="14" y1="18" x2="14" y2="21"/><line x1="18" y1="18" x2="18" y2="21"/><line x1="21" y1="18" x2="21" y2="21"/>',
   bell: '<path d="M18 15V10a6 6 0 0 0-12 0v5l-2 3h16z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
   share: '<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><line x1="8.3" y1="10.8" x2="15.7" y2="6.2"/><line x1="8.3" y1="13.2" x2="15.7" y2="17.8"/>',
+  /* The one everybody knows from a phone: a tray open at the top with an
+     arrow leaving it. Kept apart from the share glyph above, which Share App
+     button still uses. */
+  shareIos: '<path d="M8.5 10.5H6A1.8 1.8 0 0 0 4.2 12.3v7A1.8 1.8 0 0 0 6 21.1h12a1.8 1.8 0 0 0 1.8-1.8v-7a1.8 1.8 0 0 0-1.8-1.8h-2.5"/><line x1="12" y1="2.9" x2="12" y2="14.6"/><polyline points="8.4 6.4 12 2.9 15.6 6.4"/>',
+  /* Cook mode. A flame reads as "this is the cooking one" at 16px where a
+     screen or a lightbulb reads as settings. */
+  flame: '<path d="M12 2.8c.5 2.9 2 4.1 3.2 5.6a6.6 6.6 0 0 1 1.6 4.3 4.8 4.8 0 0 1-9.6 0c0-1.5.6-2.8 1.5-3.7.3 1 .8 1.7 1.5 2.1.3-3-.3-5.5 1.8-8.3z"/>',
   inbox: '<path d="M3 12h4l2 3h6l2-3h4"/><path d="M5 5h14l2 7v7H3v-7z"/>',
   /* The three tabs along the foot. A scroll for the recipes, a month grid for
      the calendar, three boxes with the first ticked for the shopping. Drawn
@@ -1430,6 +1446,8 @@ const state = {
   groceryItems: {},
   activeListId: null,
   scheduleDraft: null,
+  cookMode: false,
+  shareId: null,
   scheduledFor: null,
   groceryRange: { start: "", end: "" },
   groceryMergeFrom: null,
@@ -3791,9 +3809,13 @@ function DetailViewHTML(r) {
   if (!r) return '<div class="wrap"><p style="padding-top:30px">That recipe is no longer in your box.</p>' +
     '<button class="btn" onclick="Actions.backToLibrary()">Back to the recipe box</button></div>';
   const st = statsFor(r.recipeId);
-  const action = r.ours
-    ? '<button class="btn btn-sm" onclick="Actions.openEdit(\\'' + r.recipeId + '\\')">' + icon("pencil", 14) + ' Edit</button>'
-    : "";
+  const action = '<div class="detail-top-actions">' +
+    CookModeButtonHTML() +
+    ShareButtonHTML(r.recipeId, r.visibility) +
+    (r.ours
+      ? '<button class="btn btn-sm" onclick="Actions.openEdit(\\'' + r.recipeId + '\\')">' + icon("pencil", 14) + ' Edit</button>'
+      : "") +
+    '</div>';
   /* Who and how well it went, straight under the name. Where the recipe came
      from a cookbook we are not linked to - a pin taken from a share link -
      the name is a button that asks to be friends. */
@@ -3827,7 +3849,6 @@ function DetailViewHTML(r) {
         icon("x", 13) + ' Unschedule</button>' +
       '</div>'
     : "";
-  const qrBlock = ShareBlockHTML(r.recipeId, r.visibility, r.ours);
   const tags = r.tags.length
     ? '<div class="detail-tags">' + r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join("") + '</div>'
     : "";
@@ -3846,7 +3867,6 @@ function DetailViewHTML(r) {
       schedBanner +
       markRow +
       schedRow +
-      qrBlock +
       tags +
       prov +
       '<div id="recipe-body">' + RecipeBodyHTML(r) + '</div>' +
@@ -4953,12 +4973,14 @@ function LinkRecipeViewHTML() {
     : "";
   return '' +
     '<div class="wrap">' +
-      '<div class="detail-top">' + back + '</div>' +
+      '<div class="detail-top">' + back +
+        '<div class="detail-top-actions">' + CookModeButtonHTML() +
+          ShareButtonHTML(lr.recipeId, lr.visibility) + '</div>' +
+      '</div>' +
       '<h1 class="detail-title font-display">' + esc(r.title) + '</h1>' +
       '<div class="detail-meta" style="margin-bottom:10px">' + credit + '</div>' +
       pinRow +
       joinRow +
-      ShareBlockHTML(lr.recipeId, lr.visibility, false) +
       tags +
       '<div id="recipe-body">' + RecipeBodyHTML(r, true) + '</div>' +
     '</div>';
@@ -4967,23 +4989,55 @@ function LinkRecipeViewHTML() {
 /* Link and code, side by side, carrying the same URL. Private recipes get
    neither: there is nothing to hand out, and offering a code for something
    nobody else can open would only mislead. */
-function ShareBlockHTML(recipeId, visibility, ours) {
-  if (!(visibility === "friends" || visibility === "selective")) {
-    return ours
-      ? '<p class="helper-text" style="margin:14px 0 16px">This one is ' + esc(privateLabel().toLowerCase()) +
-        ', so it has no link or code. Change who can see it to share it.</p>'
-      : "";
-  }
+/* The body of the share frame: the address, a way to copy it, and the code
+   somebody can point a camera at. It used to sit inline in the middle of the
+   recipe, which put a QR code between the reader and the ingredients on every
+   single recipe. Behind a button it is there when it is wanted and out of the
+   way when it is not. */
+function ShareBlockHTML(recipeId) {
   const shareUrl = recipeQrUrl(recipeId);
-  return '<div class="qr-share" style="margin:14px 0 16px">' +
+  return '<div class="qr-share" style="margin:2px 0 4px">' +
       '<div class="qr-side-text">' +
-        '<div class="small-label" style="margin-bottom:5px">Share Recipe</div>' +
         '<div class="code-box font-mono">' + esc(shareUrl) + '</div>' +
         '<button class="btn btn-sm btn-block" onclick="Actions.copyRecipeUrl(\\'' + recipeId + '\\')">' +
           icon("copy", 14) + ' Copy link</button>' +
       '</div>' +
       '<div class="qr-holder">' + recipeQrHTML(recipeId, 112) + '</div>' +
     '</div>';
+}
+
+function ShareRecipeModalHTML() {
+  const id = state.shareId;
+  if (!id) return modalShell("Share Recipe", '<p class="helper-text">Nothing to share.</p>');
+  return modalShell("Share Recipe",
+    '<p class="helper-text">Anyone with this link or code can read the recipe. ' +
+    'What they can do with it beyond reading depends on whether they have a cookbook.</p>' +
+    ShareBlockHTML(id));
+}
+
+/* Only a recipe somebody else could actually reach has a link. Rather than
+   the button coming and going, it greys: a dead Share button says "this one
+   is private" more plainly than a sentence underneath the title did, and the
+   corner keeps the same shape from one recipe to the next. */
+function ShareButtonHTML(recipeId, visibility) {
+  const shareable = visibility === "friends" || visibility === "selective";
+  return '<button class="icon-btn share-btn" title="' +
+    (shareable ? "Share this recipe" : "This recipe is private - change who can see it to share it") + '"' +
+    (shareable ? ' onclick="Actions.openShare(\\'' + recipeId + '\\')"' : " disabled") + '>' +
+    icon("shareIos", 19) + '</button>';
+}
+
+/* Cook mode holds a screen wake lock so a propped-up iPad stops dimming
+   halfway through the method. Where the browser has no such thing there is
+   nothing to offer, so the button is left out rather than drawn dead - unlike
+   Share, which is dead for a reason the reader can act on. */
+function CookModeButtonHTML() {
+  if (!wakeLockSupported()) return "";
+  const on = !!state.cookMode;
+  return '<button class="btn btn-sm cook-btn' + (on ? " on" : "") + '" title="' +
+    (on ? "Cook mode on - the screen will not dim or lock" :
+          "Cook mode - keep the screen awake while you cook") + '" ' +
+    'onclick="Actions.toggleCookMode()">' + icon("flame", 14) + ' <span>Cook</span></button>';
 }
 
 function ActionsModalHTML() {
@@ -5113,6 +5167,7 @@ function renderModal() {
   else if (state.modal === "urlToRecipe") root.innerHTML = UrlToRecipeModalHTML();
   else if (state.modal === "account") root.innerHTML = AccountModalHTML();
   else if (state.modal === "shareApp") root.innerHTML = ShareAppModalHTML();
+  else if (state.modal === "share") root.innerHTML = ShareRecipeModalHTML();
   else if (state.modal === "confirmIntent") root.innerHTML = ConfirmIntentModalHTML();
   else if (state.modal === "visibility") root.innerHTML = VisibilityModalHTML();
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
@@ -5158,6 +5213,7 @@ function renderApp() {
 }
 function renderAppInner() {
   const app = document.getElementById("app");
+  endCookModeIfAway();
   /* A share link is readable before there is an account, so this comes ahead
      of the sign-in wall rather than behind it. */
   if (state.view === "link") {
@@ -5578,6 +5634,72 @@ Actions.setScale = function(p) { state.scale = p; state.customScaleOpen = false;
 Actions.toggleCustomScale = function() { state.customScaleOpen = !state.customScaleOpen; updateRecipeBody(); };
 Actions.setCustomScale = function(v) { const n = parseFloat(v); if (!isNaN(n) && n > 0) state.scale = n; updateRecipeBody(); };
 Actions.toggleShowAllLogs = function() { state._showAllLogs = !state._showAllLogs; updateRecipeBody(); };
+
+/* ---- Cook mode -------------------------------------------------------
+   A screen wake lock, and nothing more: no bigger type, no hidden chrome.
+   What it buys is a recipe that is still readable when you come back from
+   the sink with your hands full.
+   Two things about the platform shape this. The lock is only offered over
+   https on iOS 16.4 and up, so on anything older there is no button at all
+   rather than a button that lies. And iOS hands the lock back every time the
+   page is hidden - a notification, a switch to the timer, the side button -
+   so it has to be taken again each time the page comes back, which is what
+   the visibilitychange handler below is for. Even then it only stops the
+   automatic dim and lock; nothing can stop the side button, and nothing
+   should. */
+let wakeSentinel = null;
+function wakeLockSupported() {
+  return typeof navigator !== "undefined" && !!navigator.wakeLock &&
+    typeof navigator.wakeLock.request === "function";
+}
+async function acquireWakeLock() {
+  if (!wakeLockSupported() || wakeSentinel) return true;
+  try {
+    const s = await navigator.wakeLock.request("screen");
+    wakeSentinel = s;
+    /* The browser can drop it on its own - low battery, a policy change - and
+       says so here. Forgetting the stale sentinel means the next attempt
+       actually asks for a new one instead of assuming it still holds. */
+    if (s && s.addEventListener) {
+      s.addEventListener("release", function () { if (wakeSentinel === s) wakeSentinel = null; });
+    }
+    return true;
+  } catch (e) { wakeSentinel = null; return false; }
+}
+function releaseWakeLock() {
+  if (!wakeSentinel) return;
+  try { wakeSentinel.release(); } catch (e) {}
+  wakeSentinel = null;
+}
+Actions.toggleCookMode = async function () {
+  if (state.cookMode) {
+    state.cookMode = false;
+    releaseWakeLock();
+    renderApp();
+    toast("Cook mode off");
+    return;
+  }
+  /* Asked for on the tap rather than on the render, because the browsers
+     that offer this require the request to come out of a real gesture. */
+  const got = await acquireWakeLock();
+  if (!got) { toast("This browser will not keep the screen awake."); return; }
+  state.cookMode = true;
+  renderApp();
+  toast("Cook mode on - the screen will stay awake");
+};
+/* Walking away from the recipe ends it. Otherwise the screen burns on
+   indefinitely with the only sign of it two views back. */
+function endCookModeIfAway() {
+  if (!state.cookMode) return;
+  if (state.view === "detail" || state.view === "link") return;
+  state.cookMode = false;
+  releaseWakeLock();
+}
+
+Actions.openShare = function (recipeId) {
+  state.shareId = recipeId;
+  Actions.openModal("share");
+};
 
 Actions.openModal = function(name) {
   setTabsDown(false);
@@ -7379,7 +7501,11 @@ window.Actions = Actions;
 /* ====================================================================== */
 if (typeof document !== "undefined" && document.addEventListener) {
   document.addEventListener("visibilitychange", function() {
-    if (!document.hidden) pollWatched();
+    if (document.hidden) return;
+    pollWatched();
+    /* iOS gives the wake lock back the moment the page is hidden, so coming
+       back to a recipe with cook mode still on means asking for it again. */
+    if (state.cookMode) acquireWakeLock();
   });
 }
 /* The toolbar sliding in or out, the keyboard arriving, a rotation: each one
