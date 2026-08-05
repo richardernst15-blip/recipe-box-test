@@ -6,6 +6,9 @@
 // Routes:
 //   POST /api/session            -> open or create a cookbook
 //   POST /api/library            -> everything visible to the signed-in user
+//   POST /api/recipe/body        -> one recipe in full, with its cook log
+//   POST /api/recipe/bodies      -> several recipes in full, for lists and exports
+//   POST /api/recipe/rate        -> your cookbook's one rating, or clear it
 //   POST /api/recipe/save        -> create or update ONE recipe
 //   POST /api/recipe/import      -> add many recipes at once
 //   POST /api/recipe/visibility  -> private <-> shared with friends
@@ -20,7 +23,7 @@
 //   POST /api/grocery/save       -> rewrite the items on one list
 //   POST /api/grocery/rename     -> rename a list
 //   POST /api/grocery/delete     -> delete a list
-//   POST /api/comment/add        -> log a cook (rating required)
+//   POST /api/comment/add        -> log a cook (comment optional, no rating)
 //   POST /api/comment/delete     -> remove your own cook log entry
 //   POST /api/friend/request     -> ask someone to be friends
 //   POST /api/friend/respond     -> accept or decline a request
@@ -337,6 +340,7 @@ html.doc-scroll #app{ overflow-x:clip; }
   padding-left:16px; padding-right:16px; }
 .back-link{ display:inline-flex; align-items:center; gap:3px; color:var(--ink-muted); background:none; border:none; font-size:14px; cursor:pointer; padding:4px 0; }
 .detail-title{ font-size:29px; margin:0 0 6px; line-height:1.15; }
+.detail-desc{ margin:0 0 8px; color:var(--ink-muted); font-size:14px; line-height:1.45; }
 .detail-desc{ color:var(--ink-muted); margin:0 0 10px; font-size:15px; }
 .detail-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:22px; }
 .dot{ color:var(--border); }
@@ -377,6 +381,11 @@ html.doc-scroll #app{ overflow-x:clip; }
 .notes-box{ background:var(--card-alt); border:1px solid var(--border-light); border-radius:11px; padding:14px; font-size:14px; color:var(--ink-muted); margin-bottom:26px; }
 .notes-box b{ color:var(--ink); }
 
+.rate-section{ border-top:1px solid var(--border-light); padding-top:16px; margin-top:18px; }
+.rate-row{ display:flex; align-items:center; gap:2px; flex-wrap:wrap; }
+.rate-row .rate-star{ padding:3px; display:inline-flex; }
+.rate-row .btn{ margin-left:10px; }
+.body-loading{ padding:22px 0; }
 .log-section{ border-top:1px solid var(--border-light); padding-top:18px; }
 .log-header{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
 .log-header h2{ font-size:16.5px; margin:0; }
@@ -1384,8 +1393,23 @@ const state = {
   loading: true,
   view: "library",
   activeId: null,
+  /* Cards, not recipes: a name, a line, its tags and two numbers. Everything
+     else lives in bodies and arrives when a recipe is opened. */
   recipes: [],
-  comments: {},
+  /* recipeId -> the full body, once fetched. Kept for the session so going
+     back into a recipe is instant and re-scaling never asks again. */
+  bodies: {},
+  /* recipeId -> its cook log, fetched alongside the body. */
+  logs: {},
+  /* recipeId -> { avg, count, mine } across every cookbook we can see. */
+  ratings: {},
+  /* recipeId -> { count, ours, last }. ours is what unlocks rating it. */
+  cooks: {},
+  /* Recent cooks by other people on our own recipes; the notifications page
+     is the only thing that reads it. */
+  cookFeed: [],
+  /* Which recipe bodies are in flight, so a second tap does not ask twice. */
+  bodyPending: {},
   mates: [],
   friends: [],
   incoming: [],
@@ -1427,7 +1451,6 @@ const state = {
   modal: null,
   modalError: "",
   intent: null,
-  logRating: 0,
   importParsed: [],
   importErrors: [],
   importVisibility: "",
@@ -1545,8 +1568,9 @@ function uniqueListLabel(base, lists) {
   return base;
 }
 
-function getActiveRecipe() { return state.recipes.find(r => r.recipeId === state.activeId) || null; }
-function recipeById(id) { return state.recipes.find(r => r.recipeId === id) || null; }
+function summaryById(id) { return state.recipes.find(r => r.recipeId === id) || null; }
+function getActiveRecipe() { return withBody(summaryById(state.activeId)); }
+function recipeById(id) { return withBody(summaryById(id)); }
 function entryById(id) { return state.schedule.find(e => e.entryId === id) || null; }
 function scheduleOn(key) { return state.schedule.filter(e => e.date === key); }
 /* The Sun-Sat week that today falls in, not the week the grid happens to be
@@ -1677,6 +1701,17 @@ function excludedByStaples(name, exclusions) {
   return false;
 }
 
+/* Every recipe booked in a date range. The shopping list is built out of
+   their ingredients, and ingredients live in bodies, so this is what the
+   builder fetches before it starts adding anything up. */
+function scheduledRecipeIds(start, end) {
+  const ids = [];
+  state.schedule.forEach(function (e) {
+    if (!e.date || e.date < start || e.date > end) return;
+    if (e.recipeId && ids.indexOf(e.recipeId) < 0) ids.push(e.recipeId);
+  });
+  return ids;
+}
 function buildGroceryItems(start, end) {
   const byName = {}, order = [];
   state.schedule.forEach(function (e) {
@@ -1873,11 +1908,38 @@ function nextGroceryId(items) {
   while (taken["u" + n]) n++;
   return "u" + n;
 }
-function commentsFor(id) { return state.comments[id] || []; }
+/* The cook log for one recipe, which only exists once that recipe has been
+   opened. Everywhere else works from the totals below. */
+function commentsFor(id) { return state.logs[id] || []; }
+/* What a card and a recipe header both need. avg and count are the rating -
+   an average across cookbooks and how many of them voted - and cooks is a
+   separate number entirely: how many times the thing has been made. mine is
+   this cookbook's own rating, 0 for none, and ourCooks is what decides
+   whether it is allowed to have one yet. */
 function statsFor(id) {
-  const list = commentsFor(id);
-  if (!list.length) return { count: 0, avg: null };
-  return { count: list.length, avg: list.reduce((a, c) => a + (c.rating || 0), 0) / list.length };
+  const r = state.ratings[id] || {};
+  const c = state.cooks[id] || {};
+  return {
+    avg: (r.count ? r.avg : null),
+    count: r.count || 0,
+    mine: r.mine || 0,
+    cooks: c.count || 0,
+    ourCooks: c.ours || 0,
+    lastCooked: c.last || null
+  };
+}
+/* A body is either cached or it is not; there is no half-loaded recipe. The
+   test is the presence of an ingredients array rather than a lookup in the
+   cache, because a recipe opened from a share link never goes through the
+   cache at all and still has to render. */
+function hasBody(r) { return !!r && Array.isArray(r.ingredients); }
+/* A card, with its body laid underneath if we have one. The summary wins on
+   every field they share, so a title edited elsewhere is not masked by a
+   stale cached body. */
+function withBody(sum) {
+  if (!sum) return null;
+  const b = state.bodies[sum.recipeId];
+  return b ? Object.assign({}, b, sum) : sum;
 }
 
 function toast(msg) {
@@ -1956,16 +2018,36 @@ async function API(path, payload) {
 }
 
 function applyLibrary(data) {
-  state.recipes = (data.recipes || []).map(row => Object.assign({}, normalizeBody(row.data), {
+  state.recipes = (data.recipes || []).map(row => ({
     recipeId: row.recipeId,
     owner: row.owner,
     household: row.household || row.owner,
     ours: !!row.ours,
     visibility: row.visibility,
+    title: row.title || "Untitled recipe",
+    description: row.description || "",
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    /* One flat lowercase string of every ingredient name, which is all the
+       search box ever did with them. */
+    ingNames: row.ingNames || "",
     createdAt: row.createdAt,
-    updatedAt: row.updatedAt
+    updatedAt: row.updatedAt,
+    updatedBy: row.updatedBy || row.owner
   }));
-  state.comments = data.comments || {};
+  state.ratings = data.ratings || {};
+  state.cooks = data.cooks || {};
+  state.cookFeed = data.cookFeed || [];
+  /* A body cached before somebody else saved over it is no longer that
+     recipe. Dropping it here is what makes the cache safe to keep for the
+     whole session: every sync re-checks it against the version on the shelf. */
+  const live = {};
+  state.recipes.forEach(function (r) { live[r.recipeId] = r.updatedAt; });
+  Object.keys(state.bodies).forEach(function (id) {
+    if (!(id in live) || live[id] !== state.bodies[id]._at) {
+      delete state.bodies[id];
+      delete state.logs[id];
+    }
+  });
   state.myHousehold = (data.me && data.me.household) || state.session.username;
   state.marks = data.marks || { pin: [], star: [], later: [] };
   state.shares = data.shares || {};
@@ -1991,6 +2073,67 @@ async function refreshLibrary(showLoading) {
     state.loading = false;
     renderApp();
   }
+}
+
+/* ---- fetching the parts a card left behind -----------------------------
+   One recipe at a time when somebody opens one, in batches when a shopping
+   list or an export needs a lot at once. Both write into the same cache, and
+   both are safe to call on something already cached: that is the ordinary
+   case, and it costs nothing. */
+function cacheBody(recipeId, data, updatedAt) {
+  const b = normalizeBody(data);
+  b._at = updatedAt || null;
+  state.bodies[recipeId] = b;
+  return b;
+}
+async function ensureBody(recipeId) {
+  if (!recipeId || !state.session) return null;
+  if (state.bodies[recipeId]) return state.bodies[recipeId];
+  /* Already asked for. Waiting on the same promise rather than firing a
+     second request is what stops a double tap costing two round trips. */
+  if (state.bodyPending[recipeId]) return state.bodyPending[recipeId];
+  const p = (async function () {
+    try {
+      const res = await API("recipe/body", { recipeId: recipeId });
+      state.logs[recipeId] = res.log || [];
+      return cacheBody(recipeId, res.data, res.updatedAt);
+    } catch (e) {
+      if (e.code !== "AUTH") toast("Couldn't open that recipe — " + e.message);
+      return null;
+    } finally {
+      delete state.bodyPending[recipeId];
+    }
+  })();
+  state.bodyPending[recipeId] = p;
+  return p;
+}
+/* The server answers at most BODY_BATCH at a time, so a long list is walked
+   in slices rather than asked for in one impossible request. */
+const BODY_BATCH = 40;
+async function ensureBodies(ids) {
+  const want = [];
+  (ids || []).forEach(function (id) {
+    if (id && !state.bodies[id] && want.indexOf(id) < 0) want.push(id);
+  });
+  if (!want.length) return;
+  for (let i = 0; i < want.length; i += BODY_BATCH) {
+    const slice = want.slice(i, i + BODY_BATCH);
+    let res;
+    try { res = await API("recipe/bodies", { recipeIds: slice }); }
+    catch (e) { if (e.code !== "AUTH") toast("Couldn't load those recipes — " + e.message); return; }
+    (res.bodies || []).forEach(function (row) {
+      cacheBody(row.recipeId, row.data, row.updatedAt);
+    });
+  }
+}
+/* Opening a recipe draws the name, the description and the tags immediately
+   and fills the rest in underneath. The flag is what the body area reads to
+   decide between a quiet line of text and the food. */
+async function loadBodyInto(recipeId, after) {
+  await ensureBody(recipeId);
+  if (state.activeId !== recipeId) return;
+  if (typeof after === "function") after();
+  updateRecipeBody();
 }
 
 /* ====================================================================== */
@@ -2027,17 +2170,12 @@ function WelcomeViewHTML() {
 /* Render: Library                                                         */
 /* ====================================================================== */
 function ratingHTML(avg, count) {
-  if (avg == null) return '<span class="no-rating">Not yet cooked</span>';
+  if (avg == null) return '<span class="no-rating">Not yet rated</span>';
   const rounded = Math.round(avg);
   let stars = "";
   for (let n = 1; n <= 5; n++) stars += icon("star", 14, n <= rounded ? "star-filled" : "star-empty");
   return '<span class="stars"><span style="display:inline-flex">' + stars + '</span>' +
     '<span class="font-mono">' + avg.toFixed(1) + '</span><span>(' + count + ')</span></span>';
-}
-function starsOnly(rating) {
-  let stars = "";
-  for (let n = 1; n <= 5; n++) stars += icon("star", 13, n <= rating ? "star-filled" : "star-empty");
-  return '<span class="stars"><span style="display:inline-flex">' + stars + '</span></span>';
 }
 /* In a shared cookbook, "private" would be a lie: everyone in the cookbook
    can already see and edit it. */
@@ -2506,16 +2644,17 @@ function rawNotifications() {
     });
   });
 
-  Object.keys(state.comments).forEach(function (rid) {
-    const mine = ours[rid];
-    if (!mine) return;                       /* only cooks of our own recipes */
-    commentsFor(rid).forEach(function (c) {
-      if (String(c.username).toLowerCase() === meLc) return;   /* our own log */
-      out.push({
-        id: "cook:" + c.commentId, kind: "cook", at: c.createdAt || c.cookedOn,
-        who: c.username, title: mine.title, recipeId: rid,
-        rating: c.rating, comment: c.comment, cookedOn: c.cookedOn
-      });
+  /* Cooks by somebody else on a recipe of ours. This used to be sifted out
+     of every comment in the library; now the server sends the recent ones
+     and nothing else, because that is all this page ever showed. */
+  state.cookFeed.forEach(function (c) {
+    const mine = ours[c.recipeId];
+    if (!mine) return;
+    if (String(c.username).toLowerCase() === meLc) return;   /* our own log */
+    out.push({
+      id: "cook:" + c.commentId, kind: "cook", at: c.createdAt || c.cookedOn,
+      who: c.username, title: mine.title, recipeId: c.recipeId,
+      comment: c.comment, cookedOn: c.cookedOn
     });
   });
   return out;
@@ -2624,7 +2763,7 @@ function visibilityPill(r, clickable) {
 
 function RecipeCardHTML(r) {
   const st = statsFor(r.recipeId);
-  const tags = r.tags.slice(0, 3).map(t => '<span class="tag">' + esc(t) + '</span>').join("");
+  const tags = (r.tags || []).slice(0, 3).map(t => '<span class="tag">' + esc(t) + '</span>').join("");
   const badge = r.ours
     ? ((r.owner === state.session.username) ? "" : '<span class="owner-badge">' + esc(r.owner) + '</span>')
     : '<span class="owner-badge">' + esc(r.household) + '</span>';
@@ -2634,7 +2773,7 @@ function RecipeCardHTML(r) {
       (r.description ? '<p class="desc">' + esc(r.description) + '</p>' : "") +
       '<div class="tag-row">' + badge + tags + '</div>' +
       '<div class="card-foot">' + ratingHTML(st.avg, st.count) +
-        (st.count ? '<span class="cooked-count">· cooked ' + st.count + '×</span>' : "") +
+        (st.cooks ? '<span class="cooked-count">· cooked ' + st.cooks + '×</span>' : "") +
         '<span class="mark-row">' + MarkButtonsHTML(r, false) + ScheduleMarkHTML(r, false) + '</span>' +
       '</div>' +
     '</div>';
@@ -2704,7 +2843,7 @@ function filteredRecipes() {
   const list = ownerFiltered().filter(r => {
     if (!matchesTags(r)) return false;
     if (!q) return true;
-    const hay = [r.title, r.description, r.owner, r.household].concat(r.tags, r.ingredients.map(i => i.name)).join(" ").toLowerCase();
+    const hay = [r.title, r.description, r.owner, r.household, r.ingNames].concat(r.tags || []).join(" ").toLowerCase();
     return hay.includes(q);
   });
   return sortRecipes(list);
@@ -3278,8 +3417,8 @@ function mealDishMatches(q) {
   const needle = String(q).trim().toLowerCase();
   if (!needle) return [];
   return state.recipes.filter(function (r) {
-    const hay = [r.title, r.description, r.owner, r.household]
-      .concat(r.tags, r.ingredients.map(i => i.name)).join(" ").toLowerCase();
+    const hay = [r.title, r.description, r.owner, r.household, r.ingNames]
+      .concat(r.tags || []).join(" ").toLowerCase();
     return hay.indexOf(needle) >= 0;
   });
 }
@@ -3426,8 +3565,8 @@ function daySearchMatches() {
   const q = state.daySearch.trim().toLowerCase();
   if (!q) return [];
   return state.recipes.filter(function (r) {
-    const hay = [r.title, r.description, r.owner, r.household]
-      .concat(r.tags, r.ingredients.map(i => i.name)).join(" ").toLowerCase();
+    const hay = [r.title, r.description, r.owner, r.household, r.ingNames]
+      .concat(r.tags || []).join(" ").toLowerCase();
     return hay.indexOf(q) >= 0;
   });
 }
@@ -3579,7 +3718,6 @@ function NotificationsPanelHTML() {
       open = openBtn("Open meal");
     } else {
       line = '<b>' + esc(n.who) + '</b> cooked your <b>' + esc(n.title) + '</b>' +
-        (n.rating ? ' ' + starsOnly(n.rating) : "") +
         (n.comment ? '<br><span style="color:var(--ink-muted)">' + esc(n.comment) + '</span>' : "");
       open = openBtn("Open cook log");
     }
@@ -3622,11 +3760,14 @@ function stopWatching() {
 }
 function setWatch(recipeId) {
   if (!recipeId) { state.watch = null; state.change = null; stopWatching(); return; }
-  const r = state.recipes.find(x => x.recipeId === recipeId);
+  const r = summaryById(recipeId);
   state.watch = {
     recipeId,
     updatedAt: r ? r.updatedAt : null,
-    comments: commentsFor(recipeId).length
+    /* The count comes from the library totals rather than from the log,
+       because the log may not have been fetched yet and a null baseline
+       would report the first poll as somebody else's cook. */
+    comments: statsFor(recipeId).cooks
   };
   state.change = null;
   startWatching();
@@ -3709,18 +3850,49 @@ function updateChangeBanner() {
 /* ====================================================================== */
 const SCALE_PRESETS = [0.25, 0.5, 1, 2, 4];
 
+/* One rating per cookbook, and only once that cookbook has actually made the
+   thing. A verdict from a kitchen that has never cooked it is not a verdict,
+   so the stars stay inert with a line saying what would wake them up. */
+function RatingControlHTML(r) {
+  const st = statsFor(r.recipeId);
+  const allowed = st.ourCooks > 0;
+  let stars = "";
+  for (let n = 1; n <= 5; n++) {
+    const filled = n <= st.mine ? "star-filled" : "star-empty";
+    stars += allowed
+      ? '<button type="button" class="icon-btn rate-star" title="' + n + ' star' + (n === 1 ? "" : "s") + '" ' +
+        'onclick="Actions.setRating(' + n + ')">' + icon("star", 26, filled) + '</button>'
+      : '<span class="rate-star">' + icon("star", 26, "star-empty") + '</span>';
+  }
+  const clear = (allowed && st.mine)
+    ? '<button class="btn btn-sm btn-ghost" onclick="Actions.setRating(0)">Clear</button>' : "";
+  const note = !allowed
+    ? 'Log a cook and you can rate this one.'
+    : (st.mine
+        ? 'Your cookbook rates this ' + st.mine + ' out of 5. Tap to change it.'
+        : 'Tap a star to rate this for your cookbook.');
+  return '<div class="rate-section">' +
+      '<div class="rate-row">' + stars + clear + '</div>' +
+      '<p class="helper-text">' + note + '</p>' +
+    '</div>';
+}
+
 function CookLogHTML(r) {
+  const st = statsFor(r.recipeId);
+  const ready = !!state.logs[r.recipeId] || hasBody(r);
   const list = commentsFor(r.recipeId).slice().sort((a, b) => String(b.cookedOn).localeCompare(String(a.cookedOn)));
   const shown = state._showAllLogs ? list : list.slice(0, 4);
   const me = state.session.username.toLowerCase();
-  const items = list.length === 0
+  const items = !ready
+    ? '<p class="no-rating">Loading the cook log…</p>'
+    : list.length === 0
     ? '<p class="no-rating">Not cooked yet — log it after your first time through.</p>'
     : '<ul style="list-style:none;margin:0;padding:0">' + shown.map(c =>
         '<li class="log-item"><div style="min-width:0">' +
           '<div class="log-user">' + esc(c.username) + '</div>' +
           '<div class="log-date">' + esc(fmtDate(c.cookedOn)) + '</div>' +
           (c.comment ? '<p class="log-notes">' + esc(c.comment) + '</p>' : "") +
-        '</div><div class="log-right">' + starsOnly(c.rating) +
+        '</div><div class="log-right">' +
           (c.username.toLowerCase() === me ? '<button class="icon-btn" onclick="Actions.deleteComment(\\'' + c.commentId + '\\')">' + icon("trash", 14) + '</button>' : "") +
         '</div></li>').join("") + '</ul>' +
       (list.length > 4 ? '<button class="show-all-btn" onclick="Actions.toggleShowAllLogs()">' + (state._showAllLogs ? "Show fewer" : "Show all " + list.length) + '</button>' : "");
@@ -3737,6 +3909,7 @@ function CookLogHTML(r) {
       '<div class="log-header"><h2 class="font-display">Cook log</h2>' +
       '<button class="btn btn-primary btn-sm" onclick="Actions.openModal(\\'logCook\\')">' + icon("check", 14) + ' Log this cook</button></div>' +
       '<p class="helper-text">' + audience + '</p>' +
+      (st.cooks ? '<p class="helper-text">Cooked ' + st.cooks + ' time' + (st.cooks === 1 ? "" : "s") + '.</p>' : "") +
       items +
     '</div>';
 }
@@ -3745,6 +3918,13 @@ function CookLogHTML(r) {
    owner's cookbook. Ratings and comments stay between friends, so a recipe
    reached by a bare link shows the food and none of the conversation. */
 function RecipeBodyHTML(r, hideLog) {
+  /* The card's worth of a recipe is on screen already - name, description,
+     tags. This is everything the recipe box tab deliberately does not carry,
+     so on the first render of a recipe there is nothing here yet. */
+  if (!hasBody(r)) {
+    return '<div class="body-loading"><p class="no-rating">Loading the rest of this recipe…</p></div>' +
+      (hideLog ? "" : RatingControlHTML(r) + CookLogHTML(r));
+  }
   const scale = state.scale;
   const scaledServings = Math.round(r.servings.base * scale * 100) / 100;
   const m = r.macrosPerServing || {};
@@ -3802,7 +3982,7 @@ function RecipeBodyHTML(r, hideLog) {
       '</div>' +
     '</div>' +
     (r.notes ? '<div class="notes-box"><b>Notes:</b> ' + esc(r.notes) + '</div>' : "") +
-    (hideLog ? "" : CookLogHTML(r));
+    (hideLog ? "" : RatingControlHTML(r) + CookLogHTML(r));
 }
 
 function DetailViewHTML(r) {
@@ -3828,7 +4008,7 @@ function DetailViewHTML(r) {
           'from ' + esc(r.household) + ' ' + icon("userPlus", 11) + '</button>';
   const creditRow = '<div class="detail-meta" style="margin-bottom:10px">' + credit +
     ratingHTML(st.avg, st.count) +
-    (st.count ? '<span class="cooked-count">cooked ' + st.count + '×</span>' : "") +
+    (st.cooks ? '<span class="cooked-count">cooked ' + st.cooks + '×</span>' : "") +
   '</div>';
   /* Who can see it sits with the other things you can do to the recipe. It
      and Pin are never both there: one is for a recipe of yours, the other
@@ -3844,12 +4024,12 @@ function DetailViewHTML(r) {
   const schedBanner = (sf && sf.recipeId === r.recipeId)
     ? '<div class="sched-banner">' + icon("calGrid", 15) +
         '<span>Scheduled for <b>' + esc(shortDate(sf.date)) + '</b> · <b>' + esc(String(sf.servings)) +
-        '</b> ' + esc(r.servings.unit) + '</span>' +
+        '</b> ' + esc((r.servings && r.servings.unit) || "servings") + '</span>' +
         '<button class="btn btn-sm btn-no" style="margin-left:auto" onclick="Actions.unschedule(\\'' + sf.entryId + '\\')">' +
         icon("x", 13) + ' Unschedule</button>' +
       '</div>'
     : "";
-  const tags = r.tags.length
+  const tags = (r.tags || []).length
     ? '<div class="detail-tags">' + r.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join("") + '</div>'
     : "";
   const prov = r.mergedFrom
@@ -3863,6 +4043,11 @@ function DetailViewHTML(r) {
       '</div>' +
       '<div id="change-banner">' + ChangeBannerHTML() + '</div>' +
       '<h1 class="detail-title font-display">' + esc(r.title) + '</h1>' +
+      /* The card already carried this and the recipe page did not, which was
+         tolerable while the body arrived with the page. Now that the body
+         comes second, it is one of the few things there is to read while the
+         rest is on its way. */
+      (r.description ? '<p class="detail-desc">' + esc(r.description) + '</p>' : "") +
       creditRow +
       schedBanner +
       markRow +
@@ -4272,15 +4457,10 @@ function modalShell(title, inner) {
 
 function LogCookModalHTML() {
   const r = getActiveRecipe();
-  let stars = "";
-  for (let n = 1; n <= 5; n++) {
-    stars += '<button type="button" class="icon-btn" style="padding:3px" onclick="Actions.setLogRating(' + n + ')">' +
-      icon("star", 28, n <= state.logRating ? "star-filled" : "star-empty") + '</button>';
-  }
   return modalShell("Log this cook",
-    '<p class="helper-text">' + esc(r ? r.title : "") + ' — a rating is required, the comment is up to you.</p>' +
+    '<p class="helper-text">' + esc(r ? r.title : "") + ' — log it as often as you cook it. ' +
+    'The comment is optional, and how your cookbook rates the dish is set on the recipe itself.</p>' +
     '<div class="field"><label>Date cooked</label><input type="date" id="cl-date" value="' + todayStr() + '" /></div>' +
-    '<div class="field"><label>Rating</label><div>' + stars + '</div></div>' +
     '<div class="field"><label>Comment (optional)</label><textarea id="cl-notes" rows="3" placeholder="Kids liked it, a bit salty..."></textarea></div>' +
     '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" onclick="Actions.saveCookLog()">Save to cook log</button></div>');
@@ -4360,7 +4540,7 @@ function ScheduleModalHTML() {
   if (!r) return modalShell(editing ? "Edit this booking" : "Schedule this recipe",
     '<p class="helper-text">That recipe is no longer in your box.</p>' +
     '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Close</button></div>');
-  const base = (Number(r.servings.base) > 0) ? Number(r.servings.base) : 1;
+  const base = (r.servings && Number(r.servings.base) > 0) ? Number(r.servings.base) : 1;
   const serv = Number(d.servings) > 0 ? Number(d.servings) : base;
   const f = serv / base;
   const date = d.date || localToday();
@@ -5320,6 +5500,12 @@ Actions.signOut = function() {
   state.session = null;
   state.modal = null;
   state.recipes = [];
+  state.bodies = {};
+  state.logs = {};
+  state.ratings = {};
+  state.cooks = {};
+  state.cookFeed = [];
+  state.bodyPending = {};
   state._wUsername = "";
   state._wCookbook = undefined;
   state._suggestedCookbook = null;
@@ -5335,6 +5521,10 @@ Actions.openDetail = function(id, showLogs) {
   state.scheduledFor = null;
   setWatch(id);
   renderApp();
+  /* The name, description and tags are already on screen from the card. The
+     ingredients, the steps and the cook log are not, so they are fetched and
+     dropped into place underneath rather than held up behind a blank page. */
+  loadBodyInto(id);
 };
 Actions.backToLibrary = function() {
   state.view = "library"; state.scheduledFor = null; setWatch(null); renderApp();
@@ -5410,9 +5600,13 @@ Actions.openNotification = function(id) {
   Actions.openDetail(n.recipeId, n.kind === "cook");
 };
 Actions.refreshWatched = async function() {
+  const id = state.activeId;
   await refreshLibrary(false);
-  setWatch(state.activeId);
+  setWatch(id);
   renderApp();
+  /* A sync drops any body whose version moved, so this is what brings the
+     new one back rather than leaving the reader on a loading line. */
+  if (id && state.view === "detail") await loadBodyInto(id);
 };
 Actions.loadTheirVersion = function() {
   if (!confirm("Load their version? Your unsaved changes to this recipe will be lost.")) return;
@@ -5705,37 +5899,72 @@ Actions.openModal = function(name) {
   setTabsDown(false);
   state.modal = name;
   state.modalError = "";
-  if (name === "logCook") state.logRating = 0;
   if (name === "import") { state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = ""; }
   if (name === "urlToRecipe") state.urlToRecipe = { mode: state._nextImportMode || "url", url: "", text: "", prompt: "", generated: false };
   renderModal();
 };
 Actions.closeModal = function() { state.modal = null; state.modalError = ""; renderModal(); updateLibraryChrome(); };
 
+/* --- rating --- */
+/* One per cookbook, so this overwrites rather than adds, and 0 clears it.
+   The library is re-read afterwards because the average on every card that
+   shows this recipe has just moved. */
+Actions.setRating = async function(n) {
+  const r = getActiveRecipe();
+  if (!r) return;
+  const want = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+  const st = statsFor(r.recipeId);
+  if (!st.ourCooks) { toast("Log a cook first, then you can rate it"); return; }
+  if (want === st.mine) return;
+  try {
+    await API("recipe/rate", { recipeId: r.recipeId, rating: want });
+    await refreshLibrary(false);
+    updateRecipeBody();
+    toast(want ? "Rated " + want + " out of 5" : "Rating cleared");
+  } catch (e) { toast(e.message); }
+};
+
 /* --- cook log --- */
-Actions.setLogRating = function(n) { state.logRating = n; renderModal(); };
 Actions.saveCookLog = async function() {
   const r = getActiveRecipe();
   if (!r) return;
-  if (!state.logRating) { toast("Pick a rating first"); return; }
-  const date = document.getElementById("cl-date").value || todayStr();
-  const comment = document.getElementById("cl-notes").value.trim();
+  const dateEl = document.getElementById("cl-date");
+  const notesEl = document.getElementById("cl-notes");
+  const date = (dateEl && dateEl.value) || todayStr();
+  const comment = notesEl ? notesEl.value.trim() : "";
   try {
-    await API("comment/add", { recipeId: r.recipeId, rating: state.logRating, comment, cookedOn: date });
+    await API("comment/add", { recipeId: r.recipeId, comment, cookedOn: date });
     state.modal = null;
+    /* The log we hold for this recipe is now one entry short of the truth,
+       so it is dropped and fetched again with the body still cached. */
+    delete state.logs[r.recipeId];
     await refreshLibrary(false);
+    await reloadLog(r.recipeId);
     setWatch(r.recipeId);
     toast("Cook logged");
   } catch (e) { state.modalError = e.message; renderModal(); }
 };
 Actions.deleteComment = async function(commentId) {
   if (!confirm("Delete this cook log entry?")) return;
+  const id = state.activeId;
   try {
     await API("comment/delete", { commentId });
+    delete state.logs[id];
     await refreshLibrary(false);
+    await reloadLog(id);
     toast("Entry deleted");
   } catch (e) { toast(e.message); }
 };
+/* Re-reads one recipe's cook log without disturbing anything else. The body
+   is already cached and unchanged, so only the log comes back into use. */
+async function reloadLog(recipeId) {
+  if (!recipeId) return;
+  const keep = state.bodies[recipeId];
+  delete state.bodies[recipeId];
+  await ensureBody(recipeId);
+  if (!state.bodies[recipeId] && keep) state.bodies[recipeId] = keep;
+  renderApp();
+}
 
 /* --- friends --- */
 Actions.sendFriendRequest = async function() {
@@ -5891,10 +6120,20 @@ Actions.confirmImport = async function() {
     toast("Imported " + res.count + " recipe" + (res.count === 1 ? "" : "s"));
   } catch (e) { state.modalError = e.message; renderModal(); }
 };
-Actions.exportAll = function() {
+Actions.exportAll = async function() {
   const list = hasActiveFilter() ? filteredRecipes() : state.recipes;
   if (!list.length) { toast("Nothing to export"); return; }
-  const lines = list.map(r => JSON.stringify(normalizeBody(r)));
+  /* A card carries a name and a line of description and nothing else, which
+     is not a recipe. The bodies are fetched first, in batches, so what lands
+     in the file is the whole thing. */
+  state.busy = true;
+  renderApp();
+  await ensureBodies(list.map(r => r.recipeId));
+  state.busy = false;
+  renderApp();
+  const bodies = list.map(r => recipeById(r.recipeId)).filter(hasBody);
+  if (!bodies.length) { toast("Those recipes could not be read"); return; }
+  const lines = bodies.map(r => JSON.stringify(normalizeBody(r)));
   const blob = new Blob([lines.join("\\n")], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -5979,8 +6218,13 @@ Actions.openNew = function() {
   renderApp();
 };
 Actions.openEdit = async function(id, takeover) {
-  const r = state.recipes.find(x => x.recipeId === id);
-  if (!r || !r.ours) { toast("You can only edit recipes in your own cookbook"); return; }
+  const sum = summaryById(id);
+  if (!sum || !sum.ours) { toast("You can only edit recipes in your own cookbook"); return; }
+  /* The form is the whole recipe, so unlike the reading view there is nothing
+     useful to show before it has arrived. */
+  await ensureBody(id);
+  const r = recipeById(id);
+  if (!hasBody(r)) { toast("That recipe could not be opened for editing"); return; }
 
   /* Claim the recipe before opening the form, so two people cannot both
      spend ten minutes on the same edit. */
@@ -6408,18 +6652,23 @@ Actions.openCalDay = function(key) {
 Actions.openScheduled = function(entryId) {
   const e = entryById(entryId);
   if (!e) return;
-  const r = recipeById(e.recipeId);
-  if (!r) { toast("That recipe is no longer in your box"); return; }
+  if (!summaryById(e.recipeId)) { toast("That recipe is no longer in your box"); return; }
   state.modal = null;
   state.calDay = null;
   state.activeId = e.recipeId;
   state.view = "detail";
-  state.scale = factorFor(r, e.servings);
+  state.scale = factorFor(recipeById(e.recipeId), e.servings);
   state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
   state.scheduledFor = { entryId: e.entryId, recipeId: e.recipeId, date: e.date, servings: e.servings };
   state._showAllLogs = false;
   setWatch(e.recipeId);
   renderApp();
+  /* The scale depends on the recipe's own base servings, which live in the
+     body, so it is worked out again once that has landed. */
+  loadBodyInto(e.recipeId, function () {
+    state.scale = factorFor(recipeById(e.recipeId), e.servings);
+    state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+  });
 };
 
 /* Same rule as the library search: repaint the results only, or the field
@@ -6469,14 +6718,18 @@ Actions.scheduleFromDay = function(recipeId) {
   Actions.openSchedule(recipeId, state.calDay, true);
 };
 
-Actions.openSchedule = function(recipeId, onDate, backToDay) {
+Actions.openSchedule = async function(recipeId, onDate, backToDay) {
+  if (!summaryById(recipeId)) { toast("That recipe is no longer in your box"); return; }
+  /* The frame prices the ingredients for a number of mouths, so it needs the
+     ingredients and the recipe's own base servings before it can open. */
+  await ensureBody(recipeId);
   const r = recipeById(recipeId);
   if (!r) { toast("That recipe is no longer in your box"); return; }
   state.scheduleDraft = {
     entryId: null,
     recipeId: recipeId,
     date: onDate || state.calDay || localToday(),
-    servings: (Number(r.servings.base) > 0 ? Number(r.servings.base) : 1),
+    servings: ((r.servings && Number(r.servings.base) > 0) ? Number(r.servings.base) : 1),
     backToDay: !!backToDay
   };
   state.schedWeekTop = null;
@@ -6487,9 +6740,11 @@ Actions.openSchedule = function(recipeId, onDate, backToDay) {
 /* The same frame doing the other half of its job. Because it carries a week
    strip and a servings box, editing an entry covers both "make more of it"
    and "actually, Thursday" without a second dialog for the second case. */
-Actions.openScheduleEdit = function(entryId) {
+Actions.openScheduleEdit = async function(entryId) {
   const e = entryById(entryId);
   if (!e) return;
+  if (!summaryById(e.recipeId)) { toast("That recipe is no longer in your box"); return; }
+  await ensureBody(e.recipeId);
   const r = recipeById(e.recipeId);
   if (!r) { toast("That recipe is no longer in your box"); return; }
   state.scheduleDraft = {
@@ -6967,10 +7222,16 @@ Actions.createGroceryList = async function() {
   const rng = state.groceryRange;
   if (!rng.start || !rng.end) { toast("Pick both dates first"); return; }
   if (rng.start > rng.end) { toast("The last day is before the first one"); return; }
-  const items = buildGroceryItems(rng.start, rng.end);
-  if (!items.length && !confirm("Nothing is scheduled for those days. Build an empty list anyway?")) return;
-  const label = uniqueListLabel(rangeLabel(rng.start, rng.end), state.groceryLists);
   state.busy = true;
+  renderApp();
+  await ensureBodies(scheduledRecipeIds(rng.start, rng.end));
+  const items = buildGroceryItems(rng.start, rng.end);
+  if (!items.length && !confirm("Nothing is scheduled for those days. Build an empty list anyway?")) {
+    state.busy = false;
+    renderApp();
+    return;
+  }
+  const label = uniqueListLabel(rangeLabel(rng.start, rng.end), state.groceryLists);
   try {
     const res = await API("grocery/create", {
       startDate: rng.start, endDate: rng.end, label: label, items: items
@@ -7969,6 +8230,38 @@ async function applyVisibilityReach(env, recipeId, visibility) {
   await env.DB.prepare("DELETE FROM link_grants WHERE recipe_id = ?").bind(recipeId).run();
 }
 
+/* Everything one cookbook is allowed to see, as a fragment of SQL. Written
+   once and used by the library listing, the rating totals, the cook totals
+   and the batch body fetch, so those four can never drift apart on what
+   counts as visible. prefix is "r." where the recipes table is joined under
+   an alias and "" where it is the only table in the statement. */
+function visibleRecipeClause(cookbookId, friendCbs, prefix) {
+  const p = prefix || "";
+  const binds = [cookbookId];
+  let clause = p + "cookbook_id = ?";
+  if (friendCbs.length) {
+    clause += " OR (" + p + "visibility = 'friends' AND " + p + "cookbook_id IN (" +
+      placeholders(friendCbs.length) + "))";
+    binds.push(...friendCbs);
+  }
+  /* A recipe handed to this cookbook specifically - which is what the
+     selective tier is - or one they pinned from a share link. */
+  clause += " OR " + p + "recipe_id IN (SELECT recipe_id FROM recipe_shares WHERE cookbook_id = ?)";
+  binds.push(cookbookId);
+  clause += " OR " + p + "recipe_id IN (SELECT recipe_id FROM link_grants WHERE cookbook_id = ?)";
+  binds.push(cookbookId);
+  return { clause, binds };
+}
+
+/* How much cooking news rides along with a sync, and for how long. Both are
+   deliberately small: this is the notifications page catching up, not an
+   archive, and the full log of any recipe is one tap away inside it. */
+const COOK_FEED_DAYS = 60;
+const COOK_FEED_MAX = 60;
+/* A shopping list or an export can want a lot of recipes at once. This is the
+   ceiling on one request; the client sends more than one batch above it. */
+const MAX_BODY_BATCH = 40;
+
 async function loadRecipeForReader(env, me, recipeId) {
   const row = await env.DB.prepare(
     "SELECT recipe_id, cookbook_id, owner_username, owner_lc, visibility, data, created_at, updated_at, updated_by, locked_by, locked_at " +
@@ -7989,13 +8282,36 @@ function liveLockHolder(row, me) {
   return row.locked_by;
 }
 
+/* The parts of a recipe the box tab needs in order to draw a card and answer
+   a search, lifted out of the blob and kept in columns of their own. The
+   ingredient names are one flat lowercase string rather than a list because
+   nothing does anything with them except look for a substring: the search
+   box used to match on ingredients only because the whole recipe was in
+   memory, and this is what keeps that working once it is not. */
+const MAX_SUMMARY_DESC = 2000;
+const MAX_ING_NAMES = 2000;
+function summaryOf(data) {
+  const d = data || {};
+  const tags = Array.isArray(d.tags)
+    ? d.tags.filter(Boolean).map(t => String(t).trim()).filter(Boolean).slice(0, 60)
+    : [];
+  const names = Array.isArray(d.ingredients)
+    ? d.ingredients.map(i => String((i && i.name) || "").trim()).filter(Boolean)
+    : [];
+  return {
+    description: String(d.description || "").slice(0, MAX_SUMMARY_DESC),
+    tags: JSON.stringify(tags),
+    ingNames: names.join(" ").toLowerCase().slice(0, MAX_ING_NAMES)
+  };
+}
 function validateRecipeData(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new ApiError(400, "The recipe was not readable.");
   const title = cleanString(data.title, 200);
   if (!title) throw new ApiError(400, "The recipe needs a title.");
   const text = JSON.stringify(data);
   if (text.length > MAX_RECIPE_BYTES) throw new ApiError(413, "That recipe is too big to store.");
-  return { title, text };
+  const s = summaryOf(data);
+  return { title, text, description: s.description, tags: s.tags, ingNames: s.ingNames };
 }
 
 /* ================================================================ API === */
@@ -8076,7 +8392,21 @@ const LATER_TABLES = [
     "cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', " +
     "entry_id TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL )",
   "CREATE INDEX IF NOT EXISTS idx_mdishes_meal ON meal_dishes(meal_id)",
-  "CREATE INDEX IF NOT EXISTS idx_mdishes_entry ON meal_dishes(entry_id)"
+  "CREATE INDEX IF NOT EXISTS idx_mdishes_entry ON meal_dishes(entry_id)",
+  /* One rating per cookbook per recipe, kept apart from the cook log. A
+     household has an opinion about a dish; it has many evenings of cooking
+     it. Tying the two together meant a fourth cook could not be logged
+     without restating the verdict, and the verdict could not be revised
+     without inventing a cook that never happened. */
+  "CREATE TABLE IF NOT EXISTS recipe_ratings ( cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, " +
+    "rating INTEGER NOT NULL, rated_by TEXT NOT NULL, updated_at TEXT NOT NULL, " +
+    "PRIMARY KEY (cookbook_id, recipe_id) )",
+  "CREATE INDEX IF NOT EXISTS idx_ratings_recipe ON recipe_ratings(recipe_id)",
+  /* One-shot data moves, recorded so they never run twice. The column
+     backfills below are self-describing - an unfilled column is NULL - but
+     moving the old per-entry ratings across is not: rerunning it would
+     resurrect a rating somebody had deliberately cleared. */
+  "CREATE TABLE IF NOT EXISTS migrations ( name TEXT PRIMARY KEY, done_at TEXT NOT NULL )"
 ];
 
 /* What a kitchen is assumed to have until it says otherwise. Seeded on read
@@ -8093,10 +8423,68 @@ let schemaReady = false;
    has no ADD COLUMN IF NOT EXISTS, and a duplicate column is the expected
    result on every run after the first, so that one error is swallowed and
    anything else is not. */
+/* The three summary columns are what the recipe box tab is built from. They
+   are deliberately nullable rather than NOT NULL DEFAULT '': a NULL is the
+   signal that this row predates the columns and still needs filling from its
+   data blob, and an empty description is a real answer that must not be
+   mistaken for a missing one. */
 const LATER_COLUMNS = [
   "ALTER TABLE community_meals ADD COLUMN description TEXT NOT NULL DEFAULT ''",
-  "ALTER TABLE community_meals ADD COLUMN location TEXT NOT NULL DEFAULT ''"
+  "ALTER TABLE community_meals ADD COLUMN location TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE recipes ADD COLUMN description TEXT",
+  "ALTER TABLE recipes ADD COLUMN tags TEXT",
+  "ALTER TABLE recipes ADD COLUMN ing_names TEXT"
 ];
+/* Reading a recipe's data blob to answer "what is this called and what is in
+   it" is the thing the whole change is trying to stop doing on every sync.
+   Once, at rest, is fine; a few thousand at a time keeps a cold start from
+   turning into a minute of parsing, and whatever is left is picked up on the
+   next one. */
+const BACKFILL_CHUNK = 200;
+const BACKFILL_MAX = 2000;
+async function backfillRecipeSummaries(env) {
+  let done = 0;
+  while (done < BACKFILL_MAX) {
+    const rows = (await env.DB.prepare(
+      "SELECT recipe_id, data FROM recipes WHERE tags IS NULL LIMIT " + BACKFILL_CHUNK
+    ).all()).results || [];
+    if (!rows.length) return;
+    const statements = [];
+    for (const row of rows) {
+      let data = null;
+      try { data = JSON.parse(row.data); } catch (e) { data = {}; }
+      const s = summaryOf(data);
+      statements.push(env.DB.prepare(
+        "UPDATE recipes SET description = ?, tags = ?, ing_names = ? WHERE recipe_id = ?"
+      ).bind(s.description, s.tags, s.ingNames, row.recipe_id));
+    }
+    await env.DB.batch(statements);
+    done += rows.length;
+    if (rows.length < BACKFILL_CHUNK) return;
+  }
+}
+/* Every rating ever left on a cook log entry, collapsed to one per cookbook:
+   the most recent word a household said about a dish is the word it still
+   stands by. Guarded by the migrations table because a cleared rating is a
+   deletion, and an unguarded rerun would undo it. */
+const RATING_MIGRATION = "ratings-from-cook-log-v1";
+async function backfillRatings(env) {
+  const seen = await env.DB.prepare(
+    "SELECT name FROM migrations WHERE name = ?"
+  ).bind(RATING_MIGRATION).first();
+  if (seen) return;
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO recipe_ratings (cookbook_id, recipe_id, rating, rated_by, updated_at) " +
+    "SELECT u.cookbook_id, c.recipe_id, c.rating, c.username, c.created_at FROM comments c " +
+    "JOIN users u ON u.username_lc = c.username_lc WHERE c.rating BETWEEN 1 AND 5 " +
+    "AND c.created_at = (SELECT MAX(c2.created_at) FROM comments c2 " +
+    "JOIN users u2 ON u2.username_lc = c2.username_lc " +
+    "WHERE c2.recipe_id = c.recipe_id AND u2.cookbook_id = u.cookbook_id AND c2.rating BETWEEN 1 AND 5)"
+  ).run();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO migrations (name, done_at) VALUES (?, ?)"
+  ).bind(RATING_MIGRATION, new Date().toISOString()).run();
+}
 async function addLaterColumns(env) {
   for (const sql of LATER_COLUMNS) {
     try { await env.DB.prepare(sql).run(); }
@@ -8110,6 +8498,8 @@ async function ensureSchema(env) {
   if (schemaReady) return;
   for (const sql of LATER_TABLES) await env.DB.prepare(sql).run();
   await addLaterColumns(env);
+  await backfillRecipeSummaries(env);
+  await backfillRatings(env);
   schemaReady = true;
 }
 
@@ -8506,55 +8896,91 @@ async function handleApi(route, body, env, request) {
        purpose. Meals need a wider one, so they get their own reader. */
     const mealLabel = (cb) => labelFor[cb] || householdLabel(memberMap[cb] || []) || "Someone";
 
-    let sql = "SELECT recipe_id, cookbook_id, owner_username, visibility, data, created_at, updated_at, updated_by " +
-      "FROM recipes WHERE cookbook_id = ?";
-    const binds = [me.cookbookId];
-    if (friendCbs.length) {
-      sql += " OR (visibility = 'friends' AND cookbook_id IN (" + placeholders(friendCbs.length) + "))";
-      binds.push(...friendCbs);
-    }
-    /* A recipe handed to this cookbook specifically - which is what the
-       selective tier is - or one they pinned from a share link. */
-    sql += " OR recipe_id IN (SELECT recipe_id FROM recipe_shares WHERE cookbook_id = ?)";
-    binds.push(me.cookbookId);
-    sql += " OR recipe_id IN (SELECT recipe_id FROM link_grants WHERE cookbook_id = ?)";
-    binds.push(me.cookbookId);
-    const recipeRows = (await env.DB.prepare(sql).bind(...binds).all()).results || [];
+    /* Nothing here reads the data blob. A card needs a name, a line of
+       description, its tags and two numbers, and that is exactly what comes
+       back - so opening the app costs one small row per recipe instead of
+       every ingredient and every step of every recipe anyone can see. */
+    const reach = visibleRecipeClause(me.cookbookId, friendCbs, "");
+    const sql = "SELECT recipe_id, cookbook_id, owner_username, visibility, title, description, tags, " +
+      "ing_names, created_at, updated_at, updated_by FROM recipes WHERE " + reach.clause;
+    const recipeRows = (await env.DB.prepare(sql).bind(...reach.binds).all()).results || [];
 
     const recipes = recipeRows.map(row => {
-      let data = null;
-      try { data = JSON.parse(row.data); } catch (e) { data = { title: "Unreadable recipe" }; }
+      let tags = [];
+      try { const p = JSON.parse(row.tags || "[]"); if (Array.isArray(p)) tags = p; } catch (e) { tags = []; }
       return {
         recipeId: row.recipe_id,
         owner: row.owner_username,
         household: labelFor[row.cookbook_id] || row.owner_username,
         ours: row.cookbook_id === me.cookbookId,
         visibility: row.visibility,
+        title: row.title || "Untitled recipe",
+        description: row.description || "",
+        tags,
+        ingNames: row.ing_names || "",
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        updatedBy: row.updated_by || row.owner_username,
-        data
+        updatedBy: row.updated_by || row.owner_username
       };
     });
 
-    /* Comments are visible between linked cookbooks, so a new member of a
-       cookbook can see everything that cookbook could already see. */
+    /* Ratings and cooks are visible between linked cookbooks, so a new member
+       of a cookbook can see everything that cookbook could already see. Both
+       arrive as totals rather than as rows: the box tab wants an average and
+       a count, and the entries behind them are fetched only when a recipe is
+       actually opened. */
     const voices = [me.cookbookId].concat(friendCbs);
-    const csql = "SELECT c.comment_id, c.recipe_id, c.username, c.rating, c.comment, c.cooked_on, c.created_at " +
+    const vph = placeholders(voices.length);
+    const rateReach = visibleRecipeClause(me.cookbookId, friendCbs, "r.");
+    const ratingRows = (await env.DB.prepare(
+      "SELECT rt.recipe_id, rt.cookbook_id, rt.rating FROM recipe_ratings rt " +
+      "JOIN recipes r ON r.recipe_id = rt.recipe_id " +
+      "WHERE (" + rateReach.clause + ") AND rt.cookbook_id IN (" + vph + ")"
+    ).bind(...rateReach.binds, ...voices).all()).results || [];
+    const ratings = {};
+    for (const row of ratingRows) {
+      const rec = ratings[row.recipe_id] || (ratings[row.recipe_id] = { sum: 0, count: 0, mine: 0 });
+      rec.sum += Number(row.rating) || 0;
+      rec.count++;
+      if (row.cookbook_id === me.cookbookId) rec.mine = Number(row.rating) || 0;
+    }
+    for (const id of Object.keys(ratings)) {
+      const rec = ratings[id];
+      ratings[id] = { avg: rec.count ? rec.sum / rec.count : null, count: rec.count, mine: rec.mine };
+    }
+
+    const cookReach = visibleRecipeClause(me.cookbookId, friendCbs, "r.");
+    const cookRows = (await env.DB.prepare(
+      "SELECT c.recipe_id, COUNT(*) AS n, MAX(c.cooked_on) AS last, " +
+      "SUM(CASE WHEN u.cookbook_id = ? THEN 1 ELSE 0 END) AS ourn " +
       "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
       "JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE (r.cookbook_id = ?" +
-      (friendCbs.length ? " OR (r.visibility = 'friends' AND r.cookbook_id IN (" + placeholders(friendCbs.length) + "))" : "") +
-      ") AND u.cookbook_id IN (" + placeholders(voices.length) + ") ORDER BY c.cooked_on DESC";
-    const cbinds = [me.cookbookId].concat(friendCbs, voices);
-    const commentRows = (await env.DB.prepare(csql).bind(...cbinds).all()).results || [];
-    const comments = {};
-    for (const c of commentRows) {
-      (comments[c.recipe_id] = comments[c.recipe_id] || []).push({
-        commentId: c.comment_id, username: c.username, rating: c.rating,
-        comment: c.comment, cookedOn: c.cooked_on, createdAt: c.created_at
-      });
+      "WHERE (" + cookReach.clause + ") AND u.cookbook_id IN (" + vph + ") GROUP BY c.recipe_id"
+    ).bind(me.cookbookId, ...cookReach.binds, ...voices).all()).results || [];
+    const cooks = {};
+    for (const row of cookRows) {
+      cooks[row.recipe_id] = {
+        count: Number(row.n) || 0,
+        ours: Number(row.ourn) || 0,
+        last: row.last || null
+      };
     }
+
+    /* The only cook log entries that still travel with a sync: recent cooks
+       by somebody else on a recipe of ours, which is the one thing the
+       notifications page cannot work out for itself. Everything older has
+       already been read once and is a scroll through the recipe away. */
+    const feedSince = new Date(Date.now() - COOK_FEED_DAYS * 86400000).toISOString();
+    const cookFeed = ((await env.DB.prepare(
+      "SELECT c.comment_id, c.recipe_id, c.username, c.comment, c.cooked_on, c.created_at " +
+      "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
+      "JOIN users u ON u.username_lc = c.username_lc " +
+      "WHERE r.cookbook_id = ? AND u.cookbook_id IN (" + vph + ") AND c.username_lc != ? " +
+      "AND c.created_at >= ? ORDER BY c.created_at DESC LIMIT " + COOK_FEED_MAX
+    ).bind(me.cookbookId, ...voices, me.usernameLc, feedSince).all()).results || []).map(c => ({
+      commentId: c.comment_id, recipeId: c.recipe_id, username: c.username,
+      comment: c.comment, cookedOn: c.cooked_on, createdAt: c.created_at
+    }));
 
     /* Marks belong to the cookbook, not the person: a household stars once. */
     const markRows = (await env.DB.prepare(
@@ -8625,7 +9051,9 @@ async function handleApi(route, body, env, request) {
     return jsonResponse({
       me: { username: me.username, cookbookId: me.cookbookId, household: labelFor[me.cookbookId] },
       recipes,
-      comments,
+      ratings,
+      cooks,
+      cookFeed,
       marks,
       shares,
       schedule,
@@ -9188,6 +9616,8 @@ async function handleApi(route, body, env, request) {
     await env.DB.prepare("UPDATE recipes SET locked_by = ? WHERE locked_by = ?").bind(next, oldName).run();
     await env.DB.prepare("UPDATE comments SET username = ?, username_lc = ? WHERE username_lc = ?")
       .bind(next, nextLc, oldLc).run();
+    await env.DB.prepare("UPDATE recipe_ratings SET rated_by = ? WHERE rated_by = ?")
+      .bind(next, oldName).run();
     await env.DB.prepare("UPDATE friendships SET requested_by = ? WHERE requested_by = ?")
       .bind(next, oldName).run();
     await env.DB.prepare("UPDATE friendships SET responded_by = ? WHERE responded_by = ?")
@@ -9221,8 +9651,8 @@ async function handleApi(route, body, env, request) {
       changes.push({ title: row.title, before: before, after: after });
       if (apply) {
         data.tags = after;
-        await env.DB.prepare("UPDATE recipes SET data = ? WHERE recipe_id = ?")
-          .bind(JSON.stringify(data), row.recipe_id).run();
+        await env.DB.prepare("UPDATE recipes SET data = ?, tags = ? WHERE recipe_id = ?")
+          .bind(JSON.stringify(data), JSON.stringify(after), row.recipe_id).run();
       }
     }
     return jsonResponse({
@@ -9235,7 +9665,7 @@ async function handleApi(route, body, env, request) {
   if (route === "recipe/save") {
     const visibility = VISIBILITIES.indexOf(body.visibility) >= 0 ? body.visibility : null;
     if (!visibility) throw new ApiError(400, "Choose private or shared with friends.");
-    const { title, text } = validateRecipeData(body.data);
+    const { title, text, description, tags, ingNames } = validateRecipeData(body.data);
     const now = new Date().toISOString();
 
     if (body.recipeId) {
@@ -9262,18 +9692,20 @@ async function handleApi(route, body, env, request) {
       }
 
       await env.DB.prepare(
-        "UPDATE recipes SET data = ?, title = ?, visibility = ?, updated_at = ?, updated_by = ?, " +
+        "UPDATE recipes SET data = ?, title = ?, description = ?, tags = ?, ing_names = ?, " +
+        "visibility = ?, updated_at = ?, updated_by = ?, " +
         "locked_by = NULL, locked_at = NULL WHERE recipe_id = ?"
-      ).bind(text, title, visibility, now, me.username, String(body.recipeId)).run();
+      ).bind(text, title, description, tags, ingNames, visibility, now, me.username, String(body.recipeId)).run();
       await applyVisibilityReach(env, String(body.recipeId), visibility);
       return jsonResponse({ recipeId: String(body.recipeId), updatedAt: now });
     }
 
     const recipeId = newRecipeId();
     await env.DB.prepare(
-      "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, data, created_at, updated_at, updated_by) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, visibility, title, text, now, now, me.username).run();
+      "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, description, tags, ing_names, data, created_at, updated_at, updated_by) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, visibility, title,
+      description, tags, ingNames, text, now, now, me.username).run();
     return jsonResponse({ recipeId, updatedAt: now });
   }
 
@@ -9367,24 +9799,36 @@ async function handleApi(route, body, env, request) {
     const statements = [];
     let count = 0;
     for (const item of incoming) {
-      const { title, text } = validateRecipeData(item && item.data ? item.data : item && item.body);
+      const { title, text, description, tags, ingNames } =
+        validateRecipeData(item && item.data ? item.data : item && item.body);
       const recipeId = newRecipeId();
       statements.push(env.DB.prepare(
-        "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, data, created_at, updated_at, updated_by) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, visibility, title, text, now, now, me.username));
+        "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, description, tags, ing_names, data, created_at, updated_at, updated_by) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, visibility, title,
+        description, tags, ingNames, text, now, now, me.username));
       count++;
-      /* An imported file may carry the cook log from an older export. */
+      /* An imported file may carry the cook log from an older export. A cook
+         is a date, so an entry with no rating on it is still an evening that
+         happened; only a rating that was actually written is carried across,
+         and it lands on the ratings table rather than on the entry. */
       const log = Array.isArray(item.cookLog) ? item.cookLog.slice(0, 200) : [];
+      let lastRating = 0;
       for (const entry of log) {
-        const rating = Math.min(5, Math.max(1, Math.round(Number(entry && entry.rating) || 0)));
-        if (!rating) continue;
+        const rating = Math.min(5, Math.max(0, Math.round(Number(entry && entry.rating) || 0)));
+        if (rating) lastRating = rating;
         statements.push(env.DB.prepare(
           "INSERT INTO comments (comment_id, recipe_id, username_lc, username, rating, comment, cooked_on, created_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-        ).bind(newCommentId(), recipeId, me.usernameLc, me.username, rating,
+          "VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
+        ).bind(newCommentId(), recipeId, me.usernameLc, me.username,
           cleanString(entry.notes || entry.comment, MAX_COMMENT_CHARS),
           cleanString(entry.date, 30) || now.slice(0, 10), now));
+      }
+      if (lastRating) {
+        statements.push(env.DB.prepare(
+          "INSERT OR REPLACE INTO recipe_ratings (cookbook_id, recipe_id, rating, rated_by, updated_at) " +
+          "VALUES (?, ?, ?, ?, ?)"
+        ).bind(me.cookbookId, recipeId, lastRating, me.username, now));
       }
     }
     await env.DB.batch(statements);
@@ -9419,6 +9863,7 @@ async function handleApi(route, body, env, request) {
     }
     await env.DB.batch([
       env.DB.prepare("DELETE FROM comments WHERE recipe_id = ?").bind(recipeId),
+      env.DB.prepare("DELETE FROM recipe_ratings WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM recipe_marks WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM pending_pins WHERE recipe_id = ?").bind(recipeId),
       env.DB.prepare("DELETE FROM recipe_shares WHERE recipe_id = ?").bind(recipeId),
@@ -9484,27 +9929,107 @@ async function handleApi(route, body, env, request) {
     let data;
     try { data = JSON.parse(found.row.data); } catch (e) { throw new ApiError(400, "That recipe could not be copied."); }
     data.mergedFrom = { username: found.row.owner_username, date: new Date().toISOString().slice(0, 10) };
-    const { title, text } = validateRecipeData(data);
+    const { title, text, description, tags, ingNames } = validateRecipeData(data);
     const now = new Date().toISOString();
     const recipeId = newRecipeId();
     await env.DB.prepare(
-      "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, data, created_at, updated_at, updated_by) " +
-      "VALUES (?, ?, ?, ?, 'private', ?, ?, ?, ?, ?)"
-    ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, title, text, now, now, me.username).run();
+      "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, description, tags, ing_names, data, created_at, updated_at, updated_by) " +
+      "VALUES (?, ?, ?, ?, 'private', ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, title,
+      description, tags, ingNames, text, now, now, me.username).run();
     return jsonResponse({ recipeId });
   }
 
-  /* ---- cook log entries (rating required, comment optional) ---- */
+  /* ---- one recipe, in full ----
+     The other half of the slimmed-down library: everything the card left
+     behind, fetched when somebody actually opens the recipe. The cook log
+     comes with it, because the only place it is ever read is here. */
+  if (route === "recipe/body") {
+    const found = await loadRecipeForReader(env, me, String(body.recipeId || ""));
+    let data;
+    try { data = JSON.parse(found.row.data); } catch (e) { throw new ApiError(500, "That recipe could not be read."); }
+    const voices = [me.cookbookId].concat(await friendCookbooks(env, me.cookbookId));
+    const logRows = (await env.DB.prepare(
+      "SELECT c.comment_id, c.username, c.username_lc, c.comment, c.cooked_on, c.created_at " +
+      "FROM comments c JOIN users u ON u.username_lc = c.username_lc " +
+      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + placeholders(voices.length) + ") " +
+      "ORDER BY c.cooked_on DESC, c.created_at DESC"
+    ).bind(found.row.recipe_id, ...voices).all()).results || [];
+    return jsonResponse({
+      recipeId: found.row.recipe_id,
+      updatedAt: found.row.updated_at,
+      data,
+      log: logRows.map(c => ({
+        commentId: c.comment_id, username: c.username, mine: c.username_lc === me.usernameLc,
+        comment: c.comment, cookedOn: c.cooked_on, createdAt: c.created_at
+      }))
+    });
+  }
+
+  /* ---- several recipes, in full, with no cook logs ----
+     What a shopping list and an export need: ingredients in bulk and nothing
+     else. Visibility is applied in the statement rather than per recipe, so
+     asking for something out of reach returns fewer rows rather than an
+     error - the caller is working from its own library listing and a recipe
+     can be unshared between the listing and the request. */
+  if (route === "recipe/bodies") {
+    const ids = Array.isArray(body.recipeIds)
+      ? body.recipeIds.map(x => String(x || "")).filter(Boolean).slice(0, MAX_BODY_BATCH) : [];
+    if (!ids.length) return jsonResponse({ bodies: [] });
+    const friendCbs = await friendCookbooks(env, me.cookbookId);
+    const reach = visibleRecipeClause(me.cookbookId, friendCbs, "");
+    const rows = (await env.DB.prepare(
+      "SELECT recipe_id, data, updated_at FROM recipes WHERE recipe_id IN (" +
+      placeholders(ids.length) + ") AND (" + reach.clause + ")"
+    ).bind(...ids, ...reach.binds).all()).results || [];
+    const bodies = [];
+    for (const row of rows) {
+      let data = null;
+      try { data = JSON.parse(row.data); } catch (e) { continue; }
+      bodies.push({ recipeId: row.recipe_id, updatedAt: row.updated_at, data });
+    }
+    return jsonResponse({ bodies });
+  }
+
+  /* ---- one rating per cookbook ----
+     A verdict, not an event: writing it again replaces it, and zero clears
+     it. Only a kitchen that has actually cooked the thing gets to have an
+     opinion recorded, which is checked here and not only in the interface. */
+  if (route === "recipe/rate") {
+    const rating = Math.round(Number(body.rating) || 0);
+    if (!(rating >= 0 && rating <= 5)) throw new ApiError(400, "Pick a rating from 1 to 5.");
+    const found = await loadRecipeForReader(env, me, String(body.recipeId || ""));
+    const recipeId = found.row.recipe_id;
+    if (rating === 0) {
+      await env.DB.prepare(
+        "DELETE FROM recipe_ratings WHERE cookbook_id = ? AND recipe_id = ?"
+      ).bind(me.cookbookId, recipeId).run();
+      return jsonResponse({ ok: true, rating: 0 });
+    }
+    const cooked = await env.DB.prepare(
+      "SELECT 1 AS n FROM comments c JOIN users u ON u.username_lc = c.username_lc " +
+      "WHERE c.recipe_id = ? AND u.cookbook_id = ? LIMIT 1"
+    ).bind(recipeId, me.cookbookId).first();
+    if (!cooked) throw new ApiError(400, "Log a cook before rating this one.");
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO recipe_ratings (cookbook_id, recipe_id, rating, rated_by, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?)"
+    ).bind(me.cookbookId, recipeId, rating, me.username, new Date().toISOString()).run();
+    return jsonResponse({ ok: true, rating });
+  }
+
+  /* ---- cook log entries (a date, and a comment if there is one to make) ----
+     No rating: an entry records that the thing was cooked on a day, and how
+     the household feels about the dish is kept once, in recipe_ratings, so
+     that cooking it a fifth time does not mean casting a fifth vote. */
   if (route === "comment/add") {
-    const rating = Math.round(Number(body.rating));
-    if (!(rating >= 1 && rating <= 5)) throw new ApiError(400, "Pick a rating from 1 to 5.");
     const found = await loadRecipeForReader(env, me, String(body.recipeId || ""));
     const cookedOn = /^\d{4}-\d{2}-\d{2}$/.test(body.cookedOn || "") ? body.cookedOn : new Date().toISOString().slice(0, 10);
     const now = new Date().toISOString();
     await env.DB.prepare(
       "INSERT INTO comments (comment_id, recipe_id, username_lc, username, rating, comment, cooked_on, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(newCommentId(), found.row.recipe_id, me.usernameLc, me.username, rating,
+      "VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
+    ).bind(newCommentId(), found.row.recipe_id, me.usernameLc, me.username,
       cleanString(body.comment, MAX_COMMENT_CHARS), cookedOn, now).run();
     return jsonResponse({ ok: true });
   }
