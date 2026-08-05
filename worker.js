@@ -291,6 +291,8 @@ html.doc-scroll #app{ overflow-x:clip; }
 
 /* recipe grid / cards */
 .grid-recipes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:14px; }
+.load-more{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:22px 0 6px; }
+.load-more-count{ margin:0; font-size:12.5px; color:var(--ink-muted); }
 .rcard{ text-align:left; background:#fff; border:1px solid var(--border-light); border-radius:13px; padding:16px; cursor:pointer; display:flex; flex-direction:column; gap:8px; transition:border-color .15s, box-shadow .15s; }
 .rcard:hover{ border-color:var(--accent); box-shadow:0 3px 12px rgba(0,0,0,.06); }
 .rcard h3{ font-size:18px; margin:0; line-height:1.28; }
@@ -1440,6 +1442,16 @@ const state = {
   friendPrefill: "",
   pickSearch: "",
   sort: "newest",
+  /* How many cards the box is currently drawing. The whole library is always
+     in memory - search, tags, the shopping list and the calendar picker all
+     read every recipe - but only this many are turned into markup at a time.
+     Typing a letter rebuilds the results block from scratch, so at six
+     hundred recipes that was six hundred card templates per keystroke on an
+     iPad. _shownKey is the filter the count belongs to: change the search,
+     the tags, the household or the sort and it no longer matches, which is
+     what puts a fresh search back at the top of its own results. */
+  shown: 0,
+  _shownKey: null,
   scale: 1,
   customScaleOpen: false,
   editDraft: null,
@@ -2882,7 +2894,24 @@ function hasActiveFilter() {
   return !!(state.search.trim() || state.activeTags.length || state.ownerFilter !== "all");
 }
 
+/* One screenful of scrolling, near enough. Small enough that a keystroke is
+   cheap and large enough that most boxes never see the button. */
+const PAGE_SIZE = 50;
+function resultsKey() {
+  return [state.search.trim().toLowerCase(), state.ownerFilter, state.sort]
+    .concat(state.activeTags.slice().sort()).join("\\u0000");
+}
+/* Called from the one place that draws the results, so every route that
+   narrows the box - the search field, a chip, the filter sheet, the household
+   picker, the sort menu - resets the count without having to remember to. */
+function syncShownCount() {
+  const key = resultsKey();
+  if (key !== state._shownKey) { state._shownKey = key; state.shown = PAGE_SIZE; }
+  if (!state.shown) state.shown = PAGE_SIZE;
+}
+
 function ResultsSectionHTML() {
+  syncShownCount();
   const results = filteredRecipes();
   const picked = state.activeTags.slice().sort(tagOrder);
   const offered = suggestedTags(results, state.activeTags);
@@ -2906,7 +2935,17 @@ function ResultsSectionHTML() {
             icon("users", 15) + ' Show everyone\\'s recipes</button></div>'
           : "") + '</div>';
   } else {
-    body = '<div class="grid-recipes">' + results.map(RecipeCardHTML).join("") + '</div>';
+    const shown = Math.min(state.shown, results.length);
+    const rest = results.length - shown;
+    body = '<div class="grid-recipes">' +
+      results.slice(0, shown).map(RecipeCardHTML).join("") + '</div>';
+    if (rest > 0) {
+      body += '<div class="load-more">' +
+        '<button class="btn" onclick="Actions.showMore()">Load ' +
+          Math.min(rest, PAGE_SIZE) + ' more</button>' +
+        '<p class="load-more-count">Showing ' + shown + ' of ' + results.length + '</p>' +
+      '</div>';
+    }
   }
   return (state._tagList.length ? '<div class="chips">' + chips + '</div>' : "") + body;
 }
@@ -5634,12 +5673,25 @@ Actions.reload = function() { refreshLibrary(true); };
 
 /* Typing must not re-render the page or the field loses focus mid-word, so
    the clear button is toggled by hand alongside the results. */
+/* Filtering is local - nothing here asks the server anything - but rebuilding
+   the results block still costs a pass over every recipe plus the markup for
+   fifty cards, and doing that between two letters typed quickly is work
+   thrown away. The state is set at once so the field and the clear button
+   stay honest; only the redraw waits. */
+const SEARCH_DELAY_MS = 140;
+let searchTimer = null;
 Actions.onSearchInput = function(v) {
   state.search = v;
   updateSearchClear();
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(function () { searchTimer = null; updateResultsSection(); }, SEARCH_DELAY_MS);
+};
+Actions.showMore = function() {
+  state.shown = (state.shown || PAGE_SIZE) + PAGE_SIZE;
   updateResultsSection();
 };
 Actions.clearSearch = function() {
+  if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
   state.search = "";
   const el = document.getElementById("search-input");
   if (el) { el.value = ""; el.focus(); }
@@ -8120,6 +8172,28 @@ const RL_WINDOW_MS = 10 * 60 * 1000;
 const RL_MAX_FAILURES = 30;
 
 function placeholders(n) { return new Array(n).fill("?").join(","); }
+/* D1 caps a statement at 100 bound parameters. The reach queries dodge that
+   by asking the friendships table directly, but the places that genuinely
+   hold a list of ids - the households to be named, the meals to be filled in
+   - have no subquery to hide behind. A cookbook with fifty friends, or one
+   on a lot of guest lists, would sail past the cap and the statement would
+   throw rather than slow. So the list is cut into lengths the cap allows and
+   the pieces go out together in one batch, which costs the same round trip a
+   single statement would have. */
+const IN_CHUNK = 90;
+function chunked(list) {
+  const out = [];
+  for (let i = 0; i < list.length; i += IN_CHUNK) out.push(list.slice(i, i + IN_CHUNK));
+  return out;
+}
+/* One batch, all rows, order irrelevant. */
+async function batchRows(env, statements) {
+  if (!statements.length) return [];
+  const res = await env.DB.batch(statements);
+  const out = [];
+  for (const r of res) for (const row of ((r && r.results) || [])) out.push(row);
+  return out;
+}
 
 function cleanString(v, max) {
   return typeof v === "string" ? v.trim().slice(0, max || 500) : "";
@@ -8190,12 +8264,17 @@ async function membersOf(env, cookbookIds) {
   const ids = Array.from(new Set(cookbookIds.filter(Boolean)));
   const map = {};
   if (!ids.length) return map;
-  const rows = await env.DB.prepare(
+  const rows = await batchRows(env, chunked(ids).map(part => env.DB.prepare(
     "SELECT username, cookbook_id FROM users WHERE cookbook_id IN (" +
-    placeholders(ids.length) + ") ORDER BY username COLLATE NOCASE"
-  ).bind(...ids).all();
-  for (const r of rows.results || []) {
+    placeholders(part.length) + ") ORDER BY username COLLATE NOCASE"
+  ).bind(...part)));
+  for (const r of rows) {
     (map[r.cookbook_id] = map[r.cookbook_id] || []).push(r.username);
+  }
+  /* Sorting is per cookbook anyway, and comes back per chunk, so it is
+     settled here rather than trusted to the statement. */
+  for (const cb of Object.keys(map)) {
+    map[cb].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }
   return map;
 }
@@ -8459,7 +8538,13 @@ const LATER_TABLES = [
      backfills below are self-describing - an unfilled column is NULL - but
      moving the old per-entry ratings across is not: rerunning it would
      resurrect a rating somebody had deliberately cleared. */
-  "CREATE TABLE IF NOT EXISTS migrations ( name TEXT PRIMARY KEY, done_at TEXT NOT NULL )"
+  "CREATE TABLE IF NOT EXISTS migrations ( name TEXT PRIMARY KEY, done_at TEXT NOT NULL )",
+  /* Asking "is there anything left to backfill" used to read every recipe in
+     the database, because tags is not indexed and NULL is not a value an
+     ordinary index can be searched for. Partial, so it holds only the rows
+     that still need filling and is empty - costing nothing to store and
+     nothing to maintain - the moment the backfill finishes. */
+  "CREATE INDEX IF NOT EXISTS idx_recipes_unfilled ON recipes(recipe_id) WHERE tags IS NULL"
 ];
 
 /* What a kitchen is assumed to have until it says otherwise. Seeded on read
@@ -8469,6 +8554,7 @@ const LATER_TABLES = [
 const DEFAULT_EXCLUSIONS = ["Water", "Salt", "Black pepper", "Baking soda", "Ice"];
 const MAX_EXCLUSIONS = 200;
 let schemaReady = false;
+let schemaBooted = false;
 /* community_meals shipped before it had anything to say beyond a name and a
    day. The table is already live, so the two later columns are added rather
    than declared: CREATE TABLE IF NOT EXISTS never runs again once the table
@@ -8495,13 +8581,17 @@ const LATER_COLUMNS = [
    next one. */
 const BACKFILL_CHUNK = 200;
 const BACKFILL_MAX = 2000;
+/* True when there is nothing left to fill. The version stamp waits on that
+   answer: a box big enough to need more than BACKFILL_MAX rows in one pass
+   must be allowed to finish on a later cold start, and stamping early would
+   close the door on it. */
 async function backfillRecipeSummaries(env) {
   let done = 0;
   while (done < BACKFILL_MAX) {
     const rows = (await env.DB.prepare(
       "SELECT recipe_id, data FROM recipes WHERE tags IS NULL LIMIT " + BACKFILL_CHUNK
     ).all()).results || [];
-    if (!rows.length) return;
+    if (!rows.length) return true;
     const statements = [];
     for (const row of rows) {
       let data = null;
@@ -8513,8 +8603,9 @@ async function backfillRecipeSummaries(env) {
     }
     await env.DB.batch(statements);
     done += rows.length;
-    if (rows.length < BACKFILL_CHUNK) return;
+    if (rows.length < BACKFILL_CHUNK) return true;
   }
+  return false;
 }
 /* Every rating ever left on a cook log entry, collapsed to one per cookbook:
    the most recent word a household said about a dish is the word it still
@@ -8547,13 +8638,58 @@ async function addLaterColumns(env) {
   }
   await env.DB.prepare(VISIBILITY_MIGRATION).run();
 }
+/* ------------------------------------------------------- schema version --
+   The bootstrap below used to run once per isolate, which is not the same
+   thing as once. Every cold start replayed thirty-odd DDL statements, five
+   ALTERs that are expected to fail, an UPDATE across the recipes table and a
+   probe that read every recipe row - to do nothing, because it had all been
+   done months ago. That is a few hundred milliseconds on the unlucky request
+   and a full table scan billed as rows read, repeated for the life of the
+   Worker and growing with the size of the box.
+
+   So it is stamped instead. One row in migrations says which version of the
+   shape the database is already at; if it matches, the bootstrap is skipped
+   outright and a cold start costs a single indexed lookup.
+
+   READ THIS BEFORE ADDING A TABLE, AN INDEX OR A COLUMN: adding it to
+   LATER_TABLES or LATER_COLUMNS is no longer enough on its own. The stamp
+   already in the database will match, the bootstrap will be skipped, and the
+   new thing will never be created. Bump SCHEMA_VERSION in the same change
+   and the next request applies it. */
+const SCHEMA_VERSION = "schema-v2";
+async function schemaStamped(env) {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT name FROM migrations WHERE name = ?"
+    ).bind(SCHEMA_VERSION).first();
+    return !!row;
+  } catch (e) {
+    /* No migrations table yet - a database from before any of this. */
+    return false;
+  }
+}
 async function ensureSchema(env) {
   if (schemaReady) return;
-  for (const sql of LATER_TABLES) await env.DB.prepare(sql).run();
-  await addLaterColumns(env);
-  await backfillRecipeSummaries(env);
+  if (await schemaStamped(env)) { schemaReady = true; return; }
+  /* The shape only has to be declared once per isolate even when the data
+     move behind it has not finished; replaying the DDL on every request
+     while a large backfill drains would be its own version of the problem
+     this change exists to remove. */
+  if (!schemaBooted) {
+    for (const sql of LATER_TABLES) await env.DB.prepare(sql).run();
+    await addLaterColumns(env);
+    schemaBooted = true;
+  }
+  const drained = await backfillRecipeSummaries(env);
   await backfillRatings(env);
-  schemaReady = true;
+  /* Only claim the shape is settled once the backfill actually finished.
+     Until then the next cold start picks up where this one stopped. */
+  if (drained) {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO migrations (name, done_at) VALUES (?, ?)"
+    ).bind(SCHEMA_VERSION, new Date().toISOString()).run();
+    schemaReady = true;
+  }
 }
 
 const MARK_KINDS = ["pin", "star", "later"];
@@ -8564,29 +8700,56 @@ const MARK_KINDS = ["pin", "star", "later"];
    a shared dinner is not a private thing between each pair of people at it.
    What crosses that line is deliberately narrow - a household name and a
    dish title. No recipe, no servings, no cookbook contents. */
-async function mealsFor(env, cookbookId) {
-  const mine = (await env.DB.prepare(
-    "SELECT meal_id, status, updated_at FROM meal_guests " +
-    "WHERE cookbook_id = ? AND status != 'declined'"
+const MEAL_GUEST_SEATS_SQL =
+  "SELECT meal_id, status, updated_at FROM meal_guests " +
+  "WHERE cookbook_id = ? AND status != 'declined'";
+/* seats may be handed in already read - the library sync fetches it in the
+   same batch as everything else it needs - so this does not go and ask a
+   second time for something already in hand. */
+async function mealsFor(env, cookbookId, seats) {
+  const mine = seats || (await env.DB.prepare(
+    MEAL_GUEST_SEATS_SQL
   ).bind(cookbookId).all()).results || [];
   if (!mine.length) return { meals: [], cookbooks: [] };
   const ids = mine.map(r => r.meal_id);
   const myStatus = {}, myAt = {};
   for (const r of mine) { myStatus[r.meal_id] = r.status; myAt[r.meal_id] = r.updated_at; }
 
-  const metaRows = (await env.DB.prepare(
-    "SELECT meal_id, owner_cb, title, on_date, at_time, description, location, " +
-    "created_by, created_at, updated_at " +
-    "FROM community_meals WHERE meal_id IN (" + placeholders(ids.length) + ")"
-  ).bind(...ids).all()).results || [];
-  const guestRows = (await env.DB.prepare(
-    "SELECT meal_id, cookbook_id, status, updated_at FROM meal_guests WHERE meal_id IN (" +
-    placeholders(ids.length) + ")"
-  ).bind(...ids).all()).results || [];
-  const dishRows = (await env.DB.prepare(
-    "SELECT dish_id, meal_id, cookbook_id, recipe_id, title, entry_id, created_by, created_at " +
-    "FROM meal_dishes WHERE meal_id IN (" + placeholders(ids.length) + ") ORDER BY created_at"
-  ).bind(...ids).all()).results || [];
+  /* Three fan-outs over the same list of meals, so they travel together
+     rather than as three trips to the same place. */
+  const parts = chunked(ids);
+  const meta = [], guests = [], dishes = [];
+  for (const part of parts) {
+    const ph = placeholders(part.length);
+    meta.push(env.DB.prepare(
+      "SELECT meal_id, owner_cb, title, on_date, at_time, description, location, " +
+      "created_by, created_at, updated_at " +
+      "FROM community_meals WHERE meal_id IN (" + ph + ")"
+    ).bind(...part));
+    guests.push(env.DB.prepare(
+      "SELECT meal_id, cookbook_id, status, updated_at FROM meal_guests WHERE meal_id IN (" + ph + ")"
+    ).bind(...part));
+    dishes.push(env.DB.prepare(
+      "SELECT dish_id, meal_id, cookbook_id, recipe_id, title, entry_id, created_by, created_at " +
+      "FROM meal_dishes WHERE meal_id IN (" + ph + ") ORDER BY created_at"
+    ).bind(...part));
+  }
+  /* A batch answers in the order it was asked, so the three groups are told
+     apart by where they sit rather than by what they contain. */
+  const res = await env.DB.batch(meta.concat(guests, dishes));
+  const rowsAt = (from, count) => {
+    const out = [];
+    for (let i = from; i < from + count; i++) {
+      for (const row of ((res[i] && res[i].results) || [])) out.push(row);
+    }
+    return out;
+  };
+  const n = parts.length;
+  const metaRows = rowsAt(0, n);
+  const guestRows = rowsAt(n, n);
+  /* Chunking split the ORDER BY, so the order is restored here. */
+  const dishRows = rowsAt(2 * n, n)
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 
   /* Guest cookbooks need names, and they are not necessarily friends of
      ours, so they are collected here rather than borrowed from the friend
@@ -8914,25 +9077,130 @@ async function handleApi(route, body, env, request) {
 
   /* ---- everything visible to me ---- */
   if (route === "library") {
-    const friendCbs = await friendCookbooks(env, me.cookbookId);
+    /* A sync used to be nineteen statements sent one after another, each
+       waiting on the answer to the last before it was even dispatched.
+       Almost none of them actually depended on each other - they only
+       depended on knowing which cookbook was asking, which is settled before
+       any of them run - so the wait was the round trip and nothing else. A
+       D1 database serves one query at a time whatever happens, so this does
+       not make the database do less work; it stops the request paying the
+       distance to it fourteen times over.
 
-    const pendingIn = (await env.DB.prepare(
-      "SELECT requester_cb, requested_by, created_at FROM friendships " +
-      "WHERE addressee_cb = ? AND status = 'pending' ORDER BY created_at"
-    ).bind(me.cookbookId).all()).results || [];
-    const pendingOut = (await env.DB.prepare(
-      "SELECT addressee_cb, created_at FROM friendships " +
-      "WHERE requester_cb = ? AND status = 'pending' ORDER BY created_at"
-    ).bind(me.cookbookId).all()).results || [];
-    const declinedRows = (await env.DB.prepare(
-      "SELECT requester_cb, requested_by FROM friendships " +
-      "WHERE addressee_cb = ? AND status = 'declined'"
-    ).bind(me.cookbookId).all()).results || [];
+       Three things genuinely do have to wait, and still do: the meals need
+       the seats before they know which meals to read, the household names
+       need the friend and guest lists before they know whose names to ask
+       for, and both of those come from this batch. */
+    const reach = visibleRecipeClause(me.cookbookId, "");
+    const voices = voicesClause(me.cookbookId);
+    const rateReach = visibleRecipeClause(me.cookbookId, "r.");
+    const cookReach = visibleRecipeClause(me.cookbookId, "r.");
+    const feedSince = new Date(Date.now() - COOK_FEED_DAYS * 86400000).toISOString();
+
+    const first = await env.DB.batch([
+      /* Accepted links, with when each was made. The friend list and the
+         reach stamp are both read off this, so it is asked once. */
+      env.DB.prepare(
+        "SELECT CASE WHEN requester_cb = ? THEN addressee_cb ELSE requester_cb END AS cb, updated_at " +
+        "FROM friendships WHERE status = 'accepted' AND (requester_cb = ? OR addressee_cb = ?)"
+      ).bind(me.cookbookId, me.cookbookId, me.cookbookId),
+      env.DB.prepare(
+        "SELECT requester_cb, requested_by, created_at FROM friendships " +
+        "WHERE addressee_cb = ? AND status = 'pending' ORDER BY created_at"
+      ).bind(me.cookbookId),
+      env.DB.prepare(
+        "SELECT addressee_cb, created_at FROM friendships " +
+        "WHERE requester_cb = ? AND status = 'pending' ORDER BY created_at"
+      ).bind(me.cookbookId),
+      env.DB.prepare(
+        "SELECT requester_cb, requested_by FROM friendships " +
+        "WHERE addressee_cb = ? AND status = 'declined'"
+      ).bind(me.cookbookId),
+      env.DB.prepare(MEAL_GUEST_SEATS_SQL).bind(me.cookbookId),
+      /* Nothing here reads the data blob. A card needs a name, a line of
+         description, its tags and two numbers, and that is exactly what
+         comes back - so opening the app costs one small row per recipe
+         instead of every ingredient and every step of every recipe anyone
+         can see. */
+      env.DB.prepare(
+        "SELECT recipe_id, cookbook_id, owner_username, visibility, title, description, tags, " +
+        "ing_names, created_at, updated_at, updated_by FROM recipes WHERE " + reach.clause
+      ).bind(...reach.binds),
+      /* Ratings and cooks are visible between linked cookbooks, so a new
+         member of a cookbook can see everything that cookbook could already
+         see. Both arrive as totals rather than as rows: the box tab wants an
+         average and a count, and the entries behind them are fetched only
+         when a recipe is actually opened. */
+      env.DB.prepare(
+        "SELECT rt.recipe_id, rt.cookbook_id, rt.rating FROM recipe_ratings rt " +
+        "JOIN recipes r ON r.recipe_id = rt.recipe_id " +
+        "WHERE (" + rateReach.clause + ") AND rt.cookbook_id IN (" + voices.sql + ")"
+      ).bind(...rateReach.binds, ...voices.binds),
+      env.DB.prepare(
+        "SELECT c.recipe_id, COUNT(*) AS n, MAX(c.cooked_on) AS last, " +
+        "SUM(CASE WHEN u.cookbook_id = ? THEN 1 ELSE 0 END) AS ourn " +
+        "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
+        "JOIN users u ON u.username_lc = c.username_lc " +
+        "WHERE (" + cookReach.clause + ") AND u.cookbook_id IN (" + voices.sql + ") GROUP BY c.recipe_id"
+      ).bind(me.cookbookId, ...cookReach.binds, ...voices.binds),
+      /* The only cook log entries that still travel with a sync: recent
+         cooks by somebody else on a recipe of ours, which is the one thing
+         the notifications page cannot work out for itself. Everything older
+         has already been read once and is a scroll through the recipe
+         away. */
+      env.DB.prepare(
+        "SELECT c.comment_id, c.recipe_id, c.username, c.comment, c.cooked_on, c.created_at " +
+        "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
+        "JOIN users u ON u.username_lc = c.username_lc " +
+        "WHERE r.cookbook_id = ? AND u.cookbook_id IN (" + voices.sql + ") AND c.username_lc != ? " +
+        "AND c.created_at >= ? ORDER BY c.created_at DESC LIMIT " + COOK_FEED_MAX
+      ).bind(me.cookbookId, ...voices.binds, me.usernameLc, feedSince),
+      /* Marks belong to the cookbook, not the person: a household stars once. */
+      env.DB.prepare(
+        "SELECT recipe_id, kind FROM recipe_marks WHERE cookbook_id = ?"
+      ).bind(me.cookbookId),
+      /* Who our own private recipes have been handed to. */
+      env.DB.prepare(
+        "SELECT s.recipe_id, s.cookbook_id FROM recipe_shares s " +
+        "JOIN recipes r ON r.recipe_id = s.recipe_id WHERE r.cookbook_id = ?"
+      ).bind(me.cookbookId),
+      /* The whole calendar, and the shelf of shopping lists without their
+         contents. A plan is a few dozen rows at most, so it rides along; a
+         list's items are fetched when the list is opened, which keeps a year
+         of shopping out of every sync. */
+      env.DB.prepare(
+        "SELECT entry_id, recipe_id, title, on_date, servings, created_by, created_at " +
+        "FROM schedule_entries WHERE cookbook_id = ? ORDER BY on_date, created_at"
+      ).bind(me.cookbookId),
+      env.DB.prepare(
+        "SELECT list_id, label, start_date, end_date, item_count, created_by, created_at, updated_at " +
+        "FROM grocery_lists WHERE cookbook_id = ? ORDER BY created_at DESC"
+      ).bind(me.cookbookId),
+      env.DB.prepare(
+        "SELECT exclusions FROM cookbook_prefs WHERE cookbook_id = ?"
+      ).bind(me.cookbookId)
+    ]);
+    const at = (i) => (first[i] && first[i].results) || [];
+    const sinceRows = at(0);
+    const pendingIn = at(1);
+    const pendingOut = at(2);
+    const declinedRows = at(3);
+    const mealSeats = at(4);
+    const recipeRows = at(5);
+    const ratingRows = at(6);
+    const cookRows = at(7);
+    const cookFeedRows = at(8);
+    const markRows = at(9);
+    const shareRows = at(10);
+    const schedRows = at(11);
+    const listRows = at(12);
+    const prefRow = at(13)[0] || null;
+
+    const friendCbs = sinceRows.map(r => r.cb);
 
     /* Guest cookbooks on a shared meal need names too, and they are not
        necessarily friends of ours, so they are folded into the same lookup
        rather than fetched separately. */
-    const mealRaw = await mealsFor(env, me.cookbookId);
+    const mealRaw = await mealsFor(env, me.cookbookId, mealSeats);
 
     const memberMap = await membersOf(env, [me.cookbookId].concat(
       friendCbs,
@@ -8948,15 +9216,6 @@ async function handleApi(route, body, env, request) {
     /* Recipes are only ever labelled from labelFor, which is friends-only on
        purpose. Meals need a wider one, so they get their own reader. */
     const mealLabel = (cb) => labelFor[cb] || householdLabel(memberMap[cb] || []) || "Someone";
-
-    /* Nothing here reads the data blob. A card needs a name, a line of
-       description, its tags and two numbers, and that is exactly what comes
-       back - so opening the app costs one small row per recipe instead of
-       every ingredient and every step of every recipe anyone can see. */
-    const reach = visibleRecipeClause(me.cookbookId, "");
-    const sql = "SELECT recipe_id, cookbook_id, owner_username, visibility, title, description, tags, " +
-      "ing_names, created_at, updated_at, updated_by FROM recipes WHERE " + reach.clause;
-    const recipeRows = (await env.DB.prepare(sql).bind(...reach.binds).all()).results || [];
 
     const recipes = recipeRows.map(row => {
       let tags = [];
@@ -8977,18 +9236,6 @@ async function handleApi(route, body, env, request) {
       };
     });
 
-    /* Ratings and cooks are visible between linked cookbooks, so a new member
-       of a cookbook can see everything that cookbook could already see. Both
-       arrive as totals rather than as rows: the box tab wants an average and
-       a count, and the entries behind them are fetched only when a recipe is
-       actually opened. */
-    const voices = voicesClause(me.cookbookId);
-    const rateReach = visibleRecipeClause(me.cookbookId, "r.");
-    const ratingRows = (await env.DB.prepare(
-      "SELECT rt.recipe_id, rt.cookbook_id, rt.rating FROM recipe_ratings rt " +
-      "JOIN recipes r ON r.recipe_id = rt.recipe_id " +
-      "WHERE (" + rateReach.clause + ") AND rt.cookbook_id IN (" + voices.sql + ")"
-    ).bind(...rateReach.binds, ...voices.binds).all()).results || [];
     const ratings = {};
     for (const row of ratingRows) {
       const rec = ratings[row.recipe_id] || (ratings[row.recipe_id] = { sum: 0, count: 0, mine: 0 });
@@ -9001,14 +9248,6 @@ async function handleApi(route, body, env, request) {
       ratings[id] = { avg: rec.count ? rec.sum / rec.count : null, count: rec.count, mine: rec.mine };
     }
 
-    const cookReach = visibleRecipeClause(me.cookbookId, "r.");
-    const cookRows = (await env.DB.prepare(
-      "SELECT c.recipe_id, COUNT(*) AS n, MAX(c.cooked_on) AS last, " +
-      "SUM(CASE WHEN u.cookbook_id = ? THEN 1 ELSE 0 END) AS ourn " +
-      "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
-      "JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE (" + cookReach.clause + ") AND u.cookbook_id IN (" + voices.sql + ") GROUP BY c.recipe_id"
-    ).bind(me.cookbookId, ...cookReach.binds, ...voices.binds).all()).results || [];
     const cooks = {};
     for (const row of cookRows) {
       cooks[row.recipe_id] = {
@@ -9018,65 +9257,30 @@ async function handleApi(route, body, env, request) {
       };
     }
 
-    /* The only cook log entries that still travel with a sync: recent cooks
-       by somebody else on a recipe of ours, which is the one thing the
-       notifications page cannot work out for itself. Everything older has
-       already been read once and is a scroll through the recipe away. */
-    const feedSince = new Date(Date.now() - COOK_FEED_DAYS * 86400000).toISOString();
-    const cookFeed = ((await env.DB.prepare(
-      "SELECT c.comment_id, c.recipe_id, c.username, c.comment, c.cooked_on, c.created_at " +
-      "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
-      "JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE r.cookbook_id = ? AND u.cookbook_id IN (" + voices.sql + ") AND c.username_lc != ? " +
-      "AND c.created_at >= ? ORDER BY c.created_at DESC LIMIT " + COOK_FEED_MAX
-    ).bind(me.cookbookId, ...voices.binds, me.usernameLc, feedSince).all()).results || []).map(c => ({
+    const cookFeed = cookFeedRows.map(c => ({
       commentId: c.comment_id, recipeId: c.recipe_id, username: c.username,
       comment: c.comment, cookedOn: c.cooked_on, createdAt: c.created_at
     }));
 
-    /* Marks belong to the cookbook, not the person: a household stars once. */
-    const markRows = (await env.DB.prepare(
-      "SELECT recipe_id, kind FROM recipe_marks WHERE cookbook_id = ?"
-    ).bind(me.cookbookId).all()).results || [];
     const marks = { pin: [], star: [], later: [] };
     for (const m of markRows) if (marks[m.kind]) marks[m.kind].push(m.recipe_id);
 
-    /* Who our own private recipes have been handed to. */
-    const shareRows = (await env.DB.prepare(
-      "SELECT s.recipe_id, s.cookbook_id FROM recipe_shares s " +
-      "JOIN recipes r ON r.recipe_id = s.recipe_id WHERE r.cookbook_id = ?"
-    ).bind(me.cookbookId).all()).results || [];
     const shares = {};
     for (const row of shareRows) {
       const label = labelFor[row.cookbook_id];
       if (label) (shares[row.recipe_id] = shares[row.recipe_id] || []).push(label);
     }
 
-    /* The whole calendar, and the shelf of shopping lists without their
-       contents. A plan is a few dozen rows at most, so it rides along; a
-       list's items are fetched when the list is opened, which keeps a year
-       of shopping out of every sync. */
-    const schedRows = (await env.DB.prepare(
-      "SELECT entry_id, recipe_id, title, on_date, servings, created_by, created_at " +
-      "FROM schedule_entries WHERE cookbook_id = ? ORDER BY on_date, created_at"
-    ).bind(me.cookbookId).all()).results || [];
     const schedule = schedRows.map(row => ({
       entryId: row.entry_id, recipeId: row.recipe_id, title: row.title,
       date: row.on_date, servings: row.servings, by: row.created_by, createdAt: row.created_at
     }));
 
-    const listRows = (await env.DB.prepare(
-      "SELECT list_id, label, start_date, end_date, item_count, created_by, created_at, updated_at " +
-      "FROM grocery_lists WHERE cookbook_id = ? ORDER BY created_at DESC"
-    ).bind(me.cookbookId).all()).results || [];
     const groceryLists = listRows.map(row => ({
       listId: row.list_id, label: row.label, startDate: row.start_date, endDate: row.end_date,
       itemCount: row.item_count, by: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at
     }));
 
-    const prefRow = await env.DB.prepare(
-      "SELECT exclusions FROM cookbook_prefs WHERE cookbook_id = ?"
-    ).bind(me.cookbookId).first();
     let exclusions = DEFAULT_EXCLUSIONS.slice();
     if (prefRow) {
       try {
@@ -9087,11 +9291,8 @@ async function handleApi(route, body, env, request) {
 
     const mates = (memberMap[me.cookbookId] || []).filter(n => n.toLowerCase() !== me.usernameLc);
     /* When each link was made. The app folds everything a friend had already
-       shared before that moment into a single piece of news. */
-    const sinceRows = (await env.DB.prepare(
-      "SELECT CASE WHEN requester_cb = ? THEN addressee_cb ELSE requester_cb END AS cb, updated_at " +
-      "FROM friendships WHERE status = 'accepted' AND (requester_cb = ? OR addressee_cb = ?)"
-    ).bind(me.cookbookId, me.cookbookId, me.cookbookId).all()).results || [];
+       shared before that moment into a single piece of news. Same rows the
+       friend list was read from, so it is not asked for twice. */
     const sinceFor = {};
     for (const row of sinceRows) sinceFor[row.cb] = row.updated_at;
 
