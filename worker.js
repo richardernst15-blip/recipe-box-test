@@ -1401,6 +1401,9 @@ const state = {
   bodies: {},
   /* recipeId -> its cook log, fetched alongside the body. */
   logs: {},
+  /* Fingerprint of who we are linked to, straight from the last sync. When
+     it moves, every cached log is suspect - see applyLibrary. */
+  reach: null,
   /* recipeId -> { avg, count, mine } across every cookbook we can see. */
   ratings: {},
   /* recipeId -> { count, ours, last }. ours is what unlocks rating it. */
@@ -2040,6 +2043,16 @@ function applyLibrary(data) {
   /* A body cached before somebody else saved over it is no longer that
      recipe. Dropping it here is what makes the cache safe to keep for the
      whole session: every sync re-checks it against the version on the shelf. */
+  /* A reach change is the one thing that check cannot catch. Befriending a
+     household does not touch updated_at on any of its recipes, but it does
+     change what their cook logs are allowed to contain - so on a stamp move
+     the whole cache goes, rather than only the recipes that were edited. */
+  const nextReach = data.reach || null;
+  if (state.reach !== null && nextReach !== state.reach) {
+    state.bodies = {};
+    state.logs = {};
+  }
+  state.reach = nextReach;
   const live = {};
   state.recipes.forEach(function (r) { live[r.recipeId] = r.updatedAt; });
   Object.keys(state.bodies).forEach(function (id) {
@@ -8235,15 +8248,55 @@ async function applyVisibilityReach(env, recipeId, visibility) {
    and the batch body fetch, so those four can never drift apart on what
    counts as visible. prefix is "r." where the recipes table is joined under
    an alias and "" where it is the only table in the statement. */
-function visibleRecipeClause(cookbookId, friendCbs, prefix) {
+/* The cookbooks linked to this one, as a subquery rather than a list of
+   bound ids. D1 caps a statement at 100 bound parameters. Inlining one
+   placeholder per friend - twice over in the heaviest queries, once for
+   which recipes are reachable and once for whose ratings and cooks count -
+   put a hard ceiling of 48 friends on a sync, past which it threw rather
+   than slowed. Asking the friendships table directly costs two binds no
+   matter how many friends there are, and saves a round trip besides.
+
+   The union of the two halves is deliberate. There is an index on each of
+   requester_cb and addressee_cb, and this form uses both; an OR across the
+   two columns tends to collapse into a scan instead. */
+const FRIEND_CBS_SQL =
+  "SELECT addressee_cb AS cb FROM friendships WHERE requester_cb = ? AND status = 'accepted' " +
+  "UNION SELECT requester_cb AS cb FROM friendships WHERE addressee_cb = ? AND status = 'accepted'";
+
+/* The same set plus this cookbook itself: whose ratings and whose cook log
+   entries this cookbook is allowed to see. Three binds, always. */
+function voicesClause(cookbookId) {
+  return { sql: "SELECT ? AS cb UNION " + FRIEND_CBS_SQL,
+           binds: [cookbookId, cookbookId, cookbookId] };
+}
+
+/* A short fingerprint of who this cookbook is linked to, and when each link
+   was last touched. It changes when a friendship is made, unmade or remade,
+   and not otherwise - so the client can tell a sync where its reach moved
+   from an ordinary one where only recipes did.
+
+   This matters because a reach change alters things the per-recipe version
+   check cannot see. A friend's recipe keeps the same updated_at when you
+   befriend somebody new, but its cook log does not: the log is filtered by
+   who you are linked to, so a cached copy is quietly missing the new
+   household's entries, or still showing an old one's. */
+function reachStamp(pairs) {
+  const flat = pairs.slice().sort().join("|");
+  let h = 2166136261;
+  for (let i = 0; i < flat.length; i++) {
+    h ^= flat.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return pairs.length + "-" + (h >>> 0).toString(36);
+}
+
+function visibleRecipeClause(cookbookId, prefix) {
   const p = prefix || "";
   const binds = [cookbookId];
   let clause = p + "cookbook_id = ?";
-  if (friendCbs.length) {
-    clause += " OR (" + p + "visibility = 'friends' AND " + p + "cookbook_id IN (" +
-      placeholders(friendCbs.length) + "))";
-    binds.push(...friendCbs);
-  }
+  clause += " OR (" + p + "visibility = 'friends' AND " + p + "cookbook_id IN (" +
+    FRIEND_CBS_SQL + "))";
+  binds.push(cookbookId, cookbookId);
   /* A recipe handed to this cookbook specifically - which is what the
      selective tier is - or one they pinned from a share link. */
   clause += " OR " + p + "recipe_id IN (SELECT recipe_id FROM recipe_shares WHERE cookbook_id = ?)";
@@ -8900,7 +8953,7 @@ async function handleApi(route, body, env, request) {
        description, its tags and two numbers, and that is exactly what comes
        back - so opening the app costs one small row per recipe instead of
        every ingredient and every step of every recipe anyone can see. */
-    const reach = visibleRecipeClause(me.cookbookId, friendCbs, "");
+    const reach = visibleRecipeClause(me.cookbookId, "");
     const sql = "SELECT recipe_id, cookbook_id, owner_username, visibility, title, description, tags, " +
       "ing_names, created_at, updated_at, updated_by FROM recipes WHERE " + reach.clause;
     const recipeRows = (await env.DB.prepare(sql).bind(...reach.binds).all()).results || [];
@@ -8929,14 +8982,13 @@ async function handleApi(route, body, env, request) {
        arrive as totals rather than as rows: the box tab wants an average and
        a count, and the entries behind them are fetched only when a recipe is
        actually opened. */
-    const voices = [me.cookbookId].concat(friendCbs);
-    const vph = placeholders(voices.length);
-    const rateReach = visibleRecipeClause(me.cookbookId, friendCbs, "r.");
+    const voices = voicesClause(me.cookbookId);
+    const rateReach = visibleRecipeClause(me.cookbookId, "r.");
     const ratingRows = (await env.DB.prepare(
       "SELECT rt.recipe_id, rt.cookbook_id, rt.rating FROM recipe_ratings rt " +
       "JOIN recipes r ON r.recipe_id = rt.recipe_id " +
-      "WHERE (" + rateReach.clause + ") AND rt.cookbook_id IN (" + vph + ")"
-    ).bind(...rateReach.binds, ...voices).all()).results || [];
+      "WHERE (" + rateReach.clause + ") AND rt.cookbook_id IN (" + voices.sql + ")"
+    ).bind(...rateReach.binds, ...voices.binds).all()).results || [];
     const ratings = {};
     for (const row of ratingRows) {
       const rec = ratings[row.recipe_id] || (ratings[row.recipe_id] = { sum: 0, count: 0, mine: 0 });
@@ -8949,14 +9001,14 @@ async function handleApi(route, body, env, request) {
       ratings[id] = { avg: rec.count ? rec.sum / rec.count : null, count: rec.count, mine: rec.mine };
     }
 
-    const cookReach = visibleRecipeClause(me.cookbookId, friendCbs, "r.");
+    const cookReach = visibleRecipeClause(me.cookbookId, "r.");
     const cookRows = (await env.DB.prepare(
       "SELECT c.recipe_id, COUNT(*) AS n, MAX(c.cooked_on) AS last, " +
       "SUM(CASE WHEN u.cookbook_id = ? THEN 1 ELSE 0 END) AS ourn " +
       "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
       "JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE (" + cookReach.clause + ") AND u.cookbook_id IN (" + vph + ") GROUP BY c.recipe_id"
-    ).bind(me.cookbookId, ...cookReach.binds, ...voices).all()).results || [];
+      "WHERE (" + cookReach.clause + ") AND u.cookbook_id IN (" + voices.sql + ") GROUP BY c.recipe_id"
+    ).bind(me.cookbookId, ...cookReach.binds, ...voices.binds).all()).results || [];
     const cooks = {};
     for (const row of cookRows) {
       cooks[row.recipe_id] = {
@@ -8975,9 +9027,9 @@ async function handleApi(route, body, env, request) {
       "SELECT c.comment_id, c.recipe_id, c.username, c.comment, c.cooked_on, c.created_at " +
       "FROM comments c JOIN recipes r ON r.recipe_id = c.recipe_id " +
       "JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE r.cookbook_id = ? AND u.cookbook_id IN (" + vph + ") AND c.username_lc != ? " +
+      "WHERE r.cookbook_id = ? AND u.cookbook_id IN (" + voices.sql + ") AND c.username_lc != ? " +
       "AND c.created_at >= ? ORDER BY c.created_at DESC LIMIT " + COOK_FEED_MAX
-    ).bind(me.cookbookId, ...voices, me.usernameLc, feedSince).all()).results || []).map(c => ({
+    ).bind(me.cookbookId, ...voices.binds, me.usernameLc, feedSince).all()).results || []).map(c => ({
       commentId: c.comment_id, recipeId: c.recipe_id, username: c.username,
       comment: c.comment, cookedOn: c.cooked_on, createdAt: c.created_at
     }));
@@ -9050,6 +9102,7 @@ async function handleApi(route, body, env, request) {
 
     return jsonResponse({
       me: { username: me.username, cookbookId: me.cookbookId, household: labelFor[me.cookbookId] },
+      reach: reachStamp(sinceRows.map(r => r.cb + "@" + r.updated_at)),
       recipes,
       ratings,
       cooks,
@@ -9769,16 +9822,16 @@ async function handleApi(route, body, env, request) {
     try { found = await loadRecipeForReader(env, me, id); }
     catch (e) { return jsonResponse({ gone: true }); }
 
-    const voices = [me.cookbookId].concat(await friendCookbooks(env, me.cookbookId));
+    const voices = voicesClause(me.cookbookId);
     const countRow = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM comments c JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + placeholders(voices.length) + ")"
-    ).bind(id, ...voices).first();
+      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + voices.sql + ")"
+    ).bind(id, ...voices.binds).first();
     const lastRow = await env.DB.prepare(
       "SELECT c.username FROM comments c JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + placeholders(voices.length) + ") " +
+      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + voices.sql + ") " +
       "ORDER BY c.created_at DESC LIMIT 1"
-    ).bind(id, ...voices).first();
+    ).bind(id, ...voices.binds).first();
 
     return jsonResponse({
       updatedAt: found.row.updated_at,
@@ -9948,13 +10001,13 @@ async function handleApi(route, body, env, request) {
     const found = await loadRecipeForReader(env, me, String(body.recipeId || ""));
     let data;
     try { data = JSON.parse(found.row.data); } catch (e) { throw new ApiError(500, "That recipe could not be read."); }
-    const voices = [me.cookbookId].concat(await friendCookbooks(env, me.cookbookId));
+    const voices = voicesClause(me.cookbookId);
     const logRows = (await env.DB.prepare(
       "SELECT c.comment_id, c.username, c.username_lc, c.comment, c.cooked_on, c.created_at " +
       "FROM comments c JOIN users u ON u.username_lc = c.username_lc " +
-      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + placeholders(voices.length) + ") " +
+      "WHERE c.recipe_id = ? AND u.cookbook_id IN (" + voices.sql + ") " +
       "ORDER BY c.cooked_on DESC, c.created_at DESC"
-    ).bind(found.row.recipe_id, ...voices).all()).results || [];
+    ).bind(found.row.recipe_id, ...voices.binds).all()).results || [];
     return jsonResponse({
       recipeId: found.row.recipe_id,
       updatedAt: found.row.updated_at,
@@ -9976,8 +10029,7 @@ async function handleApi(route, body, env, request) {
     const ids = Array.isArray(body.recipeIds)
       ? body.recipeIds.map(x => String(x || "")).filter(Boolean).slice(0, MAX_BODY_BATCH) : [];
     if (!ids.length) return jsonResponse({ bodies: [] });
-    const friendCbs = await friendCookbooks(env, me.cookbookId);
-    const reach = visibleRecipeClause(me.cookbookId, friendCbs, "");
+    const reach = visibleRecipeClause(me.cookbookId, "");
     const rows = (await env.DB.prepare(
       "SELECT recipe_id, data, updated_at FROM recipes WHERE recipe_id IN (" +
       placeholders(ids.length) + ") AND (" + reach.clause + ")"
