@@ -198,8 +198,25 @@ html.doc-scroll{ overscroll-behavior-y:none; }
    grows and shrinks as the toolbar folds and vh would be measuring the wrong
    one. Scoped to doc-scroll because the shell layout sizes itself. */
 html.doc-scroll body{ min-height:calc(100vh + 1px); min-height:calc(100dvh + 1px); }
+/* The same hair of scroll again, on the root this time, because the body is
+   not always the thing holding the document open. A modal pins the body -
+   position:fixed - which takes it out of flow and collapses the document to
+   nothing, and a document with nothing to scroll is precisely what hands the
+   phantom toolbar space back. That is the shift every dialog came up with in
+   portrait: the page jumped and a band of cream appeared below the tab bar,
+   undimmed because it is chrome rather than page. Carrying the pixel on
+   <html> means the document's scrollability does not change as a dialog
+   opens and closes, so nothing ever cues iOS to re-reserve the bar. */
+html.doc-scroll{ min-height:calc(100vh + 1px); min-height:calc(100dvh + 1px); }
 html.doc-scroll #app{ height:auto; overflow:visible; overscroll-behavior:auto; }
-html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:100%; }
+/* And the pinned body gives up its own full-height minimum while it is
+   pinned. position:fixed plus a viewport-sized height is the one shape iOS
+   miscalculates the bottom of - the same shape the app shell was abandoned
+   for - so a locked body must not be allowed to become it. Its height falls
+   to whatever the page behind actually is; the canvas colour covers the rest,
+   so there is nothing to see. */
+html.doc-scroll body[data-scroll-lock]{ position:fixed; left:0; right:0; width:100%;
+  min-height:0; }
 
 /* ---- swipe from the left edge to leave a recipe ------------------------ */
 /* The page is dragged sideways by the gesture, and a transform counts
