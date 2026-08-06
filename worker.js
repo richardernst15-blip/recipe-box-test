@@ -291,8 +291,11 @@ html.doc-scroll #app{ overflow-x:clip; }
 .search-wrap input{ width:100%; padding:12px 14px 12px 40px; border-radius:10px; border:1px solid var(--border); background:#fff; font-size:15px; }
 .search-wrap input:focus{ outline:2px solid var(--accent); outline-offset:-1px; }
 .search-wrap .icon{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--ink-muted); pointer-events:none; }
-.filter-row{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-.filter-row select{ flex:1; min-width:148px; padding:9px 10px; border-radius:9px; border:1px solid var(--border); background:#fff; font-size:13.5px; color:var(--ink); }
+/* Two even halves, always. Letting the household button size itself to its
+   label left the sort menu with a different width on every screen. */
+.filter-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+.filter-row > *{ min-width:0; }
+.filter-row select{ width:100%; padding:9px 10px; border-radius:9px; border:1px solid var(--border); background:#fff; font-size:13.5px; color:var(--ink); }
 
 /* chips */
 .chips{ display:flex; flex-wrap:wrap; align-content:flex-start; gap:8px; margin-bottom:16px; max-height:112px; overflow-y:auto; padding-right:2px; }
@@ -324,6 +327,11 @@ html.doc-scroll #app{ overflow-x:clip; }
 .owner-badge{ font-size:11px; color:var(--accent); background:#fbf0ef; border-radius:999px; padding:3px 9px; display:inline-block; }
 .card-foot{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
 .cooked-count{ font-size:12.5px; color:var(--ink-muted); }
+/* Sits under the credit line on your own recipes only. Muted on purpose:
+   it is news, not a score. */
+.mark-interest{ display:flex; align-items:center; gap:6px; margin:-4px 0 10px;
+  font-size:12.5px; color:var(--ink-muted); }
+.mark-interest svg{ flex-shrink:0; color:var(--accent); }
 
 .stars{ display:inline-flex; align-items:center; gap:4px; font-size:12.5px; color:var(--ink-muted); }
 .stars svg{ width:14px; height:14px; }
@@ -900,7 +908,11 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .search-wrap input { flex:1; }
 /* The field is its own positioning context so the clear button can sit
    inside the input's right edge rather than the row's. */
-.search-field{ position:relative; flex:1; display:flex; align-items:center; }
+.search-field{ position:relative; flex:1; min-width:0; display:flex; align-items:center; }
+/* The library row carries a second control, so the two share the width
+   evenly rather than the button taking only what its label needs. */
+.search-wrap.split .search-field{ flex:1 1 0; }
+.search-wrap.split .search-filter{ flex:1 1 0; min-width:0; justify-content:center; }
 .search-field input{ padding-right:40px; }
 .search-clear{ position:absolute; right:7px; top:50%; transform:translateY(-50%);
   display:none; align-items:center; justify-content:center; width:26px; height:26px; padding:0;
@@ -908,6 +920,7 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .search-clear.on{ display:flex; }
 .search-clear:active{ background:var(--border); }
 .search-filter { flex-shrink:0; display:flex; align-items:center; gap:5px; }
+.search-filter .flabel { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .search-filter.on { background:var(--accent); color:#fff; border-color:var(--accent); }
 .fcount { display:inline-block; flex-shrink:0; min-width:17px; padding:0 5px; border-radius:9px; background:var(--accent);
   color:#fff; font-size:11px; line-height:17px; text-align:center; margin-left:6px; }
@@ -915,6 +928,12 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .fcount.zero { visibility:hidden; }
 .search-filter.on .fcount { background:#fff; color:var(--accent); }
 .chip-clear { border-style:dashed; }
+
+/* One tap target per source, stacked, so the list reads as a menu rather
+   than as a row of buttons that happens to wrap. */
+.import-menu { display:flex; flex-direction:column; gap:8px; }
+.import-choice { display:flex; align-items:center; gap:10px; text-align:left; padding:13px 14px; font-size:14.5px; }
+.import-back { margin-bottom:10px; }
 
 /* A code and the thing it says, side by side. Stacks on a narrow screen so
    the code never shrinks below scanning size. */
@@ -1396,6 +1415,13 @@ const IMPORT_SOURCES = {
       "know. If part of the photo is unreadable, leave that field empty rather than inventing it.",
     tail: "Recipe to convert: the attached photo."
   },
+  /* Not an AI prompt at all - it reads recipes this app exported. It sits in
+     the same menu because "where is this recipe coming from" is the same
+     question either way. */
+  json: {
+    label: "From JSON", icon: "upload",
+    intro: "", tail: ""
+  },
   chat: {
     label: "From AI Chat", icon: "chat",
     intro: "Use the recipe we have worked out in this conversation. Do not fetch anything and do not " +
@@ -1462,6 +1488,9 @@ const state = {
   friendsTab: "friends",
   myHousehold: "",
   marks: { pin: [], star: [], later: [] },
+  /* recipeId -> how many other cookbooks pinned, favorited or saved it. Only
+     ever populated for recipes of our own, and never says which cookbooks. */
+  markCounts: {},
   shares: {},
   /* Which friends are ticked in the visibility sheet, while it is open. */
   visDraft: [],
@@ -1517,7 +1546,7 @@ const state = {
   importErrors: [],
   importVisibility: "",
   importFileName: null,
-  urlToRecipe: { mode: "url", url: "", text: "", prompt: "", generated: false },
+  urlToRecipe: { mode: "", url: "", text: "", prompt: "", generated: false },
   busy: false,
   _tagList: [],
   _showAllLogs: false,
@@ -2167,6 +2196,7 @@ function applyLibrary(data) {
   });
   state.myHousehold = (data.me && data.me.household) || state.session.username;
   state.marks = data.marks || { pin: [], star: [], later: [] };
+  state.markCounts = data.markCounts || {};
   state.shares = data.shares || {};
   state.mates = data.mates || [];
   state.friends = data.friends || [];
@@ -2876,6 +2906,22 @@ function fmtWhen(iso) {
 function friendLabels() { return state.friends.map(f => f.label); }
 function isMarked(kind, id) { return (state.marks[kind] || []).indexOf(id) >= 0; }
 
+/* What other cookbooks have done with a recipe of yours. A tally and nothing
+   else - naming them would turn a quiet compliment into a thing that has to
+   be acknowledged, and the counts are per cookbook rather than per person
+   because that is how a mark is stored. */
+function MarkInterestHTML(r) {
+  if (!r || !r.ours) return "";
+  const c = state.markCounts[r.recipeId] || {};
+  const parts = [];
+  if (c.pin) parts.push(c.pin + " pinned it");
+  if (c.star) parts.push(c.star + " favorited it");
+  if (c.later) parts.push(c.later + " saved it for later");
+  if (!parts.length) return "";
+  return '<div class="mark-interest" title="Counted by cookbook. Which ones is not shown.">' +
+    icon("users", 13) + '<span>' + esc(parts.join(" · ")) + '</span></div>';
+}
+
 /* Star, save for later, pin. Icon only on a card, worded in full on the
    recipe itself. Pinning your own recipe is meaningless, so it is hidden. */
 const MARK_DEFS = [
@@ -3030,9 +3076,12 @@ function sortRecipes(list) {
   if (s === "az") arr.sort((a, b) => a.title.localeCompare(b.title));
   else if (s === "za") arr.sort((a, b) => b.title.localeCompare(a.title));
   else if (s === "oldest") arr.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  /* Most cooked means the cook log, not the number of people who have rated
+     it. Reading the rating count here put a dish cooked twice below one
+     cooked once, because ratings are one per cookbook and cooks are not. */
   else if (s === "cooked") arr.sort((a, b) => {
     const A = statsFor(a.recipeId), B = statsFor(b.recipeId);
-    return (B.count - A.count) || ((B.avg || 0) - (A.avg || 0)) || a.title.localeCompare(b.title);
+    return (B.cooks - A.cooks) || ((B.avg || 0) - (A.avg || 0)) || a.title.localeCompare(b.title);
   });
   else if (s === "rated") arr.sort((a, b) => {
     const A = statsFor(a.recipeId), B = statsFor(b.recipeId);
@@ -3123,9 +3172,9 @@ function LibraryViewHTML() {
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="search-wrap">' +
+      '<div class="search-wrap split">' +
         '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
-          '<input id="search-input" type="text" placeholder="Search recipes, ingredients, tags..." value="' + esc(state.search) + '" oninput="Actions.onSearchInput(this.value)" />' +
+          '<input id="search-input" type="text" placeholder="Search recipes..." value="' + esc(state.search) + '" oninput="Actions.onSearchInput(this.value)" />' +
           '<button id="search-clear" class="search-clear' + (state.search ? " on" : "") + '" title="Clear search" onclick="Actions.clearSearch()">' + icon("x", 15) + '</button>' +
         '</div>' +
         '<button id="filter-btn" class="btn search-filter' + (state.activeTags.length ? " on" : "") + '" onclick="Actions.openFilters()">' +
@@ -3140,8 +3189,8 @@ function LibraryViewHTML() {
     '</div>';
 }
 function FilterButtonInnerHTML() {
-  return icon("sliders", 16) +
-    (state.activeTags.length ? ' <span class="fcount">' + state.activeTags.length + '</span>' : "");
+  return icon("sliders", 16) + '<span class="flabel">Inspiration</span>' +
+    (state.activeTags.length ? '<span class="fcount">' + state.activeTags.length + '</span>' : "");
 }
 function updateResultsSection() {
   const el = document.getElementById("results-section");
@@ -4252,6 +4301,7 @@ function DetailViewHTML(r) {
          rest is on its way. */
       (r.description ? '<p class="detail-desc">' + esc(r.description) + '</p>' : "") +
       creditRow +
+      MarkInterestHTML(r) +
       schedBanner +
       markRow +
       schedRow +
@@ -4300,7 +4350,7 @@ function IngredientRowHTML(ing, idx, total) {
         unitSelectHTML("ing-cunit-" + idx, ing.customaryUnit, CUSTOMARY_UNITS) +
         '<div class="step-controls">' +
           '<button class="icon-btn" ' + (idx === 0 ? "disabled" : "") + ' onclick="Actions.moveIngredient(' + idx + ',-1)">' + icon("chevronUp", 15) + '</button>' +
-          '<button class="icon-btn" ' + (idx === total - 1 ? "disabled" : "") + ' onclick="Actions.moveIngredient(' + idx + ',1)">' + icon("chevronDown", 15) + '</button>' +
+          '<button class="icon-btn" id="ing-down-' + idx + '" ' + (idx === total - 1 ? "disabled" : "") + ' onclick="Actions.moveIngredient(' + idx + ',1)">' + icon("chevronDown", 15) + '</button>' +
         '</div>' +
         '<button class="icon-btn" onclick="Actions.removeIngredient(' + idx + ')">' + icon("x", 16) + '</button>' +
       '</div>' +
@@ -4315,26 +4365,68 @@ function StepRowHTML(s, idx, total) {
       '<input class="timer-input" id="step-timer-' + idx + '" type="number" placeholder="min" value="' + esc(s.timerMinutes) + '" />' +
       '<div class="step-controls">' +
         '<button class="icon-btn" ' + (idx === 0 ? "disabled" : "") + ' onclick="Actions.moveStep(' + idx + ',-1)">' + icon("chevronUp", 15) + '</button>' +
-        '<button class="icon-btn" ' + (idx === total - 1 ? "disabled" : "") + ' onclick="Actions.moveStep(' + idx + ',1)">' + icon("chevronDown", 15) + '</button>' +
+        '<button class="icon-btn" id="step-down-' + idx + '" ' + (idx === total - 1 ? "disabled" : "") + ' onclick="Actions.moveStep(' + idx + ',1)">' + icon("chevronDown", 15) + '</button>' +
       '</div>' +
       '<button class="icon-btn" onclick="Actions.removeStep(' + idx + ')">' + icon("x", 16) + '</button>' +
     '</div>';
 }
 
-/* Four ways in, all the same shape: get a prompt, run it wherever you keep
-   your AI, paste the answer back. Named for where the recipe is coming from
-   rather than for the step you are about to do. */
-const IMPORT_ORDER = ["url", "text", "photo", "chat"];
+/* Five ways in. Four of them are the same shape - get a prompt, run it
+   wherever you keep your AI, paste the answer back - and the fifth is the
+   bulk JSON reader. One button opens the menu; the menu swaps the sheet's
+   own body for whichever one you pick, with a way back. */
+const IMPORT_ORDER = ["url", "text", "photo", "chat", "json"];
 function ImportButtonsHTML() {
-  return IMPORT_ORDER.map(function (mode) {
-    const s = IMPORT_SOURCES[mode];
-    return '<button class="btn btn-sm" onclick="Actions.openImportPrompt(\\'' + mode + '\\')">' +
-      icon(s.icon, 14) + ' ' + s.label + '</button>';
-  }).join("");
+  return '<button class="btn btn-sm" onclick="Actions.openImportPrompt()">' +
+    icon("upload", 14) + ' Import</button>';
+}
+function ImportMenuHTML() {
+  return '<p class="helper-text">Where is the recipe coming from? Everything here fills in the ' +
+    'form below so you can check it before it saves.</p>' +
+    '<div class="import-menu">' +
+    IMPORT_ORDER.map(function (mode) {
+      const s = IMPORT_SOURCES[mode];
+      return '<button class="btn import-choice" onclick="Actions.pickImportMode(\\'' + mode + '\\')">' +
+        icon(s.icon, 16) + '<span>' + s.label + '</span></button>';
+    }).join("") + '</div>';
+}
+function ImportBackLinkHTML() {
+  return '<button class="back-link import-back" onclick="Actions.backToImportMenu()">' +
+    icon("chevronLeft", 16) + ' All import options</button>';
+}
+
+/* A row is blank when nothing has been typed into it. The unit menus are
+   deliberately not consulted: an ingredient that is only a "tbsp" is not an
+   ingredient, and a step that is only a timer is not a step. */
+function blankIngredient() {
+  return { name: "", metricValue: "", metricUnit: "g", customaryValue: "", customaryUnit: "cup", notes: "" };
+}
+function blankStep() { return { text: "", timerMinutes: "" }; }
+function ingredientIsBlank(i) {
+  return !String((i && i.name) || "").trim() && String((i && i.metricValue) || "") === "" &&
+    String((i && i.customaryValue) || "") === "" && !String((i && i.notes) || "").trim();
+}
+function stepIsBlank(s) {
+  return !String((s && s.text) || "").trim() && String((s && s.timerMinutes) || "") === "";
+}
+/* There is always one empty row waiting at the bottom of each list, which is
+   what replaced the Add buttons. Idempotent, so calling it on every render
+   never grows the form on its own. */
+function ensureTrailingBlankRows(d) {
+  if (!d) return;
+  if (!d.ingredients.length || !ingredientIsBlank(d.ingredients[d.ingredients.length - 1])) {
+    d.ingredients.push(blankIngredient());
+  }
+  if (!d.steps.length || !stepIsBlank(d.steps[d.steps.length - 1])) d.steps.push(blankStep());
+}
+function stripBlankRows(d) {
+  d.ingredients = d.ingredients.filter(i => !ingredientIsBlank(i));
+  d.steps = d.steps.filter(s => !stepIsBlank(s));
 }
 
 function EditViewHTML() {
   const d = state.editDraft;
+  ensureTrailingBlankRows(d);
   const isNew = state.editIsNew;
   const ingredientsHTML = d.ingredients.map((ing, idx) => IngredientRowHTML(ing, idx, d.ingredients.length)).join("");
   const stepsHTML = d.steps.map((s, idx) => StepRowHTML(s, idx, d.steps.length)).join("");
@@ -4377,10 +4469,10 @@ function EditViewHTML() {
         '<select id="f-macro-source"><option value="site"' + (d.macrosPerServing.source === "site" ? " selected" : "") + '>From source</option>' +
           '<option value="estimated"' + (d.macrosPerServing.source === "estimated" ? " selected" : "") + '>Estimated</option></select>' +
       '</div>' +
-      '<div class="subhead-row"><span class="small-label">Ingredients</span><button class="btn btn-sm btn-ghost" onclick="Actions.addIngredient()">' + icon("plus", 14) + ' Add</button></div>' +
-      '<div id="ingredients-container">' + ingredientsHTML + '</div>' +
-      '<div class="subhead-row" style="margin-top:16px"><span class="small-label">Steps</span><button class="btn btn-sm btn-ghost" onclick="Actions.addStep()">' + icon("plus", 14) + ' Add</button></div>' +
-      '<div id="steps-container">' + stepsHTML + '</div>' +
+      '<div class="subhead-row"><span class="small-label">Ingredients</span></div>' +
+      '<div id="ingredients-container" oninput="Actions.growIngredients()" onchange="Actions.growIngredients()">' + ingredientsHTML + '</div>' +
+      '<div class="subhead-row" style="margin-top:16px"><span class="small-label">Steps</span></div>' +
+      '<div id="steps-container" oninput="Actions.growSteps()" onchange="Actions.growSteps()">' + stepsHTML + '</div>' +
       '<div class="field" style="margin-top:16px"><label>Source URL (optional)</label>' +
         '<input type="url" id="f-source-url" inputmode="url" autocomplete="off" ' +
           'placeholder="https://..." value="' + esc((d.source && d.source.url) || "") + '" />' +
@@ -4553,7 +4645,7 @@ function FiltersModalHTML() {
       ((c.tags || []).length ? '<div class="fwrap">' + c.tags.map(t => box(t)).join("") + '</div>' : "") +
       (c.groups || []).map(g => group(g, catPanelKey(c))).join("") +
     '</details>').join("");
-  const html = modalShell("Filters",
+  const html = modalShell("Get Inspired",
     '<div class="filter-scroll"><div class="filter-body" onscroll="updateFilterScrollHint()">' +
       body + '</div></div>' +
     '<div class="edit-actions">' +
@@ -5109,6 +5201,9 @@ function ConfirmDeleteListModalHTML() {
 }
 
 function ImportModalHTML() {
+  return modalShell("Import recipes", ImportModalBodyHTML());
+}
+function ImportModalBodyHTML() {
   const parsed = state.importParsed;
   let summary = "";
   if (parsed.length || state.importErrors.length) {
@@ -5119,7 +5214,7 @@ function ImportModalHTML() {
       (parsed.length ? '<ul>' + parsed.map(p => '<li>' + esc(p.body.title) + '</li>').join("") + '</ul>' : "") +
     '</div>';
   }
-  return modalShell("Import recipes",
+  return '' +
     '<p class="helper-text">Paste from your clipboard, or choose a file — one JSON recipe per line. Every imported recipe is added to your cookbook with a new recipe ID.</p>' +
     '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">' +
       '<button class="btn" style="flex:1; min-width:140px" onclick="Actions.pasteImportFile()">' + icon("copy", 16) + ' Paste recipes</button>' +
@@ -5133,11 +5228,13 @@ function ImportModalHTML() {
       '<button class="' + (state.importVisibility === "friends" ? "active" : "") + '" onclick="Actions.setImportVisibility(\\'friends\\')">' + icon("globe", 15) + ' All friends</button>' +
     '</div></div>' +
     '<button class="btn btn-primary btn-block" ' + (parsed.length === 0 || !state.importVisibility ? "disabled" : "") +
-      ' onclick="Actions.confirmImport()">Import ' + (parsed.length || "") + ' recipe' + (parsed.length === 1 ? "" : "s") + '</button>');
+      ' onclick="Actions.confirmImport()">Import ' + (parsed.length || "") + ' recipe' + (parsed.length === 1 ? "" : "s") + '</button>';
 }
 
 function UrlToRecipeModalHTML() {
   const u = state.urlToRecipe;
+  if (!u.mode) return modalShell("Import", ImportMenuHTML());
+  if (u.mode === "json") return modalShell("From JSON", ImportBackLinkHTML() + ImportModalBodyHTML());
   const src = IMPORT_SOURCES[u.mode] || IMPORT_SOURCES.url;
   let step1;
   if (u.mode === "url") {
@@ -5155,6 +5252,7 @@ function UrlToRecipeModalHTML() {
       '</p>';
   }
   return modalShell(src.label,
+    ImportBackLinkHTML() +
     '<div class="step-block">' + step1 +
       '<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="Actions.generatePrompt()">Generate prompt</button>' +
     '</div>' +
@@ -6205,8 +6303,18 @@ Actions.toggleShare = function(i) {
   if (at >= 0) d._shareWith.splice(at, 1); else d._shareWith.push(key);
   renderApp();
 };
+/* Setting a mark is one tap and costs nothing. Taking one off can lose you a
+   recipe you no longer have any other route back to - an unpinned recipe from
+   a share link is gone from the box entirely - so the second tap asks. */
+const UNMARK_WARNINGS = {
+  pin: "Unpin this recipe? It comes out of your cookbook. Nothing of theirs is deleted, " +
+    "but you will need their link or their friendship to find it again.",
+  star: "Remove this from your favorites?",
+  later: "Take this off Saved for later?"
+};
 Actions.toggleMark = async function(kind, id) {
   const on = !isMarked(kind, id);
+  if (!on && !confirm(UNMARK_WARNINGS[kind] || "Remove this mark?")) return;
   const list = state.marks[kind] || (state.marks[kind] = []);
   if (on) list.push(id); else list.splice(list.indexOf(id), 1);
   renderApp();
@@ -6296,7 +6404,10 @@ Actions.openModal = function(name) {
   state.modalError = "";
   state._acctBusy = false;
   if (name === "import") { state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = ""; }
-  if (name === "urlToRecipe") state.urlToRecipe = { mode: state._nextImportMode || "url", url: "", text: "", prompt: "", generated: false };
+  if (name === "urlToRecipe") {
+    state.urlToRecipe = { mode: state._nextImportMode || "", url: "", text: "", prompt: "", generated: false };
+    state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = "";
+  }
   renderModal();
 };
 Actions.closeModal = function() { state.modal = null; state.modalError = ""; renderModal(); updateLibraryChrome(); };
@@ -6541,9 +6652,24 @@ Actions.exportAll = async function() {
 
 /* --- URL to recipe --- */
 Actions.openImportPrompt = function(mode) {
-  state._nextImportMode = mode;
+  state._nextImportMode = mode || "";
   Actions.openModal("urlToRecipe");
   state._nextImportMode = null;
+};
+/* Each choice gets a clean sheet: the URL you typed for one source is not the
+   text you meant to paste into another. */
+Actions.pickImportMode = function(mode) {
+  state.urlToRecipe = { mode: mode, url: "", text: "", prompt: "", generated: false };
+  if (mode === "json") {
+    state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = "";
+  }
+  state.modalError = "";
+  renderModal();
+};
+Actions.backToImportMenu = function() {
+  state.urlToRecipe = { mode: "", url: "", text: "", prompt: "", generated: false };
+  state.modalError = "";
+  renderModal();
 };
 Actions.generatePrompt = function() {
   const u = state.urlToRecipe;
@@ -6690,9 +6816,38 @@ Actions.setDraftVisibility = function(v) {
   state.editDraft.visibility = v;
   renderApp();
 };
+/* Typing in the last row conjures the next one. The row is appended to the
+   container rather than re-rendered into it, because a re-render would take
+   the caret out of the field being typed in. */
+function appendDraftRow(boxId, rowHTML, prevDownId) {
+  const box = document.getElementById(boxId);
+  if (!box || typeof box.insertAdjacentHTML !== "function") { renderApp(); return; }
+  box.insertAdjacentHTML("beforeend", rowHTML);
+  const prev = document.getElementById(prevDownId);
+  if (prev) prev.disabled = false;
+}
+Actions.growIngredients = function() {
+  const d = state.editDraft;
+  if (!d) return;
+  syncDraftFromDOM();
+  const n = d.ingredients.length;
+  if (!n || ingredientIsBlank(d.ingredients[n - 1])) return;
+  d.ingredients.push(blankIngredient());
+  appendDraftRow("ingredients-container",
+    IngredientRowHTML(d.ingredients[n], n, n + 1), "ing-down-" + (n - 1));
+};
+Actions.growSteps = function() {
+  const d = state.editDraft;
+  if (!d) return;
+  syncDraftFromDOM();
+  const n = d.steps.length;
+  if (!n || stepIsBlank(d.steps[n - 1])) return;
+  d.steps.push(blankStep());
+  appendDraftRow("steps-container", StepRowHTML(d.steps[n], n, n + 1), "step-down-" + (n - 1));
+};
 Actions.addIngredient = function() {
   syncDraftFromDOM();
-  state.editDraft.ingredients.push({ name: "", metricValue: "", metricUnit: "g", customaryValue: "", customaryUnit: "cup", notes: "" });
+  state.editDraft.ingredients.push(blankIngredient());
   renderApp();
 };
 Actions.removeIngredient = function(idx) {
@@ -6710,7 +6865,7 @@ Actions.moveIngredient = function(idx, dir) {
 };
 Actions.addStep = function() {
   syncDraftFromDOM();
-  state.editDraft.steps.push({ text: "", timerMinutes: "" });
+  state.editDraft.steps.push(blankStep());
   renderApp();
 };
 Actions.removeStep = function(idx) {
@@ -6731,6 +6886,8 @@ Actions.saveRecipeForm = async function() {
   const d = state.editDraft;
   if (!d.title || !d.title.trim()) { toast("Give the recipe a title first"); return; }
   if (!d.visibility) { toast("Choose who can see this first"); return; }
+  /* The spare row on the end of each list is scaffolding, not content. */
+  stripBlankRows(d);
   if (state.busy) return;
   state.busy = true;
   const body = normalizeBody(Object.assign({}, d, {
@@ -9714,6 +9871,14 @@ async function handleApi(route, body, env, request) {
       env.DB.prepare(
         "SELECT recipe_id, kind FROM recipe_marks WHERE cookbook_id = ?"
       ).bind(me.cookbookId),
+      /* How many other cookbooks have pinned, favorited or saved one of our
+         own recipes. A count and nothing more: which cookbooks they are is
+         deliberately not returned, so the owner cannot work out who. */
+      env.DB.prepare(
+        "SELECT m.recipe_id, m.kind, COUNT(*) AS n FROM recipe_marks m " +
+        "JOIN recipes r ON r.recipe_id = m.recipe_id " +
+        "WHERE r.cookbook_id = ? AND m.cookbook_id != ? GROUP BY m.recipe_id, m.kind"
+      ).bind(me.cookbookId, me.cookbookId),
       /* Who our own private recipes have been handed to. */
       env.DB.prepare(
         "SELECT s.recipe_id, s.cookbook_id FROM recipe_shares s " +
@@ -9746,10 +9911,11 @@ async function handleApi(route, body, env, request) {
     const cookRows = at(7);
     const cookFeedRows = at(8);
     const markRows = at(9);
-    const shareRows = at(10);
-    const schedRows = at(11);
-    const listRows = at(12);
-    const prefRow = at(13)[0] || null;
+    const markCountRows = at(10);
+    const shareRows = at(11);
+    const schedRows = at(12);
+    const listRows = at(13);
+    const prefRow = at(14)[0] || null;
 
     const friendCbs = sinceRows.map(r => r.cb);
 
@@ -9821,6 +9987,12 @@ async function handleApi(route, body, env, request) {
     const marks = { pin: [], star: [], later: [] };
     for (const m of markRows) if (marks[m.kind]) marks[m.kind].push(m.recipe_id);
 
+    const markCounts = {};
+    for (const row of markCountRows) {
+      const rec = markCounts[row.recipe_id] || (markCounts[row.recipe_id] = { pin: 0, star: 0, later: 0 });
+      if (row.kind in rec) rec[row.kind] = Number(row.n) || 0;
+    }
+
     const shares = {};
     for (const row of shareRows) {
       const label = labelFor[row.cookbook_id];
@@ -9865,6 +10037,7 @@ async function handleApi(route, body, env, request) {
       cooks,
       cookFeed,
       marks,
+      markCounts,
       shares,
       schedule,
       meals: shapeMeals(mealRaw.meals, mealLabel, me.cookbookId),
