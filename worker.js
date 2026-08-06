@@ -1,10 +1,15 @@
-// worker.js — Recipe Box, all-in-one Cloudflare Worker
+// worker.js — Kindred Cupboard, all-in-one Cloudflare Worker
 //
 // One Worker serves the app itself and the D1-backed API behind it:
 // accounts, recipes, cook-log comments and friendships.
 //
 // Routes:
-//   POST /api/session            -> open or create a cookbook
+//   POST /api/auth/signup        -> create an account, join a cookbook, or claim an old one
+//   POST /api/auth/login         -> email and password in, session token out
+//   POST /api/auth/logout        -> drop this device's session token
+//   POST /api/account/password   -> change the password
+//   POST /api/account/email      -> change the email address on the account
+//   POST /api/admin/password     -> hand somebody a temporary password (admin token)
 //   POST /api/library            -> everything visible to the signed-in user
 //   POST /api/recipe/body        -> one recipe in full, with its cook log
 //   POST /api/recipe/bodies      -> several recipes in full, for lists and exports
@@ -92,12 +97,12 @@ const APP_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Recipe Box" />
+<meta name="apple-mobile-web-app-title" content="Kindred Cupboard" />
 <meta name="theme-color" content="#f2ede1" />
 <link rel="apple-touch-icon" href="/icon.png" />
 <link rel="icon" href="/icon.png" />
 <link rel="manifest" href="/manifest.webmanifest" />
-<title>Recipe Box</title>
+<title>Kindred Cupboard</title>
 <style>
 :root{
   --bg:#f2ede1; --card:#ffffff; --card-alt:#faf6ee;
@@ -446,6 +451,22 @@ html.doc-scroll #app{ overflow-x:clip; }
 .welcome-wrap{ max-width:440px; margin:0 auto; padding:44px 18px 80px; }
 .welcome-wrap h1{ font-size:30px; margin:14px 0 6px; }
 .welcome-wrap .lede{ font-size:14.5px; color:var(--ink-muted); margin:0 0 22px; line-height:1.5; }
+.brand-row{ display:flex; align-items:center; gap:10px; }
+.brand-row h1{ margin:0; }
+.gate{ display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+.gate-btn{ width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:14px 15px; border-radius:11px; border:1px solid var(--border); background:var(--card);
+  font-size:16px; font-weight:600; color:inherit; cursor:pointer; font-family:inherit; }
+.gate-btn.open{ border-color:var(--accent); color:var(--accent); }
+.gate-panel{ border:1px solid var(--border-light); border-radius:11px; padding:14px;
+  background:var(--card-alt); margin-top:-4px; }
+.lbl-row{ display:flex; align-items:center; gap:6px; }
+.info-dot{ background:none; border:0; padding:0; margin:0; line-height:0; color:var(--ink-muted);
+  display:inline-flex; cursor:pointer; }
+.info-note{ font-size:12.5px; line-height:1.5; color:var(--ink-muted); background:var(--card);
+  border:1px solid var(--border-light); border-radius:8px; padding:9px 10px; margin:6px 0 0; }
+.check-row{ display:flex; align-items:flex-start; gap:9px; padding:8px 0; font-size:14px; line-height:1.45; }
+.check-row input{ margin-top:2px; flex:none; }
 .warn-box{ background:#fdf4e4; border:1px solid #e6cf9a; color:#6b4a10; font-size:12.5px; line-height:1.55; padding:11px 12px; border-radius:9px; margin:0 0 16px; }
 .warn-box b{ color:#4d340a; }
 .code-box{ font-size:17px; letter-spacing:.1em; background:var(--card-alt); border:1px solid var(--border-light); border-radius:9px; padding:13px; text-align:center; margin-bottom:10px; word-break:break-all; }
@@ -1378,14 +1399,8 @@ function buildImportPrompt(mode, payload) {
     .replace("{{TAIL}}", src.tail) + (IMPORT_CARRIES_PAYLOAD[mode] ? (payload || "") : "");
 }
 
-const COOKBOOK_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-function randomCookbookId() {
-  const bytes = new Uint8Array(10);
-  (window.crypto || window.msCrypto).getRandomValues(bytes);
-  let s = "";
-  for (let i = 0; i < 10; i++) s += COOKBOOK_ALPHABET[bytes[i] % COOKBOOK_ALPHABET.length];
-  return s;
-}
+/* Cookbook IDs are issued by the server now, so there is nothing here to
+   invent one with. */
 
 /* ====================================================================== */
 /* State                                                                   */
@@ -1465,6 +1480,21 @@ const state = {
   lockedInfo: null,
   modal: null,
   modalError: "",
+  /* The welcome screen, held in state rather than in the DOM: opening an
+     info note or ticking the household box redraws the panel, and the fields
+     have to survive that. _wPass never leaves memory. */
+  _wMode: "",
+  _wName: "",
+  _wEmail: "",
+  _wEmail2: "",
+  _wPass: "",
+  _wLoginEmail: "",
+  _wLoginPass: "",
+  _wCookbook: "",
+  _wJoin: false,
+  _wSave: true,
+  _wInfo: {},
+  _wBusy: false,
   intent: null,
   importParsed: [],
   importErrors: [],
@@ -2001,16 +2031,61 @@ function takeStashedIntent() {
   } catch (e) { return null; }
 }
 
-const SESSION_KEY = "recipeBoxSession";
+const SESSION_KEY = "kindredCupboardSession";
+/* Where the token lives is the whole of what the tick box decides. Ticked,
+   it goes in localStorage and survives the app being closed; unticked, it
+   goes in sessionStorage and does not. Reading looks in both, because the
+   preference can change between one sign-in and the next. */
 function loadSession() {
-  try { const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; }
-  catch (e) { return null; }
+  const raw = (function () {
+    try { const a = localStorage.getItem(SESSION_KEY); if (a) return a; } catch (e) {}
+    try { const b = sessionStorage.getItem(SESSION_KEY); if (b) return b; } catch (e) {}
+    return null;
+  })();
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw);
+    /* Anything from before sign-in became an account is not a session any
+       more, whatever it says. */
+    return s && s.token ? s : null;
+  } catch (e) { return null; }
 }
-function saveSession(s) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) {} }
-function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+function saveSession(s) {
+  const raw = JSON.stringify(s);
+  try {
+    if (s && s.persist) { localStorage.setItem(SESSION_KEY, raw); sessionStorage.removeItem(SESSION_KEY); }
+    else { sessionStorage.setItem(SESSION_KEY, raw); localStorage.removeItem(SESSION_KEY); }
+  } catch (e) {}
+}
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+}
+
+/* The expensive half of the password hash, and the only place the plaintext
+   is ever handled. The salt is the address rather than a random string kept
+   on the server, so signing in never has to ask who you are before it can
+   ask for the password - which would be a way of finding out which addresses
+   have accounts on them. 100,000 rounds is the ceiling Cloudflare allows and
+   costs a few hundred milliseconds here, where there is no CPU budget to
+   blow. What leaves the device is the result; the password does not. */
+async function derivePasswordKey(email, password) {
+  const enc = new TextEncoder();
+  const saltBuf = await crypto.subtle.digest(
+    "SHA-256", enc.encode("kindredcupboard:" + String(email || "").trim().toLowerCase()));
+  const key = await crypto.subtle.importKey(
+    "raw", enc.encode(String(password == null ? "" : password)), { name: "PBKDF2" }, false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: new Uint8Array(saltBuf), iterations: 100000, hash: "SHA-256" }, key, 256);
+  const bytes = new Uint8Array(bits);
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, "0");
+  return out;
+}
+const SUPPORT_EMAIL = "kindredcupboard@gmail.com";
 
 async function API(path, payload) {
-  const creds = state.session ? { username: state.session.username, cookbookId: state.session.cookbookId } : {};
+  const creds = (state.session && state.session.token) ? { token: state.session.token } : {};
   const res = await fetch("/api/" + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2164,30 +2239,89 @@ async function loadBodyInto(recipeId, after) {
 /* ====================================================================== */
 /* Render: Welcome                                                         */
 /* ====================================================================== */
+const INFO_NAME = "Shown to your friends when you add a recipe, add a friend, or comment on a recipe.";
+const INFO_EMAIL = "Never shared outside the app, or with anyone else using it. It is used only to sign you in, to recover your account, and for critical messages from Kindred Cupboard.";
+function infoDot(key) {
+  return '<button class="info-dot" title="What this is for" onclick="Actions.wInfo(\\'' + key + '\\')">' +
+    icon("info", 15) + '</button>';
+}
+function infoNote(key, text) {
+  return (state._wInfo && state._wInfo[key]) ? '<p class="info-note">' + esc(text) + '</p>' : "";
+}
+function gateButtonHTML(key, label) {
+  const open = state._wMode === key;
+  return '<button class="gate-btn' + (open ? " open" : "") + '" onclick="Actions.wMode(\\'' + key + '\\')">' +
+    '<span>' + label + '</span>' + icon(open ? "chevronUp" : "chevronDown", 18) + '</button>';
+}
+function saveBoxHTML(id) {
+  return '<label class="check-row"><input type="checkbox" id="' + id + '"' +
+    (state._wSave ? " checked" : "") + ' />' +
+    '<span>Save my sign-in on this device, so I stay signed in.</span></label>';
+}
+function newUserPanelHTML() {
+  return '<div class="gate-panel">' +
+    '<div class="field"><label class="lbl-row">Name' + infoDot("name") + '</label>' +
+      '<input type="text" id="w-name" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wName || "") + '" />' +
+      infoNote("name", INFO_NAME) +
+    '</div>' +
+    '<div class="field"><label class="lbl-row">Email' + infoDot("email") + '</label>' +
+      '<input type="email" id="w-email" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wEmail || "") + '" />' +
+      infoNote("email", INFO_EMAIL) +
+    '</div>' +
+    '<div class="field"><label>Confirm email</label>' +
+      '<input type="email" id="w-email2" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wEmail2 || "") + '" />' +
+    '</div>' +
+    '<div class="field"><label>Password</label>' +
+      '<input type="password" id="w-pass" autocomplete="new-password" value="' + esc(state._wPass || "") + '" />' +
+      '<p class="helper-text">At least 8 characters. It is scrambled on this device before it is sent, so nobody else ever sees it.</p>' +
+    '</div>' +
+    saveBoxHTML("w-save") +
+    '<label class="check-row"><input type="checkbox" id="w-join"' + (state._wJoin ? " checked" : "") +
+      ' onchange="Actions.wToggleJoin()" />' +
+      '<span>Join a household cookbook I have been given the ID for.</span></label>' +
+    (state._wJoin
+      ? '<div class="field"><label>Cookbook ID</label>' +
+          '<input type="text" id="w-cookbook" class="font-mono" style="text-transform:uppercase" autocapitalize="characters" autocorrect="off" spellcheck="false" value="' + esc(state._wCookbook || "") + '" />' +
+          '<p class="helper-text">Ten letters and numbers, from whoever you share a kitchen with. A cookbook holds two people; anyone else you cook with is a friend instead.</p>' +
+        '</div>'
+      : "") +
+    '<button class="btn btn-primary btn-block" ' + (state._wBusy ? "disabled" : "") +
+      ' onclick="Actions.signUp()">' + (state._wBusy ? "Working…" : "Create my account") + '</button>' +
+  '</div>';
+}
+function existingUserPanelHTML() {
+  return '<div class="gate-panel">' +
+    '<div class="field"><label class="lbl-row">Email' + infoDot("lemail") + '</label>' +
+      '<input type="email" id="w-lemail" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wLoginEmail || "") + '" />' +
+      infoNote("lemail", INFO_EMAIL) +
+    '</div>' +
+    '<div class="field"><label>Password</label>' +
+      '<input type="password" id="w-lpass" autocomplete="current-password" value="' + esc(state._wLoginPass || "") + '" />' +
+    '</div>' +
+    saveBoxHTML("w-lsave") +
+    '<button class="btn btn-primary btn-block" ' + (state._wBusy ? "disabled" : "") +
+      ' onclick="Actions.signIn()">' + (state._wBusy ? "Working…" : "Sign in") + '</button>' +
+    '<p class="helper-text" style="margin-top:12px">Forgotten your password? Write to ' + SUPPORT_EMAIL +
+      ' from the address on your account and we will send you a temporary one.</p>' +
+    '<p class="helper-text">Had a cookbook here before there were passwords? Choose <b>New User</b>, tick the household box, and enter your old name and Cookbook ID to carry it over.</p>' +
+  '</div>';
+}
 function WelcomeViewHTML() {
-  const suggested = state._suggestedCookbook || (state._suggestedCookbook = randomCookbookId());
   return '' +
     '<div class="welcome-wrap">' +
-      '<span style="color:var(--accent)">' + icon("book", 34) + '</span>' +
-      '<h1 class="font-display">The Recipe Box</h1>' +
-      '<p class="lede">Pick a name your friends will see on your ratings and comments, then start a cookbook — or enter an existing Cookbook ID to open it on this device or join a household cookbook.</p>' +
+      '<div class="brand-row"><span style="color:var(--accent)">' + icon("book", 32) + '</span>' +
+        '<h1 class="font-display">Kindred Cupboard</h1></div>' +
+      '<p class="lede">Break bread together. Store and share recipes together. Craft meals together. Kindred Cupboard makes it easy.</p>' +
       (state._arrivedByScan
-        ? '<div class="import-summary">Someone shared something with you. Set up a cookbook here and it will pick up where the code left off.</div>'
+        ? '<div class="import-summary">Someone shared something with you. Set up an account here and it will pick up where the code left off.</div>'
         : "") +
       (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
-      '<div class="field"><label>Username</label>' +
-        '<input type="text" id="w-username" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wUsername || "") + '" />' +
+      '<div class="gate">' +
+        gateButtonHTML("new", "New User") +
+        (state._wMode === "new" ? newUserPanelHTML() : "") +
+        gateButtonHTML("existing", "Existing User") +
+        (state._wMode === "existing" ? existingUserPanelHTML() : "") +
       '</div>' +
-      '<div class="field"><label>Cookbook ID</label>' +
-        '<input type="text" id="w-cookbook" class="font-mono code-box" style="text-transform:uppercase" autocapitalize="characters" autocorrect="off" spellcheck="false" value="' + esc(state._wCookbook !== undefined ? state._wCookbook : suggested) + '" />' +
-        '<div style="display:flex; gap:8px">' +
-          '<button class="btn btn-sm" onclick="Actions.regenerateCookbook()">' + icon("sync", 14) + ' New ID</button>' +
-          '<button class="btn btn-sm" onclick="Actions.copyCookbookField()">' + icon("copy", 14) + ' Copy</button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="warn-box"><b>Your Cookbook ID is your password.</b> Anyone who has it can read, edit and delete every recipe in the cookbook, and is linked to all of its friends. Share it only with people you cook with, or to open the same cookbook on another one of your devices. It cannot be reset or recovered, so save it somewhere safe.</div>' +
-      '<button class="btn btn-primary btn-block" onclick="Actions.submitSession()">Open my recipe box</button>' +
-      '<p class="helper-text" style="margin-top:14px">Coming back? Use the same username and Cookbook ID as before. Sharing a kitchen? Use your own username with the household\\'s Cookbook ID.</p>' +
     '</div>';
 }
 
@@ -2537,7 +2671,7 @@ function qrSvgHTML(text, px, label) {
 /* The three things a code can point at. Only the app link is anonymous; the
    other two name something, so they are built where they are shown rather
    than kept anywhere. */
-function appQrHTML(px) { return qrSvgHTML(appUrl(), px, "QR code linking to The Recipe Box"); }
+function appQrHTML(px) { return qrSvgHTML(appUrl(), px, "QR code linking to Kindred Cupboard"); }
 function recipeQrUrl(recipeId) { return appUrl() + "?r=" + encodeURIComponent(recipeId); }
 function recipeQrHTML(recipeId, px) {
   return qrSvgHTML(recipeQrUrl(recipeId), px, "QR code linking to this recipe");
@@ -2924,7 +3058,7 @@ function ResultsSectionHTML() {
   let body;
   if (results.length === 0) {
     body = state.recipes.length === 0
-      ? '<div class="empty-state"><p class="title font-display">Your recipe box is empty</p>' +
+      ? '<div class="empty-state"><p class="title font-display">Your cupboard is empty</p>' +
         '<p class="sub">Add your first recipe, import a file, or add a friend to see theirs.</p>' +
         '<div class="empty-actions"><button class="btn btn-primary" onclick="Actions.openNew()">Add a recipe</button>' +
         '<button class="btn" onclick="Actions.openModal(\\'import\\')">Import a file</button></div></div>'
@@ -2960,7 +3094,7 @@ function LibraryViewHTML() {
       '<div class="header">' +
         '<div class="header-brand">' +
           '<img class="app-icon" src="/icon.png" alt="" />' +
-          '<h1 class="font-display">The Recipe Box</h1>' +
+          '<h1 class="font-display">Kindred Cupboard</h1>' +
         '</div>' +
         '<div class="header-row2">' +
           '<p class="header-who"><b>' + esc(state.session.username) + '</b> · ' +
@@ -3698,7 +3832,7 @@ function FriendsViewHTML() {
     '<div class="qr-side">' +
       '<div class="qr-holder">' + friendQrHTML(state.session.username, 126) + '</div>' +
       '<div class="qr-side-text">' +
-        '<p class="helper-text" style="margin:0">Opens The Recipe Box, sets them up with a cookbook if they need one, and then asks them to confirm sending <b>' +
+        '<p class="helper-text" style="margin:0">Opens Kindred Cupboard, sets them up with a cookbook if they need one, and then asks them to confirm sending <b>' +
           esc(state.session.username) + '</b> a friend request. You still have to accept it.</p>' +
       '</div>' +
     '</div>' +
@@ -3711,7 +3845,7 @@ function FriendsViewHTML() {
   return '' +
     '<div class="wrap">' +
       '<div class="detail-top">' +
-        '<button class="back-link" onclick="Actions.backToLibrary()">' + icon("chevronLeft", 18) + ' Recipe box</button>' +
+        '<button class="back-link" onclick="Actions.backToLibrary()">' + icon("chevronLeft", 18) + ' Cupboard</button>' +
       '</div>' +
       '<h1 class="detail-title font-display" style="font-size:26px">Friends</h1>' +
       '<div class="tabs">' +
@@ -3872,7 +4006,7 @@ function ChangeBannerHTML() {
   let text, action;
   if (c.kind === "gone") {
     text = "This recipe has been deleted.";
-    action = '<button class="btn btn-sm" onclick="Actions.backToLibrary()">Back to the recipe box</button>';
+    action = '<button class="btn btn-sm" onclick="Actions.backToLibrary()">Back to the cupboard</button>';
   } else if (c.kind === "editing") {
     text = esc(c.who) + " is editing this recipe right now.";
     action = "";
@@ -3971,7 +4105,7 @@ function CookLogHTML(r) {
    reached by a bare link shows the food and none of the conversation. */
 function RecipeBodyHTML(r, hideLog) {
   /* The card's worth of a recipe is on screen already - name, description,
-     tags. This is everything the recipe box tab deliberately does not carry,
+     tags. This is everything the cupboard tab deliberately does not carry,
      so on the first render of a recipe there is nothing here yet. */
   if (!hasBody(r)) {
     return '<div class="body-loading"><p class="no-rating">Loading the rest of this recipe…</p></div>' +
@@ -4039,7 +4173,7 @@ function RecipeBodyHTML(r, hideLog) {
 
 function DetailViewHTML(r) {
   if (!r) return '<div class="wrap"><p style="padding-top:30px">That recipe is no longer in your box.</p>' +
-    '<button class="btn" onclick="Actions.backToLibrary()">Back to the recipe box</button></div>';
+    '<button class="btn" onclick="Actions.backToLibrary()">Back to the cupboard</button></div>';
   const st = statsFor(r.recipeId);
   const action = '<div class="detail-top-actions">' +
     CookModeButtonHTML() +
@@ -4090,7 +4224,7 @@ function DetailViewHTML(r) {
   return '' +
     '<div class="wrap">' +
       '<div class="detail-top">' +
-        '<button class="back-link" onclick="Actions.backToLibrary()">' + icon("chevronLeft", 18) + ' Recipe box</button>' +
+        '<button class="back-link" onclick="Actions.backToLibrary()">' + icon("chevronLeft", 18) + ' Cupboard</button>' +
         action +
       '</div>' +
       '<div id="change-banner">' + ChangeBannerHTML() + '</div>' +
@@ -5021,6 +5155,14 @@ function UrlToRecipeModalHTML() {
 
 function AccountModalHTML() {
   return modalShell("Settings",
+    '<div class="field"><label>Email</label>' +
+      '<div class="code-box" style="font-size:14px; letter-spacing:0">' + esc(state.session.email || "—") + '</div>' +
+      '<p class="helper-text">This is what you sign in with. It is never shown to anyone else using the app.</p>' +
+    '</div>' +
+    '<div style="display:flex; gap:8px; margin-bottom:18px">' +
+      '<button class="btn btn-sm" onclick="Actions.openModal(\\'changePassword\\')">' + icon("lock", 14) + ' Change password</button>' +
+      '<button class="btn btn-sm" onclick="Actions.openModal(\\'changeEmail\\')">' + icon("pencil", 14) + ' Change email</button>' +
+    '</div>' +
     '<div class="field"><label>Your name</label>' +
       '<input type="text" id="set-name" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state.session.username) + '" />' +
       '<button class="btn btn-sm btn-block" onclick="Actions.saveUsername()">Save name</button>' +
@@ -5049,8 +5191,53 @@ function AccountModalHTML() {
         '<button class="btn btn-sm btn-primary" onclick="Actions.runRetag(true)">Apply</button>' +
       '</div>' +
       '<div class="adm-out" id="adm-out">Not run yet.</div>' +
+      '<p class="helper-text" style="margin-top:14px">Temporary password. The address and the password are turned into a ' +
+        'hash here, in this browser, before either is sent — the server never sees the password itself. ' +
+        'It signs every one of their devices out.</p>' +
+      '<div class="field"><label>Their email address</label>' +
+        '<input type="email" id="adm-email" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>' +
+      '<div class="field"><label>Temporary password</label>' +
+        '<input type="text" id="adm-temp" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>' +
+      '<button class="btn btn-sm" onclick="Actions.adminSetPassword()">Set temporary password</button>' +
     '</details>' +
     '<button class="btn btn-block" onclick="Actions.signOut()">' + icon("logout", 15) + ' Sign out on this device</button>');
+}
+
+function ChangePasswordModalHTML() {
+  return modalShell("Change password",
+    '<p class="helper-text">Your current password, then the new one twice. Every other device you are signed in on will be signed out.</p>' +
+    '<div class="field"><label>Current password</label>' +
+      '<input type="password" id="cp-current" autocomplete="current-password" /></div>' +
+    '<div class="field"><label>New password</label>' +
+      '<input type="password" id="cp-new" autocomplete="new-password" /></div>' +
+    '<div class="field"><label>New password again</label>' +
+      '<input type="password" id="cp-new2" autocomplete="new-password" /></div>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" ' + (state._acctBusy ? "disabled" : "") +
+      ' onclick="Actions.changePassword()">' + (state._acctBusy ? "Working…" : "Change password") + '</button></div>');
+}
+
+function ChangeEmailModalHTML() {
+  return modalShell("Change email",
+    '<p class="helper-text">Your current address, the new one, and your password. Every other device you are signed in on will be signed out.</p>' +
+    '<div class="field"><label>Current email</label>' +
+      '<input type="email" id="ce-current" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>' +
+    '<div class="field"><label>New email</label>' +
+      '<input type="email" id="ce-new" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>' +
+    '<div class="field"><label>Password</label>' +
+      '<input type="password" id="ce-pass" autocomplete="current-password" /></div>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" ' + (state._acctBusy ? "disabled" : "") +
+      ' onclick="Actions.changeEmail()">' + (state._acctBusy ? "Working…" : "Change email") + '</button></div>');
+}
+
+function ContactModalHTML() {
+  return modalShell("Contact info",
+    '<p class="helper-text">Questions, bug reports, or a password you cannot get back — write in and we will answer.</p>' +
+    '<div class="code-box" style="font-size:15px; letter-spacing:0">' +
+      '<a href="mailto:' + SUPPORT_EMAIL + '">' + SUPPORT_EMAIL + '</a></div>' +
+    '<button class="btn btn-block" onclick="Actions.copySupportEmail()">' + icon("copy", 15) + ' Copy address</button>' +
+    '<p class="helper-text" style="margin-top:14px">For a lost password, write from the address on your account. There is no automatic reset — a temporary password is sent back by hand.</p>');
 }
 
 function LockedModalHTML() {
@@ -5170,7 +5357,7 @@ function LinkMarkButtonsHTML(lr, mine) {
 function LinkRecipeViewHTML() {
   const signedIn = !!state.session;
   const back = signedIn
-    ? '<button class="back-link" onclick="Actions.leaveLinkView()">' + icon("chevronLeft", 18) + ' Recipe box</button>'
+    ? '<button class="back-link" onclick="Actions.leaveLinkView()">' + icon("chevronLeft", 18) + ' Cupboard</button>'
     : '<button class="back-link" onclick="Actions.leaveLinkView()">' + icon("chevronLeft", 18) + ' Account Login</button>';
   if (!state.linkRecipe) {
     return '<div class="wrap"><div class="detail-top">' + back + '</div>' +
@@ -5283,6 +5470,7 @@ function ActionsModalHTML() {
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.reload();">' + icon("sync", 16) + ' Reload from server</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'shareApp\\');">' + icon("share", 16) + ' Share App</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'account\\');">' + icon("lock", 16) + ' Settings</button>' +
+      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'contact\\');">' + icon("info", 16) + ' Contact Info</button>' +
     '</div>');
 }
 
@@ -5398,6 +5586,9 @@ function renderModal() {
   else if (state.modal === "import") root.innerHTML = ImportModalHTML();
   else if (state.modal === "urlToRecipe") root.innerHTML = UrlToRecipeModalHTML();
   else if (state.modal === "account") root.innerHTML = AccountModalHTML();
+  else if (state.modal === "changePassword") root.innerHTML = ChangePasswordModalHTML();
+  else if (state.modal === "changeEmail") root.innerHTML = ChangeEmailModalHTML();
+  else if (state.modal === "contact") root.innerHTML = ContactModalHTML();
   else if (state.modal === "shareApp") root.innerHTML = ShareAppModalHTML();
   else if (state.modal === "share") root.innerHTML = ShareRecipeModalHTML();
   else if (state.modal === "confirmIntent") root.innerHTML = ConfirmIntentModalHTML();
@@ -5455,7 +5646,7 @@ function renderAppInner() {
     return;
   }
   if (!state.session) { app.innerHTML = WelcomeViewHTML(); renderTabBar(); renderModal(); return; }
-  if (state.loading) { app.innerHTML = '<div class="loading">Loading your recipe box…</div>'; renderTabBar(); renderModal(); return; }
+  if (state.loading) { app.innerHTML = '<div class="loading">Loading your cupboard…</div>'; renderTabBar(); renderModal(); return; }
   if (state.view === "library") app.innerHTML = LibraryViewHTML();
   else if (state.view === "detail") app.innerHTML = DetailViewHTML(getActiveRecipe());
   else if (state.view === "friends") app.innerHTML = FriendsViewHTML();
@@ -5495,59 +5686,111 @@ function placeCalendarScroll() {
 /* ====================================================================== */
 const Actions = {};
 
-/* --- session --- */
-Actions.regenerateCookbook = function() {
-  state._wUsername = document.getElementById("w-username").value;
-  state._wCookbook = randomCookbookId();
+/* --- session ---
+   Every field on the welcome screen is read back into state before anything
+   redraws, because opening an info note or ticking the household box redraws
+   the whole panel - and a form that loses what you typed the moment you ask
+   it a question is not a form anybody finishes. */
+function fieldValue(id) { const el = document.getElementById(id); return el ? el.value : null; }
+function fieldChecked(id) { const el = document.getElementById(id); return el ? el.checked : null; }
+function captureWelcome() {
+  const pairs = [["w-name", "_wName"], ["w-email", "_wEmail"], ["w-email2", "_wEmail2"],
+                 ["w-pass", "_wPass"], ["w-cookbook", "_wCookbook"],
+                 ["w-lemail", "_wLoginEmail"], ["w-lpass", "_wLoginPass"]];
+  pairs.forEach(function (p) {
+    const v = fieldValue(p[0]);
+    if (v !== null) state[p[1]] = v;
+  });
+  const join = fieldChecked("w-join");
+  if (join !== null) state._wJoin = join;
+  const save = fieldChecked("w-save");
+  if (save !== null) state._wSave = save;
+  const saveL = fieldChecked("w-lsave");
+  if (saveL !== null) state._wSave = saveL;
+}
+Actions.wMode = function(which) {
+  captureWelcome();
+  state._wMode = state._wMode === which ? "" : which;
   state.modalError = "";
   renderApp();
 };
-Actions.copyCookbookField = async function() {
-  const v = document.getElementById("w-cookbook").value.trim().toUpperCase();
-  try { await navigator.clipboard.writeText(v); toast("Cookbook ID copied"); }
-  catch (e) { toast("Couldn't copy — select the text instead"); }
+Actions.wInfo = function(key) {
+  captureWelcome();
+  state._wInfo = state._wInfo || {};
+  state._wInfo[key] = !state._wInfo[key];
+  renderApp();
 };
+Actions.wToggleJoin = function() { captureWelcome(); renderApp(); };
+function welcomeFailed(message) { state._wBusy = false; state.modalError = message; renderApp(); }
 Actions.copyCookbookId = async function() {
   try { await navigator.clipboard.writeText(state.session.cookbookId); toast("Cookbook ID copied"); }
   catch (e) { toast("Couldn't copy — select the text instead"); }
 };
-Actions.submitSession = async function() {
-  const username = document.getElementById("w-username").value.trim();
-  const cookbookId = document.getElementById("w-cookbook").value.trim().toUpperCase();
-  state._wUsername = username;
-  state._wCookbook = cookbookId;
-  if (!username) { state.modalError = "Enter a username."; renderApp(); return; }
-  await openSession({ username, cookbookId });
-};
-async function openSession(payload) {
+
+Actions.signUp = async function() {
+  captureWelcome();
+  const name = (state._wName || "").trim();
+  const email = (state._wEmail || "").trim();
+  const email2 = (state._wEmail2 || "").trim();
+  const pass = state._wPass || "";
+  const join = !!state._wJoin;
+  const cookbookId = (state._wCookbook || "").trim().toUpperCase();
+  if (!name) { welcomeFailed("Enter the name your friends will see."); return; }
+  if (!email) { welcomeFailed("Enter your email address."); return; }
+  if (email.toLowerCase() !== email2.toLowerCase()) { welcomeFailed("The two email addresses do not match."); return; }
+  if (pass.length < 8) { welcomeFailed("Pick a password of at least 8 characters."); return; }
+  if (join && !cookbookId) { welcomeFailed("Paste the Cookbook ID you were given, or untick the household box."); return; }
+  state._wBusy = true; state.modalError = ""; renderApp();
+  let clientHash;
+  try { clientHash = await derivePasswordKey(email, pass); }
+  catch (e) { welcomeFailed("This browser cannot scramble the password. Try a current browser."); return; }
   try {
-    const data = await API("session", payload);
-    state.session = { username: data.username, cookbookId: data.cookbookId };
-    saveSession(state.session);
-    state.modalError = "";
-    state.view = "library";
-    await refreshLibrary(true);
-    if (data.created) toast("Cookbook created — save your Cookbook ID somewhere safe");
-    else if (data.joined) toast("You joined a cookbook shared with " + (data.members - 1) + " other " + (data.members === 2 ? "person" : "people"));
-    /* They arrived by scanning something and have only now got a cookbook. */
-    const waiting = takeStashedIntent();
-    if (waiting) await Actions.beginIntent(waiting);
-  } catch (e) {
-    if (e.code === "CONFIRM_JOIN") {
-      if (confirm(e.message + "\\n\\nJoin this cookbook?")) {
-        await openSession(Object.assign({}, payload, { confirmJoin: true }));
-        return;
-      }
-      state.modalError = "";
-      renderApp();
-      return;
-    }
-    state.modalError = e.message;
-    renderApp();
-  }
+    const data = await API("auth/signup", {
+      name: name, email: email, emailConfirm: email2, clientHash: clientHash,
+      joinCookbook: join, cookbookId: join ? cookbookId : ""
+    });
+    await enterSession(data);
+    if (data.claimed) toast("Welcome back — your cookbook is now on an email and password");
+    else if (data.joined) toast("You joined a cookbook shared with " + (data.members - 1) + " other person");
+    else toast("Account created — your cupboard is ready");
+  } catch (e) { welcomeFailed(e.message); }
+};
+
+Actions.signIn = async function() {
+  captureWelcome();
+  const email = (state._wLoginEmail || "").trim();
+  const pass = state._wLoginPass || "";
+  if (!email) { welcomeFailed("Enter your email address."); return; }
+  if (!pass) { welcomeFailed("Enter your password."); return; }
+  state._wBusy = true; state.modalError = ""; renderApp();
+  let clientHash;
+  try { clientHash = await derivePasswordKey(email, pass); }
+  catch (e) { welcomeFailed("This browser cannot scramble the password. Try a current browser."); return; }
+  try {
+    const data = await API("auth/login", { email: email, clientHash: clientHash });
+    await enterSession(data);
+  } catch (e) { welcomeFailed(e.message); }
+};
+
+async function enterSession(data) {
+  state.session = {
+    token: data.token, username: data.username, cookbookId: data.cookbookId,
+    email: data.email || "", persist: !!state._wSave
+  };
+  saveSession(state.session);
+  state._wBusy = false;
+  state._wPass = ""; state._wLoginPass = "";
+  state.modalError = "";
+  state.view = "library";
+  await refreshLibrary(true);
+  /* They arrived by scanning something and have only now got a cookbook. */
+  const waiting = takeStashedIntent();
+  if (waiting) await Actions.beginIntent(waiting);
 }
-Actions.signOut = function() {
-  if (!confirm("Sign out on this device? You will need your username and Cookbook ID to get back in.")) return;
+
+Actions.signOut = async function() {
+  if (!confirm("Sign out on this device? You will need your email address and password to get back in.")) return;
+  try { await API("auth/logout", {}); } catch (e) {}
   clearSession();
   state.session = null;
   state.modal = null;
@@ -5558,10 +5801,80 @@ Actions.signOut = function() {
   state.cooks = {};
   state.cookFeed = [];
   state.bodyPending = {};
-  state._wUsername = "";
-  state._wCookbook = undefined;
-  state._suggestedCookbook = null;
+  state._wMode = "";
+  state._wName = ""; state._wEmail = ""; state._wEmail2 = ""; state._wPass = "";
+  state._wLoginEmail = ""; state._wLoginPass = "";
+  state._wJoin = false; state._wCookbook = "";
+  state._wInfo = {};
+  state._wBusy = false;
   renderApp();
+};
+
+/* --- account --- */
+Actions.copySupportEmail = async function() {
+  try { await navigator.clipboard.writeText(SUPPORT_EMAIL); toast("Address copied"); }
+  catch (e) { toast("Couldn't copy — select the text instead"); }
+};
+function acctFailed(message) { state._acctBusy = false; state.modalError = message; renderModal(); }
+Actions.changePassword = async function() {
+  const email = (state.session && state.session.email) || "";
+  if (!email) { acctFailed("Sign out and back in first, so this device knows your address."); return; }
+  const current = fieldValue("cp-current") || "";
+  const next = fieldValue("cp-new") || "";
+  const again = fieldValue("cp-new2") || "";
+  if (!current) { acctFailed("Enter your current password."); return; }
+  if (next.length < 8) { acctFailed("Pick a new password of at least 8 characters."); return; }
+  if (next !== again) { acctFailed("The two new passwords do not match."); return; }
+  state._acctBusy = true; state.modalError = ""; renderModal();
+  try {
+    const currentClientHash = await derivePasswordKey(email, current);
+    const newClientHash = await derivePasswordKey(email, next);
+    await API("account/password", { currentClientHash: currentClientHash, newClientHash: newClientHash });
+    state._acctBusy = false;
+    Actions.closeModal();
+    toast("Password changed");
+  } catch (e) { acctFailed(e.message); }
+};
+/* The address is half the salt the password is hashed with, so changing it
+   means re-deriving against the new one. Both go up together: the old hash
+   proves who is asking, the new one is what gets stored. */
+Actions.changeEmail = async function() {
+  const current = (fieldValue("ce-current") || "").trim();
+  const next = (fieldValue("ce-new") || "").trim();
+  const pass = fieldValue("ce-pass") || "";
+  if (!current || !next) { acctFailed("Enter both addresses."); return; }
+  if (current.toLowerCase() === next.toLowerCase()) { acctFailed("That is already your email address."); return; }
+  if (!pass) { acctFailed("Enter your password."); return; }
+  state._acctBusy = true; state.modalError = ""; renderModal();
+  try {
+    const clientHash = await derivePasswordKey(current, pass);
+    const newClientHash = await derivePasswordKey(next, pass);
+    const data = await API("account/email", {
+      currentEmail: current, newEmail: next,
+      clientHash: clientHash, newClientHash: newClientHash
+    });
+    state.session.email = data.email;
+    saveSession(state.session);
+    state._acctBusy = false;
+    Actions.closeModal();
+    toast("Email changed");
+  } catch (e) { acctFailed(e.message); }
+};
+Actions.adminSetPassword = async function() {
+  const token = (fieldValue("adm-token") || "").trim();
+  const email = (fieldValue("adm-email") || "").trim();
+  const temp = fieldValue("adm-temp") || "";
+  const out = document.getElementById("adm-out");
+  if (!token || !email || temp.length < 8) {
+    if (out) out.textContent = "Needs the admin token, an address, and a password of at least 8 characters.";
+    return;
+  }
+  if (out) out.textContent = "Working…";
+  try {
+    const clientHash = await derivePasswordKey(email, temp);
+    const data = await API("admin/password", { token: token, email: email, clientHash: clientHash });
+    if (out) out.textContent = "Temporary password set for " + data.username + ". They are signed out everywhere.";
+  } catch (e) { if (out) out.textContent = "Failed: " + e.message; }
 };
 
 /* --- navigation --- */
@@ -5964,6 +6277,7 @@ Actions.openModal = function(name) {
   setTabsDown(false);
   state.modal = name;
   state.modalError = "";
+  state._acctBusy = false;
   if (name === "import") { state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = ""; }
   if (name === "urlToRecipe") state.urlToRecipe = { mode: state._nextImportMode || "url", url: "", text: "", prompt: "", generated: false };
   renderModal();
@@ -6203,7 +6517,7 @@ Actions.exportAll = async function() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = (hasActiveFilter() ? "recipe-box-selected-" : "recipe-box-export-") + todayStr() + ".txt";
+  a.download = (hasActiveFilter() ? "kindred-cupboard-selected-" : "kindred-cupboard-export-") + todayStr() + ".txt";
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
@@ -6522,7 +6836,7 @@ Actions.toggleVisShare = async function(i) {
     await refreshLibrary(false);
   } catch (e) { toast(e.message); }
 };
-/* Leaving a shared recipe. With an account that means the recipe box; with
+/* Leaving a shared recipe. With an account that means the cupboard; with
    none it means the sign-in screen, which is what the back button offers to
    somebody reading a link cold. The stashed intent survives either way, so
    making a cookbook lands them back on the recipe they came for. */
@@ -8199,18 +8513,98 @@ function cleanString(v, max) {
   return typeof v === "string" ? v.trim().slice(0, max || 500) : "";
 }
 
-/* ---------------------------------------------------------------- auth -- */
+/* ---------------------------------------------------------------- auth --
+   Passwords are hashed twice, in two different places, for one reason: a
+   Worker on the free plan gets ten milliseconds of CPU per request, and a
+   password hash worth the name costs more than that. So the expensive half
+   runs in the browser - PBKDF2-HMAC-SHA256, 100,000 rounds, salted with the
+   address so no round trip is needed to look the salt up - and the server
+   only ever sees the result. What arrives here is therefore a password
+   equivalent, not a password: it must not be stored as it stands, or the
+   database would hold the very thing an attacker needs to sign in. Hence the
+   cheap second pass with a per-account random salt, which is one SHA-256 and
+   costs nothing. The plaintext never leaves the device, and none of this
+   changes if the Worker moves to Paid. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const CLIENT_HASH_RE = /^[0-9a-f]{64}$/;
+const TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const SESSION_DAYS = 90;
+/* A cookbook is a household, and a household is two people. Anyone else you
+   cook with is a friend, which shares recipes without handing over the keys
+   to the whole cupboard. */
+const MAX_COOKBOOK_MEMBERS = 2;
+const BAD_COOKBOOK_TRIES = 5;
+
+function hexOf(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, "0");
+  return out;
+}
+async function sha256Hex(text) {
+  return hexOf(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+}
+/* The cheap second pass. Salted per account so two people who chose the same
+   password do not land on the same row value. */
+function serverHash(salt, clientHash) { return sha256Hex(String(salt) + ":" + String(clientHash)); }
+/* Comparison that does not return early on the first wrong character. */
+function sameSecret(a, b) {
+  const x = String(a || ""), y = String(b || "");
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+const newSessionToken = () => randomFrom(TOKEN_ALPHABET, 43);
+function sessionExpiry() {
+  return new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+}
+async function startSession(env, usernameLc) {
+  const token = newSessionToken();
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "INSERT INTO sessions (token, username_lc, created_at, expires_at) VALUES (?, ?, ?, ?)"
+  ).bind(token, usernameLc, now, sessionExpiry()).run();
+  return token;
+}
+async function setPassword(env, usernameLc, clientHash) {
+  const salt = randomFrom(TOKEN_ALPHABET, 24);
+  const stored = await serverHash(salt, clientHash);
+  await env.DB.prepare(
+    "UPDATE users SET pw_hash = ?, pw_salt = ?, pw_updated_at = ? WHERE username_lc = ?"
+  ).bind(stored, salt, new Date().toISOString(), usernameLc).run();
+}
+/* Changing a password or an address logs every other device out. The one
+   asking keeps its own token, so the person doing it is not thrown out of
+   the screen they are standing on. */
+async function dropOtherSessions(env, usernameLc, keepToken) {
+  await env.DB.prepare(
+    "DELETE FROM sessions WHERE username_lc = ? AND token != ?"
+  ).bind(usernameLc, keepToken || "").run();
+}
+async function emailRowFor(env, usernameLc) {
+  return await env.DB.prepare(
+    "SELECT email, email_lc FROM user_emails WHERE username_lc = ?"
+  ).bind(usernameLc).first();
+}
+
 async function requireAuth(env, body) {
-  const username = cleanString(body.username, 40);
-  const cookbookId = cleanString(body.cookbookId, 40).toUpperCase();
-  if (!username || !cookbookId) throw new ApiError(401, "Sign in again to continue.", "AUTH");
+  const token = cleanString(body.token, 80);
+  if (!token) throw new ApiError(401, "Sign in again to continue.", "AUTH");
   const row = await env.DB.prepare(
-    "SELECT username, username_lc, cookbook_id FROM users WHERE username_lc = ?"
-  ).bind(username.toLowerCase()).first();
-  if (!row || row.cookbook_id !== cookbookId) {
-    throw new ApiError(401, "That username and Cookbook ID don't go together.", "AUTH");
+    "SELECT s.expires_at AS expires_at, u.username AS username, u.username_lc AS username_lc, " +
+    "u.cookbook_id AS cookbook_id FROM sessions s JOIN users u ON u.username_lc = s.username_lc " +
+    "WHERE s.token = ?"
+  ).bind(token).first();
+  if (!row) throw new ApiError(401, "Sign in again to continue.", "AUTH");
+  if (row.expires_at && Date.parse(row.expires_at) < Date.now()) {
+    await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
+    throw new ApiError(401, "That sign-in has expired. Sign in again to continue.", "AUTH");
   }
-  return { username: row.username, usernameLc: row.username_lc, cookbookId: row.cookbook_id };
+  return {
+    username: row.username, usernameLc: row.username_lc,
+    cookbookId: row.cookbook_id, token: token
+  };
 }
 
 /* ------------------------------------------------------------ throttle -- */
@@ -8224,6 +8618,19 @@ async function throttleGuard(env, buckets) {
       const mins = Math.max(1, Math.ceil((RL_WINDOW_MS - (now - row.window_start)) / 60000));
       throw new ApiError(429, "Too many failed name lookups. Try again in " + mins + " minute" + (mins === 1 ? "" : "s") + ".");
     }
+  }
+}
+/* The same counter, read against a limit of the caller's choosing. Five
+   wrong Cookbook IDs is a different thing from thirty failed lookups, and
+   guessing a ten-character ID is exactly what the low number is for. */
+async function attemptGuard(env, bucket, max, what) {
+  const row = await env.DB.prepare(
+    "SELECT window_start, count FROM rate_limits WHERE bucket = ?"
+  ).bind(bucket).first();
+  if (row && (Date.now() - row.window_start) < RL_WINDOW_MS && row.count >= max) {
+    const mins = Math.max(1, Math.ceil((RL_WINDOW_MS - (Date.now() - row.window_start)) / 60000));
+    throw new ApiError(429, "Too many " + what + ". Try again in " + mins +
+      " minute" + (mins === 1 ? "" : "s") + ".");
   }
 }
 async function throttleRecordFailure(env, buckets) {
@@ -8451,6 +8858,18 @@ function validateRecipeData(data) {
    are created on demand rather than by hand in the D1 console. Cheap: one
    pass per isolate. */
 const LATER_TABLES = [
+  /* Sign-in identity. Held apart from users so the address list can be read
+     on its own without touching anything else, and so a rename or a cookbook
+     move never disturbs it. One address per account, one account per
+     address. */
+  "CREATE TABLE IF NOT EXISTS user_emails ( email_lc TEXT PRIMARY KEY, email TEXT NOT NULL, " +
+    "username_lc TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_emails_user ON user_emails(username_lc)",
+  /* One row per signed-in device. The token is the only credential the
+     client holds after sign-in; a Cookbook ID no longer opens anything. */
+  "CREATE TABLE IF NOT EXISTS sessions ( token TEXT PRIMARY KEY, username_lc TEXT NOT NULL, " +
+    "created_at TEXT NOT NULL, expires_at TEXT NOT NULL )",
+  "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(username_lc)",
   "CREATE TABLE IF NOT EXISTS recipe_marks ( cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, " +
     "kind TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, " +
     "PRIMARY KEY (cookbook_id, recipe_id, kind) )",
@@ -8562,12 +8981,15 @@ let schemaBooted = false;
    has no ADD COLUMN IF NOT EXISTS, and a duplicate column is the expected
    result on every run after the first, so that one error is swallowed and
    anything else is not. */
-/* The three summary columns are what the recipe box tab is built from. They
+/* The three summary columns are what the cupboard tab is built from. They
    are deliberately nullable rather than NOT NULL DEFAULT '': a NULL is the
    signal that this row predates the columns and still needs filling from its
    data blob, and an empty description is a real answer that must not be
    mistaken for a missing one. */
 const LATER_COLUMNS = [
+  "ALTER TABLE users ADD COLUMN pw_hash TEXT",
+  "ALTER TABLE users ADD COLUMN pw_salt TEXT",
+  "ALTER TABLE users ADD COLUMN pw_updated_at TEXT",
   "ALTER TABLE community_meals ADD COLUMN description TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE community_meals ADD COLUMN location TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE recipes ADD COLUMN description TEXT",
@@ -8656,7 +9078,7 @@ async function addLaterColumns(env) {
    already in the database will match, the bootstrap will be skipped, and the
    new thing will never be created. Bump SCHEMA_VERSION in the same change
    and the next request applies it. */
-const SCHEMA_VERSION = "schema-v2";
+const SCHEMA_VERSION = "schema-v3";
 async function schemaStamped(env) {
   try {
     const row = await env.DB.prepare(
@@ -9001,47 +9423,164 @@ async function handleApi(route, body, env, request) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   await ensureSchema(env);
 
-  /* ---- sign in / create ---- */
-  if (route === "session") {
-    const username = cleanString(body.username, 40);
+  /* ---- create an account ----
+     Three ways in, all through this one door:
+       - on your own: a fresh cookbook is made for you;
+       - joining a household: an existing Cookbook ID with room in it;
+       - claiming: a name and Cookbook ID that already exist together and have
+         never had an address attached. That is the migration path off the old
+         Cookbook-ID-as-password scheme, and it is meant to be removed once
+         everybody who had an account before has been through it. */
+  if (route === "auth/signup") {
+    await throttleGuard(env, ["ip:" + ip]);
+    const username = cleanString(body.name, 40);
+    const email = cleanString(body.email, 160);
+    const emailLc = email.toLowerCase();
+    const clientHash = cleanString(body.clientHash, 80);
+    const wantsJoin = body.joinCookbook === true;
     const cookbookId = cleanString(body.cookbookId, 40).toUpperCase();
+
     if (!USERNAME_RE.test(username)) {
-      throw new ApiError(400, "Usernames are 2-20 characters: letters, numbers, dot, dash or underscore.");
+      throw new ApiError(400, "Names are 2-20 characters: letters, numbers, dot, dash or underscore.");
     }
-    if (!COOKBOOK_RE.test(cookbookId)) {
-      throw new ApiError(400, "A Cookbook ID is 10 characters, letters and numbers only.");
+    if (!EMAIL_RE.test(email)) throw new ApiError(400, "That does not look like an email address.");
+    if (cleanString(body.emailConfirm, 160).toLowerCase() !== emailLc) {
+      throw new ApiError(400, "The two email addresses do not match.");
     }
+    if (!CLIENT_HASH_RE.test(clientHash)) {
+      throw new ApiError(400, "That password could not be read. Try again on a current browser.");
+    }
+    const emailTaken = await env.DB.prepare(
+      "SELECT username_lc FROM user_emails WHERE email_lc = ?"
+    ).bind(emailLc).first();
+    if (emailTaken) {
+      throw new ApiError(409, "There is already an account on that email address. Sign in as an existing user instead.");
+    }
+
+    const nameLc = username.toLowerCase();
     const byName = await env.DB.prepare(
-      "SELECT username, cookbook_id FROM users WHERE username_lc = ?"
-    ).bind(username.toLowerCase()).first();
+      "SELECT username, username_lc, cookbook_id FROM users WHERE username_lc = ?"
+    ).bind(nameLc).first();
+    const now = new Date().toISOString();
+    let finalCookbook = "", created = false, joined = false, claimed = false;
 
-    if (byName) {
-      if (byName.cookbook_id !== cookbookId) {
-        throw new ApiError(409, "That username already belongs to a different cookbook. Check the ID, or pick another name.");
+    if (wantsJoin) {
+      const bucket = "cbtry:" + ip;
+      await attemptGuard(env, bucket, BAD_COOKBOOK_TRIES, "Cookbook IDs tried");
+      if (!COOKBOOK_RE.test(cookbookId)) {
+        await throttleRecordFailure(env, [bucket]);
+        throw new ApiError(400, "A Cookbook ID is 10 characters, letters and numbers only.");
       }
-      return jsonResponse({
-        username: byName.username, cookbookId, created: false, joined: false,
-        members: await countMembers(env, cookbookId)
-      });
+      const existing = await countMembers(env, cookbookId);
+      if (existing === 0) {
+        await throttleRecordFailure(env, [bucket]);
+        throw new ApiError(404, "No cookbook has that ID. Check it with whoever sent it to you.");
+      }
+      if (byName && byName.cookbook_id === cookbookId) {
+        /* The claim. Only ever available to a row with no address on it. */
+        const already = await emailRowFor(env, nameLc);
+        if (already) {
+          throw new ApiError(409, "That name already has an account. Sign in as an existing user instead.");
+        }
+        finalCookbook = cookbookId;
+        claimed = true;
+      } else {
+        if (byName) {
+          throw new ApiError(409, "Somebody already uses that name. Pick another.");
+        }
+        if (existing >= MAX_COOKBOOK_MEMBERS) {
+          throw new ApiError(409, "That cookbook already has " + MAX_COOKBOOK_MEMBERS +
+            " people in it, which is the limit. Ask them to add you as a friend instead.");
+        }
+        finalCookbook = cookbookId;
+        joined = true;
+      }
+    } else {
+      if (byName) throw new ApiError(409, "Somebody already uses that name. Pick another.");
+      for (let tries = 0; tries < 6 && !finalCookbook; tries++) {
+        const candidate = randomFrom(COOKBOOK_ALPHABET, 10);
+        if ((await countMembers(env, candidate)) === 0) finalCookbook = candidate;
+      }
+      if (!finalCookbook) throw new ApiError(500, "Could not start a cookbook just now. Try again.");
+      created = true;
     }
 
-    /* A new username with an existing Cookbook ID joins that cookbook. */
-    const existing = await countMembers(env, cookbookId);
-    if (existing > 0 && !body.confirmJoin) {
-      const map = await membersOf(env, [cookbookId]);
-      const names = map[cookbookId] || [];
-      throw new ApiError(409,
-        "That Cookbook ID already belongs to a cookbook with " + names.join(", ") +
-        " in it. Joining means you can read and edit everything in it, and you will be linked to everyone it is already friends with.",
-        "CONFIRM_JOIN");
+    if (!claimed) {
+      await env.DB.prepare(
+        "INSERT INTO users (username_lc, username, cookbook_id, created_at) VALUES (?, ?, ?, ?)"
+      ).bind(nameLc, username, finalCookbook, now).run();
     }
-
     await env.DB.prepare(
-      "INSERT INTO users (username_lc, username, cookbook_id, created_at) VALUES (?, ?, ?, ?)"
-    ).bind(username.toLowerCase(), username, cookbookId, new Date().toISOString()).run();
+      "INSERT INTO user_emails (email_lc, email, username_lc, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+    ).bind(emailLc, email, nameLc, now, now).run();
+    await setPassword(env, nameLc, clientHash);
+    const token = await startSession(env, nameLc);
     return jsonResponse({
-      username, cookbookId, created: existing === 0, joined: existing > 0, members: existing + 1
+      token, username: (byName && claimed) ? byName.username : username,
+      cookbookId: finalCookbook, email,
+      created, joined, claimed, members: await countMembers(env, finalCookbook)
     });
+  }
+
+  /* ---- sign in ----
+     One message for a wrong address and a wrong password alike, so the reply
+     never says which addresses have accounts on them. */
+  if (route === "auth/login") {
+    await throttleGuard(env, ["ip:" + ip]);
+    const email = cleanString(body.email, 160).toLowerCase();
+    const clientHash = cleanString(body.clientHash, 80);
+    const wrong = new ApiError(401, "That email address and password do not go together.");
+    if (!EMAIL_RE.test(email) || !CLIENT_HASH_RE.test(clientHash)) throw wrong;
+    const row = await env.DB.prepare(
+      "SELECT e.email AS email, u.username AS username, u.username_lc AS username_lc, " +
+      "u.cookbook_id AS cookbook_id, u.pw_hash AS pw_hash, u.pw_salt AS pw_salt " +
+      "FROM user_emails e JOIN users u ON u.username_lc = e.username_lc WHERE e.email_lc = ?"
+    ).bind(email).first();
+    if (!row || !row.pw_hash || !row.pw_salt) {
+      await throttleRecordFailure(env, ["ip:" + ip]);
+      throw wrong;
+    }
+    if (!sameSecret(await serverHash(row.pw_salt, clientHash), row.pw_hash)) {
+      await throttleRecordFailure(env, ["ip:" + ip]);
+      throw wrong;
+    }
+    const token = await startSession(env, row.username_lc);
+    return jsonResponse({
+      token, username: row.username, cookbookId: row.cookbook_id, email: row.email,
+      members: await countMembers(env, row.cookbook_id)
+    });
+  }
+
+  /* ---- sign out ----
+     Answers the same way whether or not the token was real, so signing out
+     twice is not an error worth showing anybody. */
+  if (route === "auth/logout") {
+    const token = cleanString(body.token, 80);
+    if (token) await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
+    return jsonResponse({ signedOut: true });
+  }
+
+  /* ---- admin: hand somebody a temporary password ----
+     There is no mail out of here, so recovery is a person writing in from the
+     address on their account and being given something to sign in with. The
+     browser derives the hash from that address and the temporary password
+     exactly as the sign-in screen would, so this route never sees either. */
+  if (route === "admin/password") {
+    const token = cleanString(body.token, 200);
+    if (!env.ADMIN_TOKEN || !token || token !== env.ADMIN_TOKEN) {
+      throw new ApiError(403, "That is not the admin token.");
+    }
+    const email = cleanString(body.email, 160).toLowerCase();
+    const clientHash = cleanString(body.clientHash, 80);
+    if (!EMAIL_RE.test(email)) throw new ApiError(400, "That does not look like an email address.");
+    if (!CLIENT_HASH_RE.test(clientHash)) throw new ApiError(400, "That password could not be read.");
+    const row = await env.DB.prepare(
+      "SELECT username_lc FROM user_emails WHERE email_lc = ?"
+    ).bind(email).first();
+    if (!row) throw new ApiError(404, "No account on that address.");
+    await setPassword(env, row.username_lc, clientHash);
+    await dropOtherSessions(env, row.username_lc, "");
+    return jsonResponse({ reset: true, username: row.username_lc });
   }
 
   /* ---- a shared link, opened by anybody ----
@@ -9845,6 +10384,70 @@ async function handleApi(route, body, env, request) {
     return jsonResponse({ recipeId, sharedWith: wanted.length });
   }
 
+  /* ---- change password ---- */
+  if (route === "account/password") {
+    const current = cleanString(body.currentClientHash, 80);
+    const next = cleanString(body.newClientHash, 80);
+    if (!CLIENT_HASH_RE.test(current) || !CLIENT_HASH_RE.test(next)) {
+      throw new ApiError(400, "Those passwords could not be read. Try again on a current browser.");
+    }
+    const row = await env.DB.prepare(
+      "SELECT pw_hash, pw_salt FROM users WHERE username_lc = ?"
+    ).bind(me.usernameLc).first();
+    if (!row || !row.pw_hash || !sameSecret(await serverHash(row.pw_salt, current), row.pw_hash)) {
+      throw new ApiError(403, "That is not your current password.");
+    }
+    if (sameSecret(current, next)) {
+      throw new ApiError(400, "The new password is the same as the old one.");
+    }
+    await setPassword(env, me.usernameLc, next);
+    await dropOtherSessions(env, me.usernameLc, me.token);
+    return jsonResponse({ changed: true });
+  }
+
+  /* ---- change email ----
+     The password travels hashed against the OLD address, because that is the
+     salt it was set with; the new one is only recorded once it has been
+     proved the old one belongs to whoever is asking. */
+  if (route === "account/email") {
+    const current = cleanString(body.currentEmail, 160).toLowerCase();
+    const next = cleanString(body.newEmail, 160);
+    const nextLc = next.toLowerCase();
+    const clientHash = cleanString(body.clientHash, 80);
+    if (!CLIENT_HASH_RE.test(clientHash)) {
+      throw new ApiError(400, "That password could not be read. Try again on a current browser.");
+    }
+    if (!EMAIL_RE.test(next)) throw new ApiError(400, "That does not look like an email address.");
+    const mine = await emailRowFor(env, me.usernameLc);
+    if (!mine || mine.email_lc !== current) {
+      throw new ApiError(403, "That is not the email address on this account.");
+    }
+    if (nextLc === current) throw new ApiError(400, "That is already your email address.");
+    const row = await env.DB.prepare(
+      "SELECT pw_hash, pw_salt FROM users WHERE username_lc = ?"
+    ).bind(me.usernameLc).first();
+    if (!row || !row.pw_hash || !sameSecret(await serverHash(row.pw_salt, clientHash), row.pw_hash)) {
+      throw new ApiError(403, "That password is not right.");
+    }
+    const taken = await env.DB.prepare(
+      "SELECT username_lc FROM user_emails WHERE email_lc = ?"
+    ).bind(nextLc).first();
+    if (taken) throw new ApiError(409, "There is already an account on that email address.");
+    await env.DB.prepare(
+      "UPDATE user_emails SET email_lc = ?, email = ?, updated_at = ? WHERE username_lc = ?"
+    ).bind(nextLc, next, new Date().toISOString(), me.usernameLc).run();
+    /* The address is half the password salt, so every stored hash for this
+       account is now meaningless. The client re-derives against the new
+       address and sends it in the same breath. */
+    const rehash = cleanString(body.newClientHash, 80);
+    if (!CLIENT_HASH_RE.test(rehash)) {
+      throw new ApiError(400, "That password could not be re-read for the new address.");
+    }
+    await setPassword(env, me.usernameLc, rehash);
+    await dropOtherSessions(env, me.usernameLc, me.token);
+    return jsonResponse({ changed: true, email: next });
+  }
+
   /* ---- change display name ----
      The username is the key everything else points at, so a rename has to
      travel through every table that stores it. Cookbook membership, and so
@@ -9864,6 +10467,13 @@ async function handleApi(route, body, env, request) {
     }
     await env.DB.prepare("UPDATE users SET username = ?, username_lc = ? WHERE username_lc = ?")
       .bind(next, nextLc, oldLc).run();
+    /* Both of these point at the name rather than at a row id, so a rename
+       that skipped them would strand the account's address and sign every
+       device out at once. */
+    await env.DB.prepare("UPDATE user_emails SET username_lc = ? WHERE username_lc = ?")
+      .bind(nextLc, oldLc).run();
+    await env.DB.prepare("UPDATE sessions SET username_lc = ? WHERE username_lc = ?")
+      .bind(nextLc, oldLc).run();
     await env.DB.prepare("UPDATE recipes SET owner_username = ?, owner_lc = ? WHERE owner_lc = ?")
       .bind(next, nextLc, oldLc).run();
     await env.DB.prepare("UPDATE recipes SET updated_by = ? WHERE updated_by = ?").bind(next, oldName).run();
@@ -10405,8 +11015,8 @@ function iconResponse() {
 }
 
 const MANIFEST = JSON.stringify({
-  name: "The Recipe Box",
-  short_name: "Recipe Box",
+  name: "Kindred Cupboard",
+  short_name: "Kindred Cupboard",
   start_url: "/",
   scope: "/",
   /* display_override is the standards-based way to ask for the screen with no
