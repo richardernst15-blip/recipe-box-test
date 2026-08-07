@@ -570,7 +570,22 @@ html.doc-scroll #app{ overflow-x:clip; }
    shrank with it and the page's cream showed through underneath - a bar
    along the foot of the installed app that appeared with the keyboard and
    went again with it. Painted first, so the card still sits on top. */
-.modal-overlay::before{ content:""; position:fixed; top:0; left:0; right:0; bottom:0;
+/* And it overshoots the window by a screen in each direction rather than
+   stopping at its edges. inset:0 sizes it to the layout viewport, which in
+   the installed app is not a fixed thing: iOS resizes it for the keyboard,
+   and on dismissal it animates that resize back without repainting fixed
+   elements in step. For the length of that animation the scrim is still the
+   short height while the viewport is already growing, and the strip between
+   the two paints as whatever is behind - page where there is page, bare
+   cream where the view has run out. That was the band that appeared under
+   every dialog when the keyboard went down and took the keyboard's own
+   quarter-second to close, unreachable by scrolling because nothing was
+   scrolling. A solid rectangle with nothing in it can be any size it likes,
+   so the cheap answer is to make it unconditionally bigger than any edge the
+   animation can land on. Vertical only: the horizontal edges never move.
+   Fixed boxes do not add to the document's scrollable overflow, so the extra
+   height costs nothing to scroll. */
+.modal-overlay::before{ content:""; position:fixed; top:-100vh; left:0; right:0; bottom:-100vh;
   background:rgba(34,31,28,.5); }
 .modal-box{ position:relative; background:#fff; width:100%; max-width:560px; max-height:100%; overflow-y:auto;
   overscroll-behavior:contain; border-radius:16px; padding:22px; }
