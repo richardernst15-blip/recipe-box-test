@@ -297,6 +297,25 @@ html.doc-scroll #app{ overflow-x:clip; }
 .filter-row > *{ min-width:0; }
 .filter-row select{ width:100%; padding:9px 10px; border-radius:9px; border:1px solid var(--border); background:#fff; font-size:13.5px; color:var(--ink); }
 
+/* Search, sort, household and Inspiration are four controls that do the same
+   kind of job, so they are one grid of four identical cells rather than two
+   rows that size themselves differently. The height is fixed here rather
+   than left to each control's own padding, because a select and a button
+   never agree on it. */
+.lib-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+.lib-grid > *{ min-width:0; width:100%; height:44px; box-sizing:border-box; }
+.lib-grid .search-field{ position:relative; display:flex; align-items:center; }
+.lib-grid .search-field input{ width:100%; height:44px; box-sizing:border-box;
+  padding:0 38px 0 38px; border-radius:10px; border:1px solid var(--border);
+  background:#fff; font-size:15px; }
+.lib-grid .search-field input:focus{ outline:2px solid var(--accent); outline-offset:-1px; }
+.lib-grid .icon{ position:absolute; left:11px; top:50%; transform:translateY(-50%);
+  color:var(--ink-muted); pointer-events:none; display:flex; }
+.lib-grid select{ padding:0 8px; border-radius:10px; border:1px solid var(--border);
+  background:#fff; font-size:13.5px; color:var(--ink); }
+.lib-grid .btn{ display:flex; align-items:center; justify-content:center; gap:5px;
+  padding:0 10px; border-radius:10px; font-size:13.5px; overflow:hidden; }
+
 /* chips */
 .chips{ display:flex; flex-wrap:wrap; align-content:flex-start; gap:8px; margin-bottom:16px; max-height:112px; overflow-y:auto; padding-right:2px; }
 .chip{ font-size:12.5px; line-height:18px; padding:6px 13px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--ink-muted); cursor:pointer; }
@@ -382,10 +401,13 @@ html.doc-scroll #app{ overflow-x:clip; }
 .panel{ flex:1; min-width:250px; background:#fff; border:1px solid var(--border-light); border-radius:13px; padding:15px 16px; }
 .panel-label{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; }
 
-.scale-row{ display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
-.scale-btn{ padding:7px 12px; border-radius:8px; border:1px solid var(--border); background:#fff; font-size:14px; cursor:pointer; }
+.scale-row{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.scale-btn{ padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:#fff; font-size:14px; cursor:pointer; white-space:nowrap; }
 .scale-btn.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
-.scale-custom-input{ width:68px; padding:7px 8px; border-radius:8px; border:1px solid var(--border); font-size:14px; }
+/* The chip asks rather than answers: typing a multiplier into a control this
+   small never worked on a phone, so the chip opens a box and reads back
+   whatever came out of it. Its own width is left to the label. */
+.scale-custom{ display:inline-flex; align-items:center; padding-left:10px; padding-right:10px; }
 .makes-line{ font-size:13.5px; color:var(--ink-muted); margin:10px 0 0; }
 
 .macro-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; text-align:center; }
@@ -437,11 +459,20 @@ html.doc-scroll #app{ overflow-x:clip; }
 /* forms */
 .field{ margin-bottom:15px; }
 .field label{ display:block; font-size:13px; color:var(--ink-muted); margin-bottom:5px; }
+/* Email and password are ordinary fields and must look like ordinary fields.
+   Leaving them off this list handed them back to the browser's own defaults,
+   which on Safari meant a narrower box in a smaller face sitting directly
+   under a full-width Name. */
 .field input[type=text], .field input[type=number], .field input[type=date], .field input[type=url],
+.field input[type=email], .field input[type=password],
 .field textarea, .field select{
   width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--border); font-size:14.5px; background:#fff;
 }
 .field textarea{ resize:vertical; }
+/* Safari sizes a date input to its own content unless it is told otherwise,
+   which left Date cooked wider than the comment box below it. */
+.field input[type=date]{ -webkit-appearance:none; appearance:none; display:block;
+  min-width:0; max-width:100%; height:40px; }
 .two-col{ display:flex; gap:12px; }
 .two-col .field{ flex:1; }
 .seg{ display:flex; gap:8px; }
@@ -475,14 +506,19 @@ html.doc-scroll #app{ overflow-x:clip; }
 /* welcome */
 .welcome-wrap{ max-width:440px; margin:0 auto; padding:44px 18px 80px; }
 .welcome-wrap h1{ font-size:30px; margin:14px 0 6px; }
-.welcome-wrap .lede{ font-size:14.5px; color:var(--ink-muted); margin:0 0 22px; line-height:1.5; }
+.welcome-wrap .lede{ font-size:18px; color:var(--ink-muted); margin:0 0 22px; line-height:1.5; }
 .brand-row{ display:flex; align-items:center; gap:10px; }
 .brand-row h1{ margin:0; }
+.welcome-icon{ width:44px; height:44px; }
+/* Two ways in, weighed the same, so neither reads as the expected one. They
+   are a pair of switches rather than a stack of drawers: picking one drops
+   the other, and whichever is on opens its panel underneath both. */
 .gate{ display:flex; flex-direction:column; gap:10px; margin-top:4px; }
-.gate-btn{ width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
-  padding:14px 15px; border-radius:11px; border:1px solid var(--border); background:var(--card);
+.gate-btns{ display:flex; gap:10px; }
+.gate-btn{ flex:1; min-width:0; display:flex; align-items:center; justify-content:center;
+  padding:14px 12px; border-radius:11px; border:1px solid var(--border); background:var(--card);
   font-size:16px; font-weight:600; color:inherit; cursor:pointer; font-family:inherit; }
-.gate-btn.open{ border-color:var(--accent); color:var(--accent); }
+.gate-btn.open{ border-color:var(--accent); background:var(--accent); color:#fff; }
 .gate-panel{ border:1px solid var(--border-light); border-radius:11px; padding:14px;
   background:var(--card-alt); margin-top:-4px; }
 .lbl-row{ display:flex; align-items:center; gap:6px; }
@@ -525,10 +561,18 @@ html.doc-scroll #app{ overflow-x:clip; }
    the notch and the home indicator instead of tucking underneath them. */
 .modal-overlay{ position:fixed; top:var(--vv-top,0px); left:var(--vv-left,0px);
   width:var(--vv-width,100%); height:var(--vv-height,100%);
-  background:rgba(34,31,28,.5); display:flex;
+  background:none; display:flex;
   align-items:center; justify-content:center; z-index:80; overscroll-behavior:contain;
   padding:calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom)); }
-.modal-box{ background:#fff; width:100%; max-width:560px; max-height:100%; overflow-y:auto;
+/* The grey is a separate layer pinned to the whole window rather than the
+   background of the box that centres the card. Sizing the two together meant
+   that the moment the keyboard shrank the visual viewport, the overlay
+   shrank with it and the page's cream showed through underneath - a bar
+   along the foot of the installed app that appeared with the keyboard and
+   went again with it. Painted first, so the card still sits on top. */
+.modal-overlay::before{ content:""; position:fixed; top:0; left:0; right:0; bottom:0;
+  background:rgba(34,31,28,.5); }
+.modal-box{ position:relative; background:#fff; width:100%; max-width:560px; max-height:100%; overflow-y:auto;
   overscroll-behavior:contain; border-radius:16px; padding:22px; }
 .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .modal-head h3{ margin:0; font-size:19px; }
@@ -681,15 +725,19 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
    phone, which put the control that abandons the pick a long way from the
    pick it abandons. The name is the only part that gives, so the numbers and
    the two buttons stay where the thumb last found them. */
-.meal-dish-pick{ display:flex; align-items:center; gap:6px; flex-wrap:nowrap;
+.meal-dish-pick{ display:grid; grid-template-columns:minmax(0,1fr) auto auto;
+  grid-template-rows:auto auto; align-items:center; gap:6px 8px;
   background:var(--meal-soft); border:1px solid var(--meal-line); border-radius:10px;
   padding:9px 10px; margin-top:6px; font-size:13.5px; }
-.meal-dish-pick .name{ flex:1; min-width:0; font-weight:600; color:var(--meal-dark);
+.meal-dish-pick .name{ grid-column:1; grid-row:1; min-width:0; font-weight:600; color:var(--meal-dark);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meal-dish-pick .qty{ grid-column:1; grid-row:2; display:flex; align-items:center; gap:6px; min-width:0; }
 .meal-dish-pick input{ width:58px; flex-shrink:0; text-align:center; padding-left:4px; padding-right:4px; }
-.meal-dish-pick .unit{ font-size:12px; color:var(--ink-muted); flex-shrink:0;
-  max-width:74px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.meal-dish-pick .btn{ flex-shrink:0; padding-left:9px; padding-right:9px; }
+.meal-dish-pick .unit{ font-size:12px; color:var(--ink-muted); flex-shrink:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meal-dish-pick .btn{ grid-column:2; grid-row:1 / span 2; align-self:center;
+  flex-shrink:0; padding-left:9px; padding-right:9px; }
+.meal-dish-pick .icon-btn{ grid-column:3; grid-row:1 / span 2; align-self:center; }
 .meal-dup{ background:#fdf6e6; border:1px solid #e8d5a0; border-radius:9px; padding:8px 10px;
   font-size:12.5px; color:#7a5a12; margin-top:6px; }
 .sched-banner{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
@@ -909,10 +957,6 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 /* The field is its own positioning context so the clear button can sit
    inside the input's right edge rather than the row's. */
 .search-field{ position:relative; flex:1; min-width:0; display:flex; align-items:center; }
-/* The library row carries a second control, so the two share the width
-   evenly rather than the button taking only what its label needs. */
-.search-wrap.split .search-field{ flex:1 1 0; }
-.search-wrap.split .search-filter{ flex:1 1 0; min-width:0; justify-content:center; }
 .search-field input{ padding-right:40px; }
 .search-clear{ position:absolute; right:7px; top:50%; transform:translateY(-50%);
   display:none; align-items:center; justify-content:center; width:26px; height:26px; padding:0;
@@ -1204,6 +1248,10 @@ const ICONS = {
   chat: '<path d="M4 5h16v11H9l-5 4z"/>',
   sliders: '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.5"/><circle cx="15" cy="16" r="2.5"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.6" r="1.1" fill="currentColor" stroke="none"/>',
+  /* An "i" is what a field is for; a "?" is what to do when it goes wrong.
+     They sit side by side on the sign-in password, so the two are drawn to
+     the same weight and radius. */
+  question: '<circle cx="12" cy="12" r="9"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.7v1.6"/><circle cx="12.8" cy="16.6" r="1.1" fill="currentColor" stroke="none"/>',
   chevronUp: '<polyline points="6 15 12 9 18 15"/>',
   chevronDown: '<polyline points="6 9 12 15 18 9"/>',
   upload: '<path d="M12 3v12"/><polyline points="7 8 12 3 17 8"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
@@ -1310,6 +1358,14 @@ function formatCustomary(value, unit) {
 function scaledVal(value, factor) {
   if (value == null || value === "") return null;
   return Number(value) * factor;
+}
+/* A multiplier the way it would be written by hand: 6 rather than 6.00, and
+   1.5 rather than 1.5000000000000002. Two decimals is as fine as the chip
+   ever needs to be. */
+function trimNumber(n) {
+  const v = Number(n);
+  if (isNaN(v)) return "";
+  return String(Math.round(v * 100) / 100);
 }
 
 /* A recipe "body" is the portable part: no ids, no owner, no comments. */
@@ -1473,6 +1529,10 @@ const state = {
   cookFeed: [],
   /* Which recipe bodies are in flight, so a second tap does not ask twice. */
   bodyPending: {},
+  /* Notifications on this device. status is one of: unknown, unsupported,
+     install (iOS wants the app on the Home Screen first), off, on, denied,
+     unavailable (no keys configured on the server). */
+  push: { status: "unknown", key: "", busy: false, kinds: [], endpoint: "" },
   mates: [],
   friends: [],
   incoming: [],
@@ -1515,6 +1575,11 @@ const state = {
   _shownKey: null,
   scale: 1,
   customScaleOpen: false,
+  /* The last multiplier accepted in the box, kept so the chip reads it back
+     and so reopening the box starts from what you had rather than from blank.
+     _scaleDraft is only what is sitting in the box while it is open. */
+  customScale: "",
+  _scaleDraft: "",
   editDraft: null,
   editIsNew: false,
   editBaseUpdatedAt: null,
@@ -1602,6 +1667,8 @@ const state = {
   mealFriendSearch: "",
   mealDishSearch: {},
   mealDishPick: {},
+  /* The recipe on its way to a community meal, while that sheet is open. */
+  mealAdd: null,
   mealPastOpen: {}
 };
 
@@ -2057,9 +2124,13 @@ function readIntentFromUrl() {
   let intent = null;
   try {
     const q = new URLSearchParams(window.location.search || "");
-    const r = q.get("r"), f = q.get("f");
+    const r = q.get("r"), f = q.get("f"), n = q.get("n");
     if (r) intent = { type: "recipe", recipeId: String(r).slice(0, 64) };
     else if (f) intent = { type: "friend", name: String(f).slice(0, 40) };
+    /* Where a tapped notification wants to go. Not a scanned code, so it is
+       never stashed for later - by the time there is a session to replay it
+       against, it is not news any more. */
+    else if (n) intent = { type: "push", target: String(n).slice(0, 80) };
   } catch (e) { return null; }
   if (intent && window.history && window.history.replaceState) {
     try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
@@ -2288,9 +2359,18 @@ async function loadBodyInto(recipeId, after) {
 /* ====================================================================== */
 const INFO_NAME = "Shown to your friends when you add a recipe, add a friend, or comment on a recipe.";
 const INFO_EMAIL = "Never shared outside the app, or with anyone else using it. It is used only to sign you in, to recover your account, and for critical messages from Kindred Cupboard.";
+const INFO_PASS = "At least 8 characters. It is scrambled on this device before it is sent, so nobody else ever sees it.";
+const INFO_COOKBOOK = "Ten letters and numbers, from whoever you share a kitchen with. A cookbook holds two people; anyone else you cook with is a friend instead.";
+const INFO_FORGOT = "Write to " + SUPPORT_EMAIL + " from the address on your account and we will send you a temporary password.";
 function infoDot(key) {
   return '<button class="info-dot" title="What this is for" onclick="Actions.wInfo(\\'' + key + '\\')">' +
     icon("info", 15) + '</button>';
+}
+/* The same control with a different question behind it: not what the field
+   is, but what to do when you cannot fill it in. */
+function helpDot(key) {
+  return '<button class="info-dot" title="Forgotten your password?" onclick="Actions.wInfo(\\'' + key + '\\')">' +
+    icon("question", 15) + '</button>';
 }
 function infoNote(key, text) {
   return (state._wInfo && state._wInfo[key]) ? '<p class="info-note">' + esc(text) + '</p>' : "";
@@ -2298,7 +2378,7 @@ function infoNote(key, text) {
 function gateButtonHTML(key, label) {
   const open = state._wMode === key;
   return '<button class="gate-btn' + (open ? " open" : "") + '" onclick="Actions.wMode(\\'' + key + '\\')">' +
-    '<span>' + label + '</span>' + icon(open ? "chevronUp" : "chevronDown", 18) + '</button>';
+    '<span>' + label + '</span></button>';
 }
 function saveBoxHTML(id) {
   return '<label class="check-row"><input type="checkbox" id="' + id + '"' +
@@ -2318,18 +2398,18 @@ function newUserPanelHTML() {
     '<div class="field"><label>Confirm email</label>' +
       '<input type="email" id="w-email2" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wEmail2 || "") + '" />' +
     '</div>' +
-    '<div class="field"><label>Password</label>' +
+    '<div class="field"><label class="lbl-row">Password' + infoDot("pass") + '</label>' +
       '<input type="password" id="w-pass" autocomplete="new-password" value="' + esc(state._wPass || "") + '" />' +
-      '<p class="helper-text">At least 8 characters. It is scrambled on this device before it is sent, so nobody else ever sees it.</p>' +
+      infoNote("pass", INFO_PASS) +
     '</div>' +
     saveBoxHTML("w-save") +
     '<label class="check-row"><input type="checkbox" id="w-join"' + (state._wJoin ? " checked" : "") +
       ' onchange="Actions.wToggleJoin()" />' +
       '<span>Join a household cookbook I have been given the ID for.</span></label>' +
     (state._wJoin
-      ? '<div class="field"><label>Cookbook ID</label>' +
+      ? '<div class="field"><label class="lbl-row">Cookbook ID' + infoDot("cookbook") + '</label>' +
           '<input type="text" id="w-cookbook" class="font-mono" style="text-transform:uppercase" autocapitalize="characters" autocorrect="off" spellcheck="false" value="' + esc(state._wCookbook || "") + '" />' +
-          '<p class="helper-text">Ten letters and numbers, from whoever you share a kitchen with. A cookbook holds two people; anyone else you cook with is a friend instead.</p>' +
+          infoNote("cookbook", INFO_COOKBOOK) +
         '</div>'
       : "") +
     '<button class="btn btn-primary btn-block" ' + (state._wBusy ? "disabled" : "") +
@@ -2342,21 +2422,20 @@ function existingUserPanelHTML() {
       '<input type="email" id="w-lemail" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + esc(state._wLoginEmail || "") + '" />' +
       infoNote("lemail", INFO_EMAIL) +
     '</div>' +
-    '<div class="field"><label>Password</label>' +
+    '<div class="field"><label class="lbl-row">Password' + infoDot("lpass") + helpDot("forgot") + '</label>' +
       '<input type="password" id="w-lpass" autocomplete="current-password" value="' + esc(state._wLoginPass || "") + '" />' +
+      infoNote("lpass", INFO_PASS) +
+      infoNote("forgot", INFO_FORGOT) +
     '</div>' +
     saveBoxHTML("w-lsave") +
     '<button class="btn btn-primary btn-block" ' + (state._wBusy ? "disabled" : "") +
       ' onclick="Actions.signIn()">' + (state._wBusy ? "Working…" : "Sign in") + '</button>' +
-    '<p class="helper-text" style="margin-top:12px">Forgotten your password? Write to ' + SUPPORT_EMAIL +
-      ' from the address on your account and we will send you a temporary one.</p>' +
-    '<p class="helper-text">Had a cookbook here before there were passwords? Choose <b>New User</b>, tick the household box, and enter your old name and Cookbook ID to carry it over.</p>' +
   '</div>';
 }
 function WelcomeViewHTML() {
   return '' +
     '<div class="welcome-wrap">' +
-      '<div class="brand-row"><span style="color:var(--accent)">' + icon("book", 32) + '</span>' +
+      '<div class="brand-row"><img class="app-icon welcome-icon" src="/icon.png" alt="" />' +
         '<h1 class="font-display">Kindred Cupboard</h1></div>' +
       '<p class="lede">Break bread together. Store and share recipes together. Craft meals together. Kindred Cupboard makes it easy.</p>' +
       (state._arrivedByScan
@@ -2364,10 +2443,12 @@ function WelcomeViewHTML() {
         : "") +
       (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
       '<div class="gate">' +
-        gateButtonHTML("new", "New User") +
-        (state._wMode === "new" ? newUserPanelHTML() : "") +
-        gateButtonHTML("existing", "Existing User") +
-        (state._wMode === "existing" ? existingUserPanelHTML() : "") +
+        '<div class="gate-btns">' +
+          gateButtonHTML("new", "New User") +
+          gateButtonHTML("existing", "Existing User") +
+        '</div>' +
+        (state._wMode === "new" ? newUserPanelHTML()
+          : state._wMode === "existing" ? existingUserPanelHTML() : "") +
       '</div>' +
     '</div>';
 }
@@ -2886,6 +2967,178 @@ function unreadNotifications() {
   return allNotifications().filter(function (n) { return !n.read; });
 }
 
+/* ---- notifications that arrive with the app shut ----------------------- */
+/* Apple only does this for an app that has been added to the Home Screen,
+   and only when a person taps to ask for it, so there is nothing automatic
+   here: a button in Settings, and everything else follows from it. */
+function pushSupported() {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
+  return ("serviceWorker" in navigator) && ("PushManager" in window) && ("Notification" in window);
+}
+function onIOS() {
+  if (typeof navigator === "undefined") return false;
+  const ua = String(navigator.userAgent || "");
+  /* An iPad on recent iPadOS calls itself a Mac; the touch test is what
+     tells the two apart. */
+  return /iPad|iPhone|iPod/.test(ua) ||
+    (/Macintosh/.test(ua) && typeof document !== "undefined" && ("ontouchend" in document));
+}
+function installedApp() {
+  if (typeof navigator !== "undefined" && navigator.standalone === true) return true;
+  try {
+    return window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches;
+  } catch (e) { return false; }
+}
+/* The six things a notification can be about, in the order the panel shows
+   them. The keys are the server's; the words are ours. */
+const PUSH_KIND_LABELS = [
+  ["friendAsk", "Friend requests"],
+  ["friendYes", "When someone accepts your friend request"],
+  ["mealAsk", "Meal invitations"],
+  ["mealYes", "When a guest accepts your invitation"],
+  ["cook", "When someone cooks one of your recipes"],
+  ["recipe", "When a friend shares a new recipe"]
+];
+function pushKeyBytes(s) {
+  const t = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (t.length % 4) ? "====".slice(t.length % 4) : "";
+  const bin = atob(t + pad);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function pushRegistration() {
+  if (!pushSupported()) return null;
+  try { return await navigator.serviceWorker.register("/sw.js", { scope: "/" }); }
+  catch (e) { return null; }
+}
+async function refreshPushState() {
+  const p = state.push;
+  if (!pushSupported()) { p.status = onIOS() ? "install" : "unsupported"; return; }
+  if (onIOS() && !installedApp()) { p.status = "install"; return; }
+  if (!p.key) {
+    try { const d = await API("push/key", {}); p.key = (d && d.key) || ""; } catch (e) { p.key = ""; }
+  }
+  if (!p.key) { p.status = "unavailable"; return; }
+  if (Notification.permission === "denied") { p.status = "denied"; return; }
+  const reg = await pushRegistration();
+  if (!reg) { p.status = "unsupported"; return; }
+  let sub = null;
+  try { sub = await reg.pushManager.getSubscription(); } catch (e) { sub = null; }
+  p.endpoint = sub ? sub.endpoint : "";
+  p.status = sub ? "on" : "off";
+  if (sub) {
+    try {
+      const d = await API("push/status", { endpoint: sub.endpoint });
+      /* The server not knowing this endpoint means the browser is holding a
+         subscription we have no row for - a database that was reset, or a
+         sign-in as somebody else. Sign it up again rather than sit there
+         claiming to be on and never ringing. */
+      if (d && d.subscribed) p.kinds = d.kinds || [];
+      else { p.status = "off"; p.endpoint = ""; }
+    } catch (e) {}
+  }
+}
+async function enablePush() {
+  const p = state.push;
+  const reg = await pushRegistration();
+  if (!reg) { p.status = "unsupported"; return; }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") { p.status = (perm === "denied") ? "denied" : "off"; return; }
+  let sub = null;
+  try { sub = await reg.pushManager.getSubscription(); } catch (e) {}
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true, applicationServerKey: pushKeyBytes(p.key)
+    });
+  }
+  const j = sub.toJSON ? sub.toJSON() : { keys: {} };
+  const d = await API("push/subscribe", {
+    endpoint: sub.endpoint,
+    p256dh: (j.keys && j.keys.p256dh) || "",
+    auth: (j.keys && j.keys.auth) || ""
+  });
+  p.endpoint = sub.endpoint;
+  p.kinds = (d && d.kinds) || [];
+  p.status = "on";
+}
+async function disablePush() {
+  const reg = await pushRegistration();
+  let sub = null;
+  if (reg) { try { sub = await reg.pushManager.getSubscription(); } catch (e) {} }
+  if (sub) {
+    /* Told to the server first: the row has to go even if the browser is
+       slow to let go of its end of it. */
+    try { await API("push/unsubscribe", { endpoint: sub.endpoint }); } catch (e) {}
+    try { await sub.unsubscribe(); } catch (e) {}
+  }
+  state.push.endpoint = "";
+  state.push.status = "off";
+}
+
+/* One switch flipped. Written straight through rather than gathered up and
+   saved, because there is no Save button here and there should not be one. */
+async function savePushKinds(kind, on) {
+  const p = state.push;
+  const next = PUSH_KIND_LABELS
+    .map(function (pair) { return pair[0]; })
+    .filter(function (k) { return k === kind ? on : p.kinds.indexOf(k) >= 0; });
+  const before = p.kinds;
+  p.kinds = next;
+  try {
+    const d = await API("push/prefs", { endpoint: p.endpoint, kinds: next });
+    p.kinds = (d && d.kinds) || next;
+  } catch (e) {
+    p.kinds = before;
+    throw e;
+  }
+}
+
+/* Where a tapped notification lands. Deliberately addressed by the thing
+   itself rather than by a notification id: the ids are worked out on the
+   device from whatever the last sync held, and the server has no way to
+   guess one that will still match by the time the tap happens. */
+async function openPushTarget(spec) {
+  const s = String(spec || "");
+  const at = s.indexOf(":");
+  const kind = at < 0 ? s : s.slice(0, at);
+  const id = at < 0 ? "" : s.slice(at + 1);
+  if (kind === "friends") { Actions.openFriends(); return; }
+  /* A batch of recipes has no one page, so it opens the shelf they landed
+     on, the same place accepting a friend request leaves you. */
+  if (kind === "shelf") {
+    let label = "";
+    try { label = decodeURIComponent(id); } catch (e) { label = id; }
+    state.ownerFilter = label || "ours";
+    state.activeTags = [];
+    state.search = "";
+    state.view = "library";
+    renderApp();
+    return;
+  }
+  if (kind === "meal") {
+    if (!mealById(id)) { toast("That meal is no longer there"); renderApp(); return; }
+    state.view = "calendar";
+    state.mealFocus = id;
+    renderApp();
+    scrollToMeal(id);
+    return;
+  }
+  if (kind === "recipe" || kind === "cook") {
+    if (!state.recipes.some(function (r) { return r.recipeId === id; })) {
+      toast("That recipe is no longer there");
+      renderApp();
+      return;
+    }
+    /* A logged cook lands with the log already unfolded, the same as it does
+       from the notifications page. */
+    await Actions.openDetail(id, kind === "cook");
+    return;
+  }
+  renderApp();
+}
+
 function fmtWhen(iso) {
   if (!iso) return "";
   const d = new Date(String(iso).length === 10 ? iso + "T12:00:00" : iso);
@@ -3008,6 +3261,23 @@ function ScheduleMarkHTML(r, full) {
   return '<button class="mark mark-cal" title="Schedule this recipe" ' +
     'onclick="event.stopPropagation(); Actions.openSchedule(\\'' + r.recipeId + '\\')">' +
     icon("calGrid", full ? 15 : 14) + (full ? '<span>Schedule this recipe</span>' : "") +
+  '</button>';
+}
+/* Meals you are actually going to and could still bring something to: one
+   you are hosting, or one you have said yes to. An invitation you have not
+   answered is not a table you can put a dish on. */
+function mealsIcanBringTo() {
+  return state.meals.filter(function (m) {
+    return !isMealPast(m) && (m.myStatus === "owner" || m.myStatus === "accepted");
+  }).sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
+}
+/* Sits beside Schedule because it answers the same question - when is this
+   being cooked - and only appears when there is a meal to answer it with. */
+function MealMarkHTML(r, full) {
+  if (!mealsIcanBringTo().length) return "";
+  return '<button class="mark mark-cal" title="Add to a community meal" ' +
+    'onclick="event.stopPropagation(); Actions.openMealAdd(\\'' + r.recipeId + '\\')">' +
+    icon("users", full ? 15 : 14) + (full ? '<span>Add to Community Meal</span>' : "") +
   '</button>';
 }
 
@@ -3172,21 +3442,23 @@ function LibraryViewHTML() {
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="search-wrap split">' +
+      '<div class="lib-grid">' +
         '<div class="search-field"><span class="icon">' + icon("search", 18) + '</span>' +
-          '<input id="search-input" type="text" placeholder="Search recipes..." value="' + esc(state.search) + '" oninput="Actions.onSearchInput(this.value)" />' +
+          '<input id="search-input" type="text" placeholder="Search" value="' + esc(state.search) + '" oninput="Actions.onSearchInput(this.value)" />' +
           '<button id="search-clear" class="search-clear' + (state.search ? " on" : "") + '" title="Clear search" onclick="Actions.clearSearch()">' + icon("x", 15) + '</button>' +
         '</div>' +
-        '<button id="filter-btn" class="btn search-filter' + (state.activeTags.length ? " on" : "") + '" onclick="Actions.openFilters()">' +
-          FilterButtonInnerHTML() +
-        '</button></div>' +
-      '<div class="filter-row">' +
+        '<select onchange="Actions.setSort(this.value)">' + sortOptions + '</select>' +
         '<button class="btn owner-pick" onclick="Actions.openModal(\\'owner\\')">' +
           icon("users", 14) + ' ' + esc(ownerFilterLabel()) + '</button>' +
-        '<select onchange="Actions.setSort(this.value)">' + sortOptions + '</select>' +
+        '<button id="filter-btn" class="' + FILTER_BTN_CLASS() + '" onclick="Actions.openFilters()">' +
+          FilterButtonInnerHTML() +
+        '</button>' +
       '</div>' +
       '<div id="results-section">' + ResultsSectionHTML() + '</div>' +
     '</div>';
+}
+function FILTER_BTN_CLASS() {
+  return "btn search-filter" + (state.activeTags.length ? " on" : "");
 }
 function FilterButtonInnerHTML() {
   return icon("sliders", 16) + '<span class="flabel">Inspiration</span>' +
@@ -3201,7 +3473,7 @@ function updateResultsSection() {
 function updateFilterButton() {
   const el = document.getElementById("filter-btn");
   if (!el) return;
-  el.className = "btn search-filter" + (state.activeTags.length ? " on" : "");
+  el.className = FILTER_BTN_CLASS();
   el.innerHTML = FilterButtonInnerHTML();
 }
 function updateSearchClear() {
@@ -3600,28 +3872,39 @@ const MEAL_RESULT_MAX = 6;
 
 /* Split out from the picker so typing can replace just this block. Redrawing
    the page on every keystroke would take the focus out of the field. */
+/* Title on its own line, how many underneath it, and the two buttons down
+   the right-hand side centred across both. A long recipe name used to squeeze
+   the number box and the unit into nothing on a phone. */
+function MealPickRowHTML(pick, servId, addOnclick, clearOnclick) {
+  const unit = pick.unit || "servings";
+  return '<div class="meal-dish-pick">' +
+    '<span class="name">' + esc(pick.title) + '</span>' +
+    '<span class="qty">' +
+      '<input type="number" step="any" min="0" id="' + servId + '" ' +
+        'aria-label="How many ' + esc(unit) + '" ' +
+        'value="' + esc(String(pick.servings)) + '" />' +
+      '<span class="unit">' + esc(unit) + '</span>' +
+    '</span>' +
+    '<button class="btn btn-sm btn-meal" onclick="' + addOnclick + '">' +
+      icon("plus", 14) + ' Add</button>' +
+    '<button class="icon-btn" title="Pick something else" ' +
+      'onclick="' + clearOnclick + '">' + icon("x", 15) + '</button>' +
+  '</div>';
+}
+
 function MealDishResultsHTML(m) {
   const q = String(state.mealDishSearch[m.mealId] || "");
   const picked = state.mealDishPick[m.mealId] || null;
   if (picked) {
-    const r = recipeById(picked.recipeId);
     const counts = dishTitleCounts(m);
     const clash = counts[String(picked.title).trim().toLowerCase()] > 0;
     return (clash
       ? '<div class="meal-dup">Somebody is already bringing ' + esc(picked.title) +
           '. Add it anyway and the tile will read <b>Lots of ' + esc(picked.title) + '</b>.</div>'
       : "") +
-      '<div class="meal-dish-pick">' +
-        '<span class="name">' + esc(picked.title) + '</span>' +
-        '<input type="number" step="any" min="0" id="meal-serv-' + m.mealId + '" ' +
-          'aria-label="How many ' + esc(r ? r.servings.unit : "servings") + '" ' +
-          'value="' + esc(String(picked.servings)) + '" />' +
-        '<span class="unit">' + esc(r ? r.servings.unit : "servings") + '</span>' +
-        '<button class="btn btn-sm btn-meal" onclick="Actions.addMealDish(\\'' + m.mealId + '\\')">' +
-          icon("plus", 14) + ' Add</button>' +
-        '<button class="icon-btn" title="Pick something else" ' +
-          'onclick="Actions.clearMealDishPick(\\'' + m.mealId + '\\')">' + icon("x", 15) + '</button>' +
-      '</div>';
+      MealPickRowHTML(picked, "meal-serv-" + m.mealId,
+        "Actions.addMealDish(\\'" + m.mealId + "\\')",
+        "Actions.clearMealDishPick(\\'" + m.mealId + "\\')");
   }
   if (!q.trim()) return "";
   const all = mealDishMatches(q);
@@ -3744,6 +4027,15 @@ function MealPastTileHTML(m) {
       ? '<div class="meal-body">' +
           '<div class="meal-sec">Who came</div>' + MealGuestsHTML(m) +
           '<div class="meal-sec">What was on the table</div>' + MealDishesHTML(m) +
+          /* A meal that has been eaten still sits on the page forever
+             otherwise. Only the host can clear it, and it goes the same way
+             a cancellation does - off everyone's calendar, not just ours. */
+          (m.myStatus === "owner"
+            ? '<div class="meal-actions">' +
+                '<button class="btn btn-sm btn-no" onclick="Actions.cancelMeal(\\'' + m.mealId + '\\')">' +
+                  icon("trash", 14) + ' Delete this meal</button>' +
+              '</div>'
+            : "") +
         '</div>'
       : "") +
   '</div>';
@@ -4101,6 +4393,14 @@ function updateChangeBanner() {
 /* Render: Detail                                                          */
 /* ====================================================================== */
 const SCALE_PRESETS = [0.25, 0.5, 1, 2, 4];
+/* Whether the custom chip is the live choice, and what it should read. Called
+   wherever a scale is set from outside the servings row - opening a recipe
+   off the calendar, moving a scheduled portion - so the chip never disagrees
+   with the amounts underneath it. */
+function syncCustomScale() {
+  state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+  if (state.customScaleOpen) state.customScale = trimNumber(state.scale);
+}
 
 /* One rating per cookbook, and only once that cookbook has actually made the
    thing. A verdict from a kitchen that has never cooked it is not a verdict,
@@ -4184,6 +4484,16 @@ function RecipeBodyHTML(r, hideLog) {
   const scaleBtns = SCALE_PRESETS.map(p =>
     '<button class="scale-btn ' + (!state.customScaleOpen && scale === p ? "active" : "") + '" onclick="Actions.setScale(' + p + ')">' + p + 'x</button>'
   ).join("");
+  /* Typing into a chip the size of a fingernail never worked on a phone, so
+     the chip is a door rather than a field: it opens a box, and afterwards it
+     reads back whatever was accepted. The last accepted number stays on it
+     even while a preset is live, so returning to 6x is one tap and a
+     confirmation rather than a fresh guess. */
+  const customTxt = state.customScaleOpen ? trimNumber(scale) : (state.customScale || "");
+  const customChip = '<button class="scale-btn scale-custom' +
+    (state.customScaleOpen ? " active" : "") + '" ' +
+    'onclick="Actions.editCustomScale()">' +
+    (customTxt ? esc(customTxt) + 'x' : "Custom") + '</button>';
 
   const ingItems = r.ingredients.map(ing => {
     const mv = scaledVal(ing.metricValue, scale);
@@ -4203,10 +4513,7 @@ function RecipeBodyHTML(r, hideLog) {
   return '' +
     '<div class="row2">' +
       '<div class="panel"><div class="panel-label">Servings</div>' +
-        '<div class="scale-row">' + scaleBtns +
-          '<button class="scale-btn ' + (state.customScaleOpen ? "active" : "") + '" onclick="Actions.toggleCustomScale()">Custom</button>' +
-          (state.customScaleOpen ? '<input class="scale-custom-input" type="number" min="0.1" step="0.1" value="' + scale + '" onchange="Actions.setCustomScale(this.value)" />' : "") +
-        '</div>' +
+        '<div class="scale-row">' + scaleBtns + customChip + '</div>' +
         '<p class="makes-line">Makes <span class="font-mono" style="color:var(--ink)">' + scaledServings + '</span> ' + esc(r.servings.unit) + '</p>' +
       '</div>' +
       '<div class="panel"><div class="panel-label"><span>Per serving</span><span>' + (m.source === "site" ? "from source" : "estimated") + '</span></div>' +
@@ -4269,7 +4576,7 @@ function DetailViewHTML(r) {
     (r.ours ? visibilityPill(r, true) : "") + '</div>';
   /* Its own row underneath, because it does something to the calendar rather
      than to the recipe and reads oddly sitting among the marks. */
-  const schedRow = '<div class="detail-marks">' + ScheduleMarkHTML(r, true) + '</div>';
+  const schedRow = '<div class="detail-marks">' + ScheduleMarkHTML(r, true) + MealMarkHTML(r, true) + '</div>';
   /* Arrived here from a calendar square: say which one, and offer the way
      back out of it. The portions are already applied to the body below. */
   const sf = state.scheduledFor;
@@ -4750,6 +5057,25 @@ function modalShell(title, inner) {
     inner + '</div></div>';
 }
 
+/* The multiplier the presets do not cover. A number and two answers - nothing
+   about the recipe changes until Accept is pressed, so a box opened by
+   accident costs a tap to dismiss and nothing else. */
+function CustomScaleModalHTML() {
+  const r = getActiveRecipe();
+  const unit = (r && r.servings && r.servings.unit) || "servings";
+  return modalShell("Custom servings",
+    '<p class="helper-text">How many times the recipe? The ingredients and the ' +
+      esc(unit) + ' below follow whatever you put here.</p>' +
+    '<div class="field"><label>Multiplier</label>' +
+      '<input type="text" id="scale-custom" inputmode="decimal" autocomplete="off" ' +
+        'placeholder="e.g. 6" aria-label="Custom multiplier" ' +
+        'value="' + esc(state._scaleDraft || "") + '" ' +
+        'oninput="Actions.scaleDigitsOnly(this)" ' +
+        'onkeydown="if(event.key===\\'Enter\\'){event.preventDefault();Actions.commitCustomScale();}" /></div>' +
+    '<div class="edit-actions"><button class="btn" onclick="Actions.cancelCustomScale()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="Actions.commitCustomScale()">Accept</button></div>');
+}
+
 function LogCookModalHTML() {
   const r = getActiveRecipe();
   return modalShell("Log this cook",
@@ -5037,23 +5363,13 @@ function MealDraftResultsHTML() {
   if (!dr) return "";
   const pick = dr.pick;
   if (pick) {
-    const r = recipeById(pick.recipeId);
     const clash = dr.dishes.filter(function (d) {
       return d.title.trim().toLowerCase() === pick.title.trim().toLowerCase();
     }).length;
     return (clash
       ? '<div class="meal-dup">You already have ' + esc(pick.title) + ' on the list.</div>' : "") +
-      '<div class="meal-dish-pick">' +
-        '<span class="name">' + esc(pick.title) + '</span>' +
-        '<input type="number" step="any" min="0" id="meal-serv-draft" ' +
-          'aria-label="How many ' + esc(r ? r.servings.unit : "servings") + '" ' +
-          'value="' + esc(String(pick.servings)) + '" />' +
-        '<span class="unit">' + esc(r ? r.servings.unit : "servings") + '</span>' +
-        '<button class="btn btn-sm btn-meal" onclick="Actions.addMealDraftDish()">' +
-          icon("plus", 14) + ' Add</button>' +
-        '<button class="icon-btn" title="Pick something else" ' +
-          'onclick="Actions.clearMealDishPick(\\'draft\\')">' + icon("x", 15) + '</button>' +
-      '</div>';
+      MealPickRowHTML(pick, "meal-serv-draft",
+        "Actions.addMealDraftDish()", "Actions.clearMealDishPick(\\'draft\\')");
   }
   const q = String(dr.search || "");
   if (!q.trim()) return "";
@@ -5090,7 +5406,20 @@ function MealFriendPickerHTML(already) {
   const q = (state.mealFriendSearch || "").trim().toLowerCase();
   const picked = {};
   ((dr && dr.guests) || []).forEach(function (u) { picked[u.toLowerCase()] = 1; });
-  const rows = state.friends.map(function (f) {
+  /* Everyone you have ticked collects at the top, alphabetically, so a long
+     friend list does not leave you scrolling to check who is already on. The
+     ones the meal has settled already sit at the bottom, since they are
+     there to be read rather than tapped. */
+  const rank = function (f) {
+    const key = (f.members[0] || "").toLowerCase();
+    if (already && already[f.label]) return 2;
+    return picked[key] ? 0 : 1;
+  };
+  const ordered = state.friends.slice().sort(function (a, b) {
+    return (rank(a) - rank(b)) ||
+      a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+  });
+  const rows = ordered.map(function (f) {
     /* One row per cookbook, keyed on any one of its members - inviting a
        cookbook invites everybody in it, which is what the sub-line says
        where a cookbook has more than one person in it. */
@@ -5115,7 +5444,7 @@ function MealFriendPickerHTML(already) {
   return '<input type="text" id="meal-friend-search" autocomplete="off" ' +
       'placeholder="Search friends..." value="' + esc(state.mealFriendSearch || "") + '" ' +
       'oninput="Actions.mealFriendSearch(this.value)" />' +
-    '<div class="pick-list pick-list-3">' +
+    '<div class="pick-list pick-list-3" id="meal-friend-list">' +
       (rows ||
         (q ? '<p class="helper-text">No one by that name.</p>'
            : '<p class="helper-text">Nobody left to invite.</p>')) + '</div>';
@@ -5140,13 +5469,17 @@ function MealModalHTML() {
         'value="' + esc(dr.location || "") + '" /></div>' +
     '<div class="groc-range">' +
       '<div class="field"><label>Day</label>' +
-        '<input type="date" id="meal-date" value="' + esc(dr.date) + '" /></div>' +
+        '<input type="date" id="meal-date" min="' + esc(localToday()) + '" value="' + esc(dr.date) + '" /></div>' +
       '<div class="field"><label>Time</label>' +
         '<input type="time" id="meal-time" value="' + esc(dr.time) + '" /></div>' +
     '</div>' +
-    '<div class="step-block"><div class="step-label">Who to invite</div>' +
-      MealFriendPickerHTML(null) +
-    '</div>' +
+    /* Editing has its own Invite more button on the tile, so the whole
+       picker would be a second way to do one thing. */
+    (editing
+      ? ""
+      : '<div class="step-block"><div class="step-label">Who to invite</div>' +
+          MealFriendPickerHTML(null) +
+        '</div>') +
     (editing ? "" : MealDraftDishesHTML()) +
     (editing
       ? '<p class="helper-text">Moving the day moves everyone\\'s dishes with it, on their ' +
@@ -5174,6 +5507,42 @@ function MealGuestsModalHTML() {
     '<div class="edit-actions">' +
       '<button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
       '<button class="btn btn-primary" onclick="Actions.sendMealInvites()">Send invitations</button>' +
+    '</div>');
+}
+
+/* Which table, and how much of it you are bringing. The same two questions
+   the sign-up box on a tile asks, reached from the recipe instead. */
+function MealAddModalHTML() {
+  const d = state.mealAdd;
+  const meals = mealsIcanBringTo();
+  if (!d || !meals.length) return modalShell("Add to Community Meal", "");
+  const r = recipeById(d.recipeId);
+  const unit = d.unit || "servings";
+  const chosen = meals.filter(function (m) { return m.mealId === d.mealId; })[0] || meals[0];
+  const clash = chosen && chosen.dishes.filter(function (x) {
+    return String(x.title).trim().toLowerCase() === String(d.title || "").trim().toLowerCase();
+  }).length;
+  return modalShell("Add to Community Meal",
+    '<p class="helper-text">' + esc(d.title || (r ? r.title : "This recipe")) +
+      ' — it lands on the table and on your own calendar for that day.</p>' +
+    '<div class="field"><label>Which meal</label>' +
+      '<select id="meal-add-pick" onchange="Actions.setMealAddMeal(this.value)">' +
+        meals.map(function (m) {
+          return '<option value="' + esc(m.mealId) + '"' +
+            (chosen && m.mealId === chosen.mealId ? " selected" : "") + '>' +
+            esc(m.title) + ' — ' + esc(shortDate(m.date)) + '</option>';
+        }).join("") +
+      '</select></div>' +
+    '<div class="field"><label>How many ' + esc(unit) + '</label>' +
+      '<input type="number" step="any" min="0" id="meal-add-serv" value="' + esc(String(d.servings)) + '" /></div>' +
+    (clash
+      ? '<div class="meal-dup">Somebody is already bringing ' + esc(d.title) +
+          '. Add it anyway and the tile will read <b>Lots of ' + esc(d.title) + '</b>.</div>'
+      : "") +
+    '<div class="edit-actions">' +
+      '<button class="btn" onclick="Actions.closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="Actions.confirmMealAdd()">' +
+        icon("plus", 15) + ' Add</button>' +
     '</div>');
 }
 
@@ -5268,6 +5637,44 @@ function UrlToRecipeModalHTML() {
       '</div>' : ""));
 }
 
+/* One switch, per device, with the reason underneath whenever it cannot be
+   thrown. Nothing here is per cookbook: a phone is a phone. */
+function PushSettingHTML() {
+  const p = state.push;
+  const line = function (text) { return '<p class="helper-text">' + text + '</p>'; };
+  let inner;
+  if (p.status === "install") {
+    inner = line("On an iPhone or iPad, notifications only work once the app is on your Home Screen. " +
+      "Tap Share, then Add to Home Screen, and open it from there.");
+  } else if (p.status === "denied") {
+    inner = line("Notifications are blocked for this app in your device settings. Turn them back on there first.");
+  } else if (p.status === "unavailable") {
+    inner = line("Notifications are not switched on for this server yet.");
+  } else if (p.status === "unsupported" || p.status === "unknown") {
+    inner = line("This browser cannot send notifications.");
+  } else {
+    const on = p.status === "on";
+    inner = '<button class="btn btn-sm btn-block' + (on ? "" : " btn-primary") + '" ' +
+      (p.busy ? "disabled" : "") + ' onclick="Actions.togglePush()">' +
+      icon("bell", 14) + " " + (p.busy ? "Working…" : (on ? "Turn off on this device" : "Turn on for this device")) +
+      '</button>' +
+      (on
+        ? '<p class="helper-text" style="margin-bottom:2px">This device is signed up. Choose what it tells you about:</p>' +
+          PUSH_KIND_LABELS.map(function (pair) {
+            const checked = p.kinds.indexOf(pair[0]) >= 0;
+            return '<label class="check-row"><input type="checkbox"' + (checked ? " checked" : "") +
+              (p.busy ? " disabled" : "") +
+              ' onchange="Actions.setPushKind(this.value, this.checked)" value="' + pair[0] + '" />' +
+              '<span>' + esc(pair[1]) + '</span></label>';
+          }).join("") +
+          (p.kinds.length ? "" :
+            '<p class="helper-text">Everything is switched off, so nothing will reach this device. ' +
+            'Turn one back on, or turn notifications off altogether.</p>')
+        : line("Hear about friend requests, meal invitations, replies to your invitations, cooks logged on your recipes, and recipes your friends share — without the app open."));
+  }
+  return '<div class="field"><label>Notifications</label>' + inner + '</div>';
+}
+
 function AccountModalHTML() {
   return modalShell("Settings",
     '<div class="field"><label>Email</label>' +
@@ -5283,6 +5690,7 @@ function AccountModalHTML() {
       '<button class="btn btn-sm btn-block" onclick="Actions.saveUsername()">Save name</button>' +
       '<p class="helper-text">This is what friends see on your recipes, ratings and comments. 2-20 characters: letters, numbers, dot, dash or underscore.</p>' +
     '</div>' +
+    PushSettingHTML() +
     (state.mates.length
       ? '<div class="field"><label>In this cookbook with you</label>' +
         state.mates.map(m => '<div class="friend-row"><span style="color:var(--accent)">' + icon("chain", 16) + '</span>' +
@@ -5580,7 +5988,6 @@ function ActionsModalHTML() {
     '<div style="display:flex; flex-direction:column; gap:8px;">' +
       '<button class="btn btn-primary btn-block" onclick="Actions.closeModal(); Actions.openNew();">' + icon("plus", 16) + ' New recipe</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openFriends();">' + icon("users", 16) + ' Friends/Notifications' + (alerts ? " (" + alerts + ")" : "") + '</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'import\\');">' + icon("upload", 16) + ' Import recipes</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.exportAll();">' + icon("download", 16) + ' Export ' + (hasActiveFilter() ? "selected" : "all") + '</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.reload();">' + icon("sync", 16) + ' Reload from server</button>' +
       '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'shareApp\\');">' + icon("share", 16) + ' Share App</button>' +
@@ -5697,7 +6104,8 @@ function renderModal() {
   const root = document.getElementById("modal-root");
   setScrollLock(!!state.modal);
   if (!state.modal) { root.innerHTML = ""; return; }
-  if (state.modal === "logCook") root.innerHTML = LogCookModalHTML();
+  if (state.modal === "customScale") root.innerHTML = CustomScaleModalHTML();
+  else if (state.modal === "logCook") root.innerHTML = LogCookModalHTML();
   else if (state.modal === "import") root.innerHTML = ImportModalHTML();
   else if (state.modal === "urlToRecipe") root.innerHTML = UrlToRecipeModalHTML();
   else if (state.modal === "account") root.innerHTML = AccountModalHTML();
@@ -5710,8 +6118,7 @@ function renderModal() {
   else if (state.modal === "visibility") root.innerHTML = VisibilityModalHTML();
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
   else if (state.modal === "filters") { root.innerHTML = FiltersModalHTML(); updateFilterScrollHint(); }
-  else if (state.modal === "actions") root.innerHTML = ActionsModalHTML();
-  else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
+  else if (state.modal === "actions") root.innerHTML = ActionsModalHTML();  else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
   else if (state.modal === "calDay") root.innerHTML = CalDayModalHTML();
   else if (state.modal === "confirmDeleteList") root.innerHTML = ConfirmDeleteListModalHTML();
   else if (state.modal === "addGroceryItem") root.innerHTML = AddGroceryItemModalHTML();
@@ -5720,6 +6127,7 @@ function renderModal() {
   else if (state.modal === "groceriesHelp") root.innerHTML = GroceriesHelpModalHTML();
   else if (state.modal === "calendarHelp") root.innerHTML = CalendarHelpModalHTML();
   else if (state.modal === "meal") root.innerHTML = MealModalHTML();
+  else if (state.modal === "mealAdd") root.innerHTML = MealAddModalHTML();
   else if (state.modal === "mealGuests") root.innerHTML = MealGuestsModalHTML();
   else if (state.modal === "mergeCommon") root.innerHTML = MergeCommonModalHTML();
   else if (state.modal === "exclusions") root.innerHTML = ExclusionsModalHTML();
@@ -5995,7 +6403,7 @@ Actions.adminSetPassword = async function() {
 /* --- navigation --- */
 Actions.openDetail = function(id, showLogs) {
   state.activeId = id; state.view = "detail"; state.scale = 1;
-  state.customScaleOpen = false; state._showAllLogs = !!showLogs;
+  state.customScaleOpen = false; state.customScale = ""; state._showAllLogs = !!showLogs;
   /* Reached from the box rather than from a calendar square, so the portions
      are the recipe's own again and the banner has nothing to say. */
   state.scheduledFor = null;
@@ -6328,8 +6736,53 @@ Actions.toggleMark = async function(kind, id) {
 Actions.setSort = function(v) { state.sort = v; updateResultsSection(); };
 
 Actions.setScale = function(p) { state.scale = p; state.customScaleOpen = false; updateRecipeBody(); };
-Actions.toggleCustomScale = function() { state.customScaleOpen = !state.customScaleOpen; updateRecipeBody(); };
-Actions.setCustomScale = function(v) { const n = parseFloat(v); if (!isNaN(n) && n > 0) state.scale = n; updateRecipeBody(); };
+/* Tapping the chip opens a box rather than turning the chip into one. The
+   number it already carries is put in the field and selected, so a second
+   visit to 6x is a tap and a confirmation, and typing over it is one motion.
+   Going through the box every time is deliberate: the chip is small enough
+   that a stray tap would otherwise rescale the whole recipe silently. */
+Actions.editCustomScale = function() {
+  state._scaleDraft = state.customScale || "";
+  state.modal = "customScale";
+  renderModal();
+  setTimeout(function () {
+    const el = document.getElementById("scale-custom");
+    if (!el) return;
+    el.focus();
+    if (el.setSelectionRange) { try { el.setSelectionRange(0, String(el.value).length); } catch (e) {} }
+  }, 0);
+};
+/* A multiplier is a number. Anything else is dropped as it is typed rather
+   than rejected afterwards, and only the first decimal point survives. */
+Actions.scaleDigitsOnly = function(el) {
+  if (!el) return;
+  const clean = String(el.value).replace(/[^0-9.]/g, "").replace(/\\.(?=.*\\.)/g, "");
+  if (clean !== el.value) el.value = clean;
+  state._scaleDraft = clean;
+};
+/* Accept with nothing usable in the box closes it and leaves the recipe as it
+   was. Refusing to close would be a scolding over a control nobody has to
+   use. */
+Actions.commitCustomScale = function(v) {
+  const live = document.getElementById("scale-custom");
+  const raw = v == null ? (live ? live.value : state._scaleDraft) : v;
+  const clean = String(raw == null ? "" : raw).replace(/[^0-9.]/g, "").replace(/\\.(?=.*\\.)/g, "");
+  const n = parseFloat(clean);
+  if (!isNaN(n) && n > 0) {
+    state.scale = n;
+    state.customScale = trimNumber(n);
+    state.customScaleOpen = true;
+  }
+  state._scaleDraft = "";
+  Actions.closeModal();
+  updateRecipeBody();
+};
+Actions.cancelCustomScale = function() {
+  state._scaleDraft = "";
+  Actions.closeModal();
+};
+Actions.toggleCustomScale = function() { Actions.editCustomScale(); };
+Actions.setCustomScale = function(v) { Actions.commitCustomScale(v); };
 Actions.toggleShowAllLogs = function() { state._showAllLogs = !state._showAllLogs; updateRecipeBody(); };
 
 /* ---- Cook mode -------------------------------------------------------
@@ -6408,9 +6861,42 @@ Actions.openModal = function(name) {
     state.urlToRecipe = { mode: state._nextImportMode || "", url: "", text: "", prompt: "", generated: false };
     state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = "";
   }
+  /* Permission can be changed outside the app, so the switch is re-read
+     every time the panel is opened rather than trusted from boot. */
+  if (name === "account") {
+    refreshPushState().then(function () {
+      if (state.modal === "account") renderModal();
+    }).catch(function () {});
+  }
   renderModal();
 };
 Actions.closeModal = function() { state.modal = null; state.modalError = ""; renderModal(); updateLibraryChrome(); };
+
+/* --- notifications on this device --- */
+Actions.setPushKind = async function(kind, on) {
+  try { await savePushKinds(kind, on === true); }
+  catch (e) { toast((e && e.message) || "That did not save"); }
+  renderModal();
+};
+Actions.togglePush = async function() {
+  const p = state.push;
+  if (p.busy) return;
+  const turningOn = p.status !== "on";
+  p.busy = true;
+  renderModal();
+  try {
+    if (turningOn) await enablePush(); else await disablePush();
+    if (p.status === "on") toast("Notifications on for this device");
+    else if (p.status === "denied") toast("Your device is blocking notifications");
+    else if (turningOn) toast("Notifications were not turned on");
+    else toast("Notifications off for this device");
+  } catch (e) {
+    toast((e && e.message) || "That did not work");
+    await refreshPushState().catch(function () {});
+  }
+  p.busy = false;
+  renderModal();
+};
 
 /* --- rating --- */
 /* One per cookbook, so this overwrites rather than adds, and 0 clears it.
@@ -7211,7 +7697,7 @@ Actions.openScheduled = function(entryId) {
   state.activeId = e.recipeId;
   state.view = "detail";
   state.scale = factorFor(recipeById(e.recipeId), e.servings);
-  state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+  syncCustomScale();
   state.scheduledFor = { entryId: e.entryId, recipeId: e.recipeId, date: e.date, servings: e.servings };
   state._showAllLogs = false;
   setWatch(e.recipeId);
@@ -7220,7 +7706,7 @@ Actions.openScheduled = function(entryId) {
      body, so it is worked out again once that has landed. */
   loadBodyInto(e.recipeId, function () {
     state.scale = factorFor(recipeById(e.recipeId), e.servings);
-    state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+    syncCustomScale();
   });
 };
 
@@ -7355,7 +7841,7 @@ Actions.addToCalendar = async function() {
       if (state.scheduledFor && state.scheduledFor.entryId === d.entryId) {
         state.scheduledFor = Object.assign({}, state.scheduledFor, { date: date, servings: servings });
         state.scale = factorFor(r, servings);
-        state.customScaleOpen = SCALE_PRESETS.indexOf(state.scale) < 0;
+        syncCustomScale();
       }
       toast(r.title + " moved to " + shortDate(date));
     } else {
@@ -7422,10 +7908,30 @@ Actions.openEditMeal = function(mealId) {
 Actions.mealFriendSearch = function(v) {
   state.mealFriendSearch = v;
   readMealDraftFields();
-  renderModal();
+  withMealSheetScroll(renderModal);
   const el = document.getElementById("meal-friend-search");
   if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
 };
+/* Redrawing the sheet resets every scroller in it, so ticking a friend
+   halfway down a long list used to throw both the list and the sheet back to
+   the top. Both offsets are read before the redraw and put back after it. */
+function withMealSheetScroll(fn) {
+  const read = function (sel) {
+    const el = typeof document !== "undefined" && document.querySelector
+      ? document.querySelector(sel) : null;
+    return el ? (el.scrollTop || 0) : 0;
+  };
+  const listAt = read("#meal-friend-list");
+  const sheetAt = read(".modal-box");
+  fn();
+  const put = function (sel, y) {
+    const el = typeof document !== "undefined" && document.querySelector
+      ? document.querySelector(sel) : null;
+    if (el && y) el.scrollTop = y;
+  };
+  put("#meal-friend-list", listAt);
+  put(".modal-box", sheetAt);
+}
 Actions.toggleMealGuest = function(username) {
   const dr = state.mealDraft;
   if (!dr) return;
@@ -7434,7 +7940,7 @@ Actions.toggleMealGuest = function(username) {
   readMealDraftFields();
   const at = dr.guests.map(u => u.toLowerCase()).indexOf(String(username).toLowerCase());
   if (at >= 0) dr.guests.splice(at, 1); else dr.guests.push(username);
-  renderModal();
+  withMealSheetScroll(renderModal);
 };
 function readMealDraftFields() {
   const dr = state.mealDraft;
@@ -7457,6 +7963,13 @@ Actions.saveMeal = async function() {
   const title = String(dr.title || "").trim();
   if (!title) { state.modalError = "Give the meal a name."; renderModal(); return; }
   if (!dr.date) { state.modalError = "Pick a day."; renderModal(); return; }
+  /* A meal you cannot go to is not a meal. The date input carries a min as
+     well, but a typed date gets past that on some keyboards. */
+  if (dr.date < localToday()) {
+    state.modalError = "That day has already been. Pick today or later.";
+    renderModal();
+    return;
+  }
   try {
     if (dr.mealId) {
       await API("meal/update", {
@@ -7559,15 +8072,62 @@ Actions.leaveMeal = async function(mealId) {
   } catch (err) { toast(err.message); }
   renderApp();
 };
+Actions.openMealAdd = async function(recipeId) {
+  const meals = mealsIcanBringTo();
+  if (!meals.length) { toast("No upcoming meal to add it to"); return; }
+  const sum = summaryById(recipeId);
+  if (!sum) { toast("That recipe is no longer there"); return; }
+  await ensureBody(recipeId);
+  const r = recipeById(recipeId) || sum;
+  state.mealAdd = {
+    recipeId: recipeId, title: r.title, mealId: meals[0].mealId,
+    servings: (r.servings && Number(r.servings.base)) || 1,
+    unit: (r.servings && r.servings.unit) || "servings"
+  };
+  Actions.openModal("mealAdd");
+};
+Actions.setMealAddMeal = function(mealId) {
+  if (!state.mealAdd) return;
+  const f = document.getElementById("meal-add-serv");
+  if (f) state.mealAdd.servings = f.value;
+  state.mealAdd.mealId = mealId;
+  renderModal();
+};
+Actions.confirmMealAdd = async function() {
+  const d = state.mealAdd;
+  if (!d || state.busy) return;
+  const f = document.getElementById("meal-add-serv");
+  const servings = Number(f ? f.value : d.servings);
+  if (!(servings > 0)) { toast("How many are you making?"); return; }
+  const m = mealById(d.mealId);
+  if (!m) { toast("That meal is no longer there"); return; }
+  const clash = m.dishes.filter(function (x) {
+    return String(x.title).trim().toLowerCase() === String(d.title).trim().toLowerCase();
+  }).length;
+  if (clash && !confirm("Somebody is already bringing " + d.title +
+    ". Add it anyway? The tile will read \\"Lots of " + d.title + "\\".")) return;
+  try {
+    await API("meal/dish/add", { mealId: d.mealId, recipeId: d.recipeId, servings: servings });
+    state.mealAdd = null;
+    Actions.closeModal();
+    await refreshLibrary(false);
+    toast("On the table, and on your calendar");
+  } catch (err) { toast(err.message); }
+};
 Actions.cancelMeal = async function(mealId) {
   const m = mealById(mealId);
   if (!m) return;
-  if (!confirm("Cancel " + m.title + " for everyone? Every guest's dishes come off their " +
-    "calendars as well as yours. This cannot be undone.")) return;
+  const gone = isMealPast(m);
+  const warn = gone
+    ? "Delete " + m.title + " for everyone? It comes off every guest's calendar as well as " +
+      "yours. This cannot be undone."
+    : "Cancel " + m.title + " for everyone? Every guest's dishes come off their " +
+      "calendars as well as yours. This cannot be undone.";
+  if (!confirm(warn)) return;
   try {
     await API("meal/cancel", { mealId });
     await refreshLibrary(false);
-    toast("Meal cancelled");
+    toast(gone ? "Meal deleted" : "Meal cancelled");
   } catch (err) { toast(err.message); }
   renderApp();
 };
@@ -7611,27 +8171,39 @@ Actions.onMealDishInput = function(mealId, v) {
   const m = mealById(mealId);
   if (box && m) box.innerHTML = MealDishResultsHTML(m);
 };
-/* Tapping the bringing box on a tile halfway down a long meals page puts the
-   iOS keyboard over the field you just tapped, and the browser's own scroll
-   correction fires before the keyboard has finished coming up, so the field
-   lands wherever the page happened to be. Nudging it into the middle of what
-   is left of the viewport after the keyboard settles is the fix: block
-   "center" rather than "nearest", because "nearest" considers a field hidden
-   behind the keyboard to be already in view. */
+/* Tapping a field halfway down a long page puts the keyboard over the thing
+   you just tapped, and the browser's own scroll correction fires before the
+   keyboard has finished coming up, so the field lands wherever the page
+   happened to be. This puts it near the top of whatever room is left and
+   leaves it there: "start" rather than "center", because a field that stays
+   put while results appear and disappear underneath it is the whole point -
+   centring re-aims at the field every time the block below it changes
+   height, which is what made typing with no matches jump around. */
 function bringIntoView(el) {
   if (!el || !el.scrollIntoView) return;
-  try { el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  try { el.scrollIntoView({ block: "start", behavior: "smooth" }); }
   catch (e) { el.scrollIntoView(); }
 }
-Actions.focusMealSearch = function(id) {
-  const el = document.getElementById(id);
+/* The second pass catches the resize when the keyboard opens, which is what
+   actually shifts the field out from under the cursor. It is cancelled the
+   moment a key is pressed, so nothing moves once you are typing. */
+let pendingFocusScroll = 0;
+function cancelFocusScroll() {
+  if (!pendingFocusScroll) return;
+  clearTimeout(pendingFocusScroll);
+  pendingFocusScroll = 0;
+}
+function focusIntoView(el) {
   if (!el) return;
-  /* Two passes. The first is for the case where the keyboard is already up
-     and nothing is going to move; the second catches the resize after it
-     opens, which is what actually shifts the field out from under the
-     cursor. */
   bringIntoView(el);
-  setTimeout(function () { bringIntoView(document.getElementById(id)); }, 320);
+  cancelFocusScroll();
+  pendingFocusScroll = setTimeout(function () {
+    pendingFocusScroll = 0;
+    if (typeof document !== "undefined" && document.activeElement === el) bringIntoView(el);
+  }, 320);
+}
+Actions.focusMealSearch = function(id) {
+  focusIntoView(document.getElementById(id));
 };
 /* Having picked a recipe, the one thing still being asked for is how many you
    are making, so the cursor goes there rather than leaving you to hunt for a
@@ -7642,13 +8214,23 @@ function focusMealServings(mealId) {
     if (!el) return;
     el.focus();
     if (el.setSelectionRange) { try { el.setSelectionRange(0, String(el.value).length); } catch (e) {} }
-    bringIntoView(el);
+    focusIntoView(el);
   }, 0);
 }
-Actions.pickMealDish = function(mealId, recipeId) {
-  const r = recipeById(recipeId);
-  if (!r) { toast("That recipe is no longer there"); return; }
-  const pick = { recipeId: recipeId, title: r.title, servings: r.servings.base || 1 };
+/* The recipe summary a sync brings back does not carry servings - the body
+   is fetched only when a recipe is opened - so a recipe nobody has opened
+   this session had no servings.base to read, and picking it threw before it
+   could do anything. That is why only the one recipe whose body happened to
+   be cached could be chosen. The body is fetched first now, and the unit
+   travels on the pick so the row can label itself without it. */
+Actions.pickMealDish = async function(mealId, recipeId) {
+  const sum = summaryById(recipeId);
+  if (!sum) { toast("That recipe is no longer there"); return; }
+  await ensureBody(recipeId);
+  const r = recipeById(recipeId) || sum;
+  const sv = (r.servings && Number(r.servings.base)) || 1;
+  const unit = (r.servings && r.servings.unit) || "servings";
+  const pick = { recipeId: recipeId, title: r.title, servings: sv, unit: unit };
   if (mealId === "draft") {
     if (!state.mealDraft) return;
     readMealDraftFields();
@@ -8347,6 +8929,24 @@ if (typeof window !== "undefined" && window.visualViewport && window.addEventLis
   window.addEventListener("orientationchange", syncViewportVars);
   syncViewportVars();
 }
+/* Every text field in the app, not only the ones that asked. Bound once on
+   the document because the views are emptied and refilled on every render,
+   so per-field handlers would need rewiring each time - and because the rule
+   is the same everywhere: the thing you are typing into comes to the top of
+   whatever the keyboard has left, and then stays there. The first keystroke
+   cancels the follow-up pass, so nothing moves under you mid-word. */
+if (typeof document !== "undefined" && document.addEventListener) {
+  const TYPEABLE = { INPUT: 1, TEXTAREA: 1 };
+  const NO_SCROLL_TYPES = { checkbox: 1, radio: 1, file: 1, button: 1, submit: 1, hidden: 1, range: 1 };
+  document.addEventListener("focusin", function (e) {
+    const el = e && e.target;
+    if (!el || !TYPEABLE[el.tagName]) return;
+    if (el.tagName === "INPUT" && NO_SCROLL_TYPES[String(el.type || "text").toLowerCase()]) return;
+    focusIntoView(el);
+  });
+  document.addEventListener("input", cancelFocusScroll);
+  document.addEventListener("focusout", cancelFocusScroll);
+}
 /* Closing the tab should free the recipe rather than leave it locked for
    the full timeout. Best effort: this does not always fire on mobile,
    which is exactly why locks expire on their own as well. */
@@ -8564,14 +9164,19 @@ if (typeof document !== "undefined" && document.addEventListener) {
        waiting behind the sign-in screen. A friend code still has to wait -
        there is no one to send the request from yet. */
     if (scanned && scanned.type === "recipe") { await Actions.beginIntent(scanned); return; }
-    if (scanned) { stashIntent(scanned); state._arrivedByScan = true; }
+    if (scanned && scanned.type !== "push") { stashIntent(scanned); state._arrivedByScan = true; }
     renderApp();
     return;
   }
   await refreshLibrary(true);
   /* A code scanned just now wins over one left over from an abandoned visit. */
   const intent = scanned || takeStashedIntent();
-  if (intent) await Actions.beginIntent(intent);
+  if (intent && intent.type === "push") await openPushTarget(intent.target);
+  else if (intent) await Actions.beginIntent(intent);
+  /* Last, and never in the way: works out whether this device is signed up
+     for notifications so Settings can say so, and quietly re-registers the
+     worker on every start in case it was thrown away. */
+  refreshPushState().catch(function () {});
  } catch (e) {
   /* Boot failing used to mean a white page and nothing else. Say what
      happened, and leave a way back to the front door. */
@@ -9044,6 +9649,17 @@ const LATER_TABLES = [
   "CREATE TABLE IF NOT EXISTS sessions ( token TEXT PRIMARY KEY, username_lc TEXT NOT NULL, " +
     "created_at TEXT NOT NULL, expires_at TEXT NOT NULL )",
   "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(username_lc)",
+  /* One row per device that has said yes to notifications. Keyed by the
+     endpoint the browser hands out, because that is the only identifier the
+     push service knows us by; a device that reinstalls gets a new one and the
+     old row is dropped the first time it answers Gone. Held per person rather
+     than per cookbook: two people sharing a cookbook are still two phones.
+     kinds is what that device wants to be told about, as a JSON list; empty
+     means it has never said, which is taken as all of them. */
+  "CREATE TABLE IF NOT EXISTS push_subs ( endpoint TEXT PRIMARY KEY, username_lc TEXT NOT NULL, " +
+    "p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL, " +
+    "kinds TEXT NOT NULL DEFAULT '' )",
+  "CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subs(username_lc)",
   "CREATE TABLE IF NOT EXISTS recipe_marks ( cookbook_id TEXT NOT NULL, recipe_id TEXT NOT NULL, " +
     "kind TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, " +
     "PRIMARY KEY (cookbook_id, recipe_id, kind) )",
@@ -9593,7 +10209,267 @@ async function resolvePendingPins(env, cbA, cbB) {
    upgraded from the old behaviour may still have wishes sitting in that
    table, and accepting a friend request ought to settle them. */
 
-async function handleApi(route, body, env, request) {
+/* ==================================================== push notifications = */
+/* Web Push done with nothing but WebCrypto, so there is no library to bundle
+   into a file that is pasted into a dashboard: RFC 8292 for the VAPID
+   signature that identifies this server to Apple and Google, RFC 8291 for the
+   aes128gcm envelope that keeps the message unreadable to them. Neither of
+   them ever sees the text.
+
+   Everything here swallows its own errors. A push is a courtesy; it must
+   never be the reason a friend request or a cook log fails to save. */
+const PUSH_TTL = 86400;          /* a day: past that it is no longer news */
+const PUSH_FANOUT = 40;          /* D1 takes about fifty binds in one go */
+/* Everything a notification can be about. The client shows one switch per
+   entry, so this list and the labels beside them are the same six things. */
+const PUSH_KINDS = ["friendAsk", "friendYes", "mealAsk", "mealYes", "cook", "recipe"];
+
+function cleanKinds(value) {
+  const list = Array.isArray(value) ? value : [];
+  return PUSH_KINDS.filter(function (k) { return list.indexOf(k) >= 0; });
+}
+/* A stored list of nothing and a stored list never written are different
+   things: the first is somebody who turned everything off, the second is a
+   device from before there were switches. Only the second means all. */
+function wantsKind(row, kind) {
+  if (!kind) return true;
+  if (!row || !row.kinds) return true;
+  let list;
+  try { list = JSON.parse(row.kinds); } catch (e) { return true; }
+  if (!Array.isArray(list)) return true;
+  return list.indexOf(kind) >= 0;
+}
+/* The same reading, but for telling the client. A device that has never said
+   is shown every switch on, which is what it is actually getting. */
+function readKinds(stored) {
+  if (!stored) return PUSH_KINDS.slice();
+  try {
+    const list = JSON.parse(stored);
+    return Array.isArray(list) ? cleanKinds(list) : PUSH_KINDS.slice();
+  } catch (e) { return PUSH_KINDS.slice(); }
+}
+async function kindsFor(env, endpoint, usernameLc) {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT kinds FROM push_subs WHERE endpoint = ? AND username_lc = ?"
+    ).bind(endpoint, usernameLc).first();
+    return readKinds(row && row.kinds);
+  } catch (e) { return PUSH_KINDS.slice(); }
+}
+
+function b64urlToBytes(s) {
+  const t = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (t.length % 4) ? "====".slice(t.length % 4) : "";
+  const bin = atob(t + pad);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function bytesToB64url(bytes) {
+  const b = new Uint8Array(bytes);
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function joinBytes(parts) {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+async function hmacBytes(keyBytes, data) {
+  const k = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, data));
+}
+
+/* The server's own identity, rebuilt from the two secrets. The public half is
+   stored as the raw 65-byte point the browser wants for applicationServerKey,
+   so the JWK coordinates are cut back out of it rather than kept twice. */
+async function vapidKeys(env) {
+  if (!env || !env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return null;
+  try {
+    const pub = b64urlToBytes(env.VAPID_PUBLIC_KEY);
+    if (pub.length !== 65) return null;
+    const key = await crypto.subtle.importKey("jwk", {
+      kty: "EC", crv: "P-256", d: String(env.VAPID_PRIVATE_KEY),
+      x: bytesToB64url(pub.slice(1, 33)), y: bytesToB64url(pub.slice(33, 65))
+    }, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    return { key: key, pub: String(env.VAPID_PUBLIC_KEY) };
+  } catch (e) { return null; }
+}
+async function vapidHeader(env, keys, endpoint) {
+  const enc = new TextEncoder();
+  const head = bytesToB64url(enc.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
+  const claims = bytesToB64url(enc.encode(JSON.stringify({
+    aud: new URL(endpoint).origin,
+    exp: Math.floor(Date.now() / 1000) + 43200,
+    sub: env.VAPID_SUBJECT || "mailto:kindredcupboard@gmail.com"
+  })));
+  const signed = head + "." + claims;
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keys.key, enc.encode(signed));
+  return "vapid t=" + signed + "." + bytesToB64url(new Uint8Array(sig)) + ", k=" + keys.pub;
+}
+
+/* One message, sealed to one device. A throwaway keypair per send agrees a
+   secret with that device's public key; the shared secret and the device's
+   own auth secret are stretched into a content key and a nonce, and the
+   result is a single aes128gcm record with the body laid out in front of it
+   exactly as the spec orders it. */
+async function encryptPush(text, p256dh, authSecretB64) {
+  const enc = new TextEncoder();
+  const uaPub = b64urlToBytes(p256dh);
+  const authSecret = b64urlToBytes(authSecretB64);
+  const eph = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey("raw", eph.publicKey));
+  const uaKey = await crypto.subtle.importKey("raw", uaPub, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, eph.privateKey, 256));
+
+  const prkKey = await hmacBytes(authSecret, shared);
+  const ikm = await hmacBytes(prkKey, joinBytes([
+    enc.encode("WebPush: info\u0000"), uaPub, asPub, new Uint8Array([1])
+  ]));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const prk = await hmacBytes(salt, ikm);
+  const cek = (await hmacBytes(prk, joinBytes([
+    enc.encode("Content-Encoding: aes128gcm\u0000"), new Uint8Array([1])
+  ]))).slice(0, 16);
+  const nonce = (await hmacBytes(prk, joinBytes([
+    enc.encode("Content-Encoding: nonce\u0000"), new Uint8Array([1])
+  ]))).slice(0, 12);
+
+  const aes = await crypto.subtle.importKey("raw", cek, { name: "AES-GCM" }, false, ["encrypt"]);
+  /* 0x02 is the last-record marker; there is only ever one record here. */
+  const padded = joinBytes([enc.encode(text), new Uint8Array([2])]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce, tagLength: 128 }, aes, padded));
+  return joinBytes([salt, new Uint8Array([0, 0, 16, 0]), new Uint8Array([65]), asPub, ct]);
+}
+
+async function sendOnePush(env, keys, sub, text) {
+  let payload, auth;
+  try {
+    payload = await encryptPush(text, sub.p256dh, sub.auth);
+    auth = await vapidHeader(env, keys, sub.endpoint);
+  } catch (e) { return; }
+  let res;
+  try {
+    res = await fetch(sub.endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": auth,
+        "Content-Encoding": "aes128gcm",
+        "Content-Type": "application/octet-stream",
+        "TTL": String(PUSH_TTL),
+        "Urgency": "normal"
+      },
+      body: payload
+    });
+  } catch (e) { return; }
+  /* Gone means the browser has thrown the subscription away - an uninstall,
+     a cleared site, permission withdrawn. Stop writing to a dead address. */
+  if (res && (res.status === 404 || res.status === 410)) {
+    try {
+      await env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(sub.endpoint).run();
+    } catch (e) {}
+  }
+}
+
+async function pushToUsers(env, usernameLcs, msg) {
+  const names = Array.from(new Set((usernameLcs || []).filter(Boolean)));
+  if (!names.length) return;
+  const keys = await vapidKeys(env);
+  if (!keys) return;                  /* no keys configured: quietly nothing */
+  const text = JSON.stringify(msg);
+  for (let i = 0; i < names.length; i += PUSH_FANOUT) {
+    const slice = names.slice(i, i + PUSH_FANOUT);
+    let rows;
+    try {
+      rows = await env.DB.prepare(
+        "SELECT endpoint, p256dh, auth, kinds FROM push_subs WHERE username_lc IN (" +
+        placeholders(slice.length) + ")"
+      ).bind(...slice).all();
+    } catch (e) { return; }
+    for (const sub of (rows && rows.results) || []) {
+      if (wantsKind(sub, msg && msg.kind)) await sendOnePush(env, keys, sub, text);
+    }
+  }
+}
+
+/* Most things worth announcing happen between cookbooks, but a notification
+   arrives on a person's phone, so the cookbook is opened out into its people
+   first. The one who caused it is left out - nobody needs telling what they
+   just did. */
+async function usersInCookbooks(env, cookbookIds, exceptLc) {
+  const ids = Array.from(new Set((cookbookIds || []).filter(Boolean)));
+  const out = [];
+  for (let i = 0; i < ids.length; i += PUSH_FANOUT) {
+    const slice = ids.slice(i, i + PUSH_FANOUT);
+    const rows = await env.DB.prepare(
+      "SELECT username_lc FROM users WHERE cookbook_id IN (" + placeholders(slice.length) + ")"
+    ).bind(...slice).all();
+    for (const r of (rows && rows.results) || []) {
+      if (r.username_lc !== exceptLc) out.push(r.username_lc);
+    }
+  }
+  return out;
+}
+async function pushToCookbooks(env, cookbookIds, exceptLc, msg) {
+  try {
+    await pushToUsers(env, await usersInCookbooks(env, cookbookIds, exceptLc), msg);
+  } catch (e) {}
+}
+
+/* Which friends should hear that a recipe has appeared. Linking cookbooks
+   hands over everything already in them at once, and fifty recipes announced
+   fifty times is not news, it is a fault. So the moment of the handshake is
+   compared against the moment the recipe was written: anything that was
+   already there when you linked up belongs to the introduction, and only
+   what comes afterwards is worth a phone lighting up. A recipe made now
+   clears every handshake there is, which is why the ordinary case needs no
+   thought at all. */
+async function friendsToTell(env, cookbookId, createdAt) {
+  const rows = await env.DB.prepare(
+    "SELECT CASE WHEN requester_cb = ? THEN addressee_cb ELSE requester_cb END AS cb, updated_at " +
+    "FROM friendships WHERE status = 'accepted' AND (requester_cb = ? OR addressee_cb = ?)"
+  ).bind(cookbookId, cookbookId, cookbookId).all();
+  return ((rows && rows.results) || [])
+    .filter(function (r) { return r.updated_at && String(r.updated_at) < String(createdAt); })
+    .map(function (r) { return r.cb; });
+}
+/* The name a cookbook goes by on somebody else's shelf. */
+async function labelOfCookbook(env, cookbookId, fallback) {
+  try {
+    const map = await membersOf(env, [cookbookId]);
+    return householdLabel(map[cookbookId] || [fallback]);
+  } catch (e) { return fallback; }
+}
+async function announceRecipes(env, me, createdAt, one, count) {
+  const cbs = await friendsToTell(env, me.cookbookId, createdAt);
+  if (!cbs.length) return;
+  const label = await labelOfCookbook(env, me.cookbookId, me.username);
+  const msg = (count === 1 && one)
+    ? { title: me.username + " shared " + one.title,
+        body: "It is on their shelf in your box now.",
+        url: "/?n=recipe:" + one.recipeId, tag: "recipe:" + one.recipeId }
+    : { title: me.username + " shared " + count + " recipes",
+        body: "They are on their shelf in your box now.",
+        url: "/?n=shelf:" + encodeURIComponent(label), tag: "recipes:" + me.cookbookId };
+  msg.kind = "recipe";
+  await pushToCookbooks(env, cbs, null, msg);
+}
+
+/* Hands the work to the runtime so the person who triggered it is not kept
+   waiting on somebody else's phone. Without a context - the test harnesses
+   have none - it simply runs, and its failures stay swallowed. */
+function pushLater(ctx, work) {
+  const p = Promise.resolve().then(work).catch(function () {});
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
+  return p;
+}
+
+async function handleApi(route, body, env, request, ctx) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   await ensureSchema(env);
 
@@ -9728,6 +10604,82 @@ async function handleApi(route, body, env, request) {
   /* ---- sign out ----
      Answers the same way whether or not the token was real, so signing out
      twice is not an error worth showing anybody. */
+  /* ---- notifications on a device ----
+     The public key is public by definition: the browser has to hand it to
+     the push service before it will issue a subscription at all. It is
+     answered without a session so the settings panel can tell whether the
+     feature is switched on at the server before asking anybody for
+     permission. */
+  if (route === "push/key") {
+    return jsonResponse({ key: (env && env.VAPID_PUBLIC_KEY) || "" });
+  }
+
+  /* Saying yes on a device. Keyed by endpoint, so the same phone answering
+     twice replaces its row rather than collecting them, and a phone that
+     moves to another account moves with it. */
+  if (route === "push/subscribe") {
+    const who = await requireAuth(env, body);
+    const endpoint = cleanString(body.endpoint, 800);
+    const p256dh = cleanString(body.p256dh, 200);
+    const auth = cleanString(body.auth, 100);
+    if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) {
+      throw new ApiError(400, "That subscription was not readable.");
+    }
+    await env.DB.prepare(
+      "INSERT INTO push_subs (endpoint, username_lc, p256dh, auth, created_at, kinds) VALUES (?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(endpoint) DO UPDATE SET username_lc = excluded.username_lc, " +
+      "p256dh = excluded.p256dh, auth = excluded.auth, created_at = excluded.created_at"
+    ).bind(endpoint, who.usernameLc, p256dh, auth, new Date().toISOString(),
+      JSON.stringify(PUSH_KINDS)).run();
+    /* Note what the conflict branch leaves alone: a device signing itself up
+       again keeps the switches it had set. */
+    return jsonResponse({ ok: true, subscribed: true, kinds: await kindsFor(env, endpoint, who.usernameLc) });
+  }
+
+  /* What this device is signed up for, if anything. Asked when the settings
+     panel opens, because permission and subscription can both be changed
+     from outside the app. */
+  if (route === "push/status") {
+    const who = await requireAuth(env, body);
+    const endpoint = cleanString(body.endpoint, 800);
+    const row = endpoint ? await env.DB.prepare(
+      "SELECT kinds FROM push_subs WHERE endpoint = ? AND username_lc = ?"
+    ).bind(endpoint, who.usernameLc).first() : null;
+    return jsonResponse({
+      ok: true, subscribed: !!row,
+      kinds: row ? readKinds(row.kinds) : PUSH_KINDS.slice()
+    });
+  }
+
+  /* Which of the six this device wants. Held against the endpoint rather
+     than the account, so a phone and a laptop can want different things. */
+  if (route === "push/prefs") {
+    const who = await requireAuth(env, body);
+    const endpoint = cleanString(body.endpoint, 800);
+    if (!endpoint) throw new ApiError(400, "That subscription was not readable.");
+    const kinds = cleanKinds(body.kinds);
+    const res = await env.DB.prepare(
+      "UPDATE push_subs SET kinds = ? WHERE endpoint = ? AND username_lc = ?"
+    ).bind(JSON.stringify(kinds), endpoint, who.usernameLc).run();
+    if (!res.meta || res.meta.changes === 0) {
+      throw new ApiError(404, "This device is not signed up for notifications.");
+    }
+    return jsonResponse({ ok: true, kinds });
+  }
+
+  /* Turning it off again. Only ever removes this device's own row, and says
+     the same thing whether there was one or not. */
+  if (route === "push/unsubscribe") {
+    const who = await requireAuth(env, body);
+    const endpoint = cleanString(body.endpoint, 800);
+    if (endpoint) {
+      await env.DB.prepare(
+        "DELETE FROM push_subs WHERE endpoint = ? AND username_lc = ?"
+      ).bind(endpoint, who.usernameLc).run();
+    }
+    return jsonResponse({ ok: true, subscribed: false });
+  }
+
   if (route === "auth/logout") {
     const token = cleanString(body.token, 80);
     if (token) await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
@@ -10309,6 +11261,14 @@ async function handleApi(route, body, env, request) {
         "updated_at = excluded.updated_at"
       ).bind(mealId, cb, me.username, now).run();
     }
+    pushLater(ctx, function () {
+      return pushToCookbooks(env, guests, null, {
+        title: "You are invited",
+        body: me.username + " has asked you to " + (seat.meal.title || "a meal") +
+          (seat.meal.on_date ? " on " + seat.meal.on_date : "") + ".",
+        url: "/?n=meal:" + mealId, tag: "meal:" + mealId, kind: "mealAsk"
+      });
+    });
     return jsonResponse({ mealId, invited: guests.length });
   }
 
@@ -10350,6 +11310,16 @@ async function handleApi(route, body, env, request) {
       "UPDATE meal_guests SET status = ?, responded_by = ?, updated_at = ? " +
       "WHERE meal_id = ? AND cookbook_id = ?"
     ).bind(answer === "accept" ? "accepted" : "declined", me.username, now, mealId, me.cookbookId).run();
+    if (answer === "accept") {
+      pushLater(ctx, function () {
+        return pushToCookbooks(env, [seat.meal.owner_cb], null, {
+          title: me.username + " is coming",
+          body: "They have accepted " + (seat.meal.title || "your meal") +
+            (seat.meal.on_date ? " on " + seat.meal.on_date : "") + ".",
+          url: "/?n=meal:" + mealId, tag: "meal:" + mealId, kind: "mealYes"
+        });
+      });
+    }
     return jsonResponse({ mealId, status: answer === "accept" ? "accepted" : "declined" });
   }
 
@@ -10724,7 +11694,7 @@ async function handleApi(route, body, env, request) {
 
     if (body.recipeId) {
       const owned = await env.DB.prepare(
-        "SELECT recipe_id, updated_at, updated_by, locked_by, locked_at FROM recipes WHERE recipe_id = ? AND cookbook_id = ?"
+        "SELECT recipe_id, visibility, created_at, updated_at, updated_by, locked_by, locked_at FROM recipes WHERE recipe_id = ? AND cookbook_id = ?"
       ).bind(String(body.recipeId), me.cookbookId).first();
       if (!owned) throw new ApiError(403, "You can only edit recipes in your own cookbook.");
 
@@ -10751,6 +11721,12 @@ async function handleApi(route, body, env, request) {
         "locked_by = NULL, locked_at = NULL WHERE recipe_id = ?"
       ).bind(text, title, description, tags, ingNames, visibility, now, me.username, String(body.recipeId)).run();
       await applyVisibilityReach(env, String(body.recipeId), visibility);
+      if (visibility === "friends" && owned.visibility !== "friends") {
+        pushLater(ctx, function () {
+          return announceRecipes(env, me, owned.created_at,
+            { recipeId: String(body.recipeId), title: title }, 1);
+        });
+      }
       return jsonResponse({ recipeId: String(body.recipeId), updatedAt: now });
     }
 
@@ -10760,6 +11736,11 @@ async function handleApi(route, body, env, request) {
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(recipeId, me.cookbookId, me.username, me.usernameLc, visibility, title,
       description, tags, ingNames, text, now, now, me.username).run();
+    if (visibility === "friends") {
+      pushLater(ctx, function () {
+        return announceRecipes(env, me, now, { recipeId: recipeId, title: title }, 1);
+      });
+    }
     return jsonResponse({ recipeId, updatedAt: now });
   }
 
@@ -10852,10 +11833,12 @@ async function handleApi(route, body, env, request) {
     const now = new Date().toISOString();
     const statements = [];
     let count = 0;
+    let firstImported = null;
     for (const item of incoming) {
       const { title, text, description, tags, ingNames } =
         validateRecipeData(item && item.data ? item.data : item && item.body);
       const recipeId = newRecipeId();
+      if (!firstImported) firstImported = { recipeId: recipeId, title: title };
       statements.push(env.DB.prepare(
         "INSERT INTO recipes (recipe_id, cookbook_id, owner_username, owner_lc, visibility, title, description, tags, ing_names, data, created_at, updated_at, updated_by) " +
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -10886,6 +11869,11 @@ async function handleApi(route, body, env, request) {
       }
     }
     await env.DB.batch(statements);
+    if (visibility === "friends" && count) {
+      pushLater(ctx, function () {
+        return announceRecipes(env, me, now, firstImported, count);
+      });
+    }
     return jsonResponse({ count });
   }
 
@@ -10894,11 +11882,23 @@ async function handleApi(route, body, env, request) {
     const visibility = VISIBILITIES.indexOf(body.visibility) >= 0 ? body.visibility : null;
     if (!visibility) throw new ApiError(400, "Choose private, selective or shared with friends.");
     const recipeId = String(body.recipeId || "");
+    const before = await env.DB.prepare(
+      "SELECT visibility, title, created_at FROM recipes WHERE recipe_id = ? AND cookbook_id = ?"
+    ).bind(recipeId, me.cookbookId).first();
     const res = await env.DB.prepare(
       "UPDATE recipes SET visibility = ?, updated_at = ?, updated_by = ? WHERE recipe_id = ? AND cookbook_id = ?"
     ).bind(visibility, new Date().toISOString(), me.username, recipeId, me.cookbookId).run();
     if (!res.meta || res.meta.changes === 0) throw new ApiError(403, "You can only change recipes in your own cookbook.");
     await applyVisibilityReach(env, recipeId, visibility);
+    /* Opening an old recipe up is judged on when it was written, not on when
+       the switch was thrown, so a tidy-up of the back catalogue does not
+       announce itself to anyone who was already there for it. */
+    if (visibility === "friends" && before && before.visibility !== "friends") {
+      pushLater(ctx, function () {
+        return announceRecipes(env, me, before.created_at,
+          { recipeId: recipeId, title: before.title || "a recipe" }, 1);
+      });
+    }
     return jsonResponse({ ok: true, visibility });
   }
 
@@ -11084,6 +12084,19 @@ async function handleApi(route, body, env, request) {
       "VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
     ).bind(newCommentId(), found.row.recipe_id, me.usernameLc, me.username,
       cleanString(body.comment, MAX_COMMENT_CHARS), cookedOn, now).run();
+    /* The cookbook that owns the recipe hears about it, minus whoever just
+       cooked it. This is the same rule the notifications page has always
+       used, only now it reaches a phone that is not open. */
+    pushLater(ctx, function () {
+      let title = "a recipe";
+      try { title = JSON.parse(found.row.data).title || title; } catch (e) {}
+      return pushToCookbooks(env, [found.row.cookbook_id], me.usernameLc, {
+        title: me.username + " cooked " + title,
+        body: cleanString(body.comment, 160) || "Logged in the cook log.",
+        url: "/?n=cook:" + found.row.recipe_id,
+        tag: "cook:" + found.row.recipe_id, kind: "cook"
+      });
+    });
     return jsonResponse({ ok: true });
   }
 
@@ -11132,6 +12145,13 @@ async function handleApi(route, body, env, request) {
           "WHERE requester_cb = ? AND addressee_cb = ?"
         ).bind(me.username, now, them.cookbook_id, me.cookbookId).run();
         await resolvePendingPins(env, me.cookbookId, them.cookbook_id);
+        pushLater(ctx, function () {
+          return pushToCookbooks(env, [them.cookbook_id], null, {
+            title: "Cookbooks linked",
+            body: me.username + " accepted your request. Their shared recipes are in your box now.",
+            url: "/?n=friends", tag: "friend:" + me.cookbookId, kind: "friendYes"
+          });
+        });
         return jsonResponse({ ok: true, accepted: true, username: them.username, members: theirMembers });
       }
       if (row.status === "declined" && row.requester_cb === me.cookbookId) {
@@ -11150,6 +12170,13 @@ async function handleApi(route, body, env, request) {
       "INSERT INTO friendships (requester_cb, addressee_cb, status, requested_by, created_at, updated_at) " +
       "VALUES (?, ?, 'pending', ?, ?, ?)"
     ).bind(me.cookbookId, them.cookbook_id, me.username, now, now).run();
+    pushLater(ctx, function () {
+      return pushToCookbooks(env, [them.cookbook_id], null, {
+        title: "Friend request",
+        body: me.username + " would like to link cookbooks with you.",
+        url: "/?n=friends", tag: "friend:" + me.cookbookId, kind: "friendAsk"
+      });
+    });
     return jsonResponse({ ok: true, accepted: false, username: them.username, members: theirMembers });
   }
 
@@ -11164,7 +12191,17 @@ async function handleApi(route, body, env, request) {
     ).bind(action, me.username, new Date().toISOString(), them.cookbook_id, me.cookbookId).run();
     if (!res.meta || res.meta.changes === 0) throw new ApiError(404, "That request is no longer waiting.");
     /* Anything either side scanned while waiting can be settled now. */
-    if (action === "accepted") await resolvePendingPins(env, me.cookbookId, them.cookbook_id);
+    if (action === "accepted") {
+      await resolvePendingPins(env, me.cookbookId, them.cookbook_id);
+      /* Only the yes travels. A no is a quiet no. */
+      pushLater(ctx, function () {
+        return pushToCookbooks(env, [them.cookbook_id], null, {
+          title: "Cookbooks linked",
+          body: me.username + " accepted your request. Their shared recipes are in your box now.",
+          url: "/?n=friends", tag: "friend:" + me.cookbookId, kind: "friendYes"
+        });
+      });
+    }
     const map = await membersOf(env, [them.cookbook_id]);
     return jsonResponse({ ok: true, status: action, members: map[them.cookbook_id] || [them.username] });
   }
@@ -11221,11 +12258,64 @@ const MANIFEST = JSON.stringify({
   icons: [{ src: "/icon.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }]
 });
 
+/* The whole of the service worker. It exists only to receive pushes and to
+   open the right page when one is tapped - there is deliberately no fetch
+   handler and no cache, because a worker that serves the app from a cache is
+   a worker that can hand somebody last week's app and no way to tell. */
+const SW_JS = `/* Kindred Cupboard - notifications only. */
+self.addEventListener("install", function () { self.skipWaiting(); });
+self.addEventListener("activate", function (e) { e.waitUntil(self.clients.claim()); });
+
+self.addEventListener("push", function (event) {
+  var msg = {};
+  try { msg = event.data ? event.data.json() : {}; } catch (err) { msg = {}; }
+  /* iOS withdraws permission from a worker that takes a push and shows
+     nothing, so there is always a notification, even for an empty one. */
+  event.waitUntil(self.registration.showNotification(msg.title || "Kindred Cupboard", {
+    body: msg.body || "",
+    icon: "/icon.png",
+    badge: "/icon.png",
+    tag: msg.tag || "kindred",
+    renotify: true,
+    data: { url: msg.url || "/" }
+  }));
+});
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    .then(function (list) {
+      /* An app already open is steered rather than opened a second time. */
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (c.url && c.url.indexOf(self.registration.scope) === 0) {
+          if (c.navigate) return c.navigate(url).then(function (w) { return (w || c).focus(); });
+          if (c.focus) return c.focus();
+        }
+      }
+      return self.clients.openWindow ? self.clients.openWindow(url) : undefined;
+    }));
+});
+`;
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/icon.png") return iconResponse();
+
+    /* Served from the root so its scope covers the whole app. Never cached
+       for long: a stale worker is how push quietly stops arriving. */
+    if (url.pathname === "/sw.js") {
+      return new Response(SW_JS, {
+        headers: {
+          "Content-Type": "text/javascript; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Service-Worker-Allowed": "/"
+        }
+      });
+    }
 
     if (url.pathname === "/manifest.webmanifest") {
       return new Response(MANIFEST, {
@@ -11244,7 +12334,7 @@ export default {
       try { body = await request.json(); }
       catch (e) { return jsonResponse({ error: "That request was not readable." }, 400); }
       try {
-        return await handleApi(url.pathname.slice(5), body || {}, env, request);
+        return await handleApi(url.pathname.slice(5), body || {}, env, request, ctx);
       } catch (e) {
         if (e instanceof ApiError) return jsonResponse({ error: e.message, code: e.code, detail: e.detail }, e.status);
         return jsonResponse({ error: "Something went wrong on the server." }, 500);
