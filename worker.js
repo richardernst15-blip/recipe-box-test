@@ -99,8 +99,8 @@ const APP_HTML = `<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Kindred Cupboard" />
 <meta name="theme-color" content="#ffffff" />
-<link rel="apple-touch-icon" href="/icon.png" />
-<link rel="icon" href="/icon.png" />
+<link rel="apple-touch-icon" href="/icon-v2.png" />
+<link rel="icon" href="/icon-v2.png" />
 <link rel="preload" href="/fonts/alegreya-sans-500.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="preload" href="/fonts/fraunces-700.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="manifest" href="/manifest.webmanifest" />
@@ -1315,7 +1315,7 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 </script>
 </head>
 <body>
-<div id="app"><div class="boot-splash"><img src="/logo.png" alt="Kindred Cupboard" /><div class="boot-say"></div></div></div>
+<div id="app"><div class="boot-splash"><img src="/logo-v2.png" alt="Kindred Cupboard" /><div class="boot-say"></div></div></div>
 <div class="sb-scrim"></div>
 <div id="tabbar-root"></div>
 <div id="modal-root"></div>
@@ -2587,7 +2587,7 @@ function existingUserPanelHTML() {
 function WelcomeViewHTML() {
   return '' +
     '<div class="welcome-wrap">' +
-      '<div class="brand-row"><img class="brand-logo" src="/logo.png" alt="Kindred Cupboard" />' +
+      '<div class="brand-row"><img class="brand-logo" src="/logo-v2.png" alt="Kindred Cupboard" />' +
         '<h1 class="sr-only">Kindred Cupboard</h1></div>' +
       '<p class="lede">Break bread together. Store and share recipes together. Craft meals together. Kindred Cupboard makes it easy.</p>' +
       (state._arrivedByScan
@@ -3596,7 +3596,7 @@ function LibraryViewHTML() {
     '<div class="wrap">' +
       '<div class="header">' +
         '<div class="header-brand">' +
-          '<img class="brand-logo" src="/logo.png" alt="Kindred Cupboard" />' +
+          '<img class="brand-logo" src="/logo-v2.png" alt="Kindred Cupboard" />' +
           '<h1 class="sr-only">Kindred Cupboard</h1>' +
         '</div>' +
         '<div class="header-row2">' +
@@ -6351,7 +6351,7 @@ function renderAppInner() {
   /* Deliberately the same markup the shell painted, so the only thing that
      changes between the two is the line underneath. */
   if (state.loading) {
-    app.innerHTML = '<div class="boot-splash"><img src="/logo.png" alt="Kindred Cupboard" />' +
+    app.innerHTML = '<div class="boot-splash"><img src="/logo-v2.png" alt="Kindred Cupboard" />' +
       '<div class="boot-say">Loading your cupboard…</div></div>';
     renderTabBar(); renderModal(); return;
   }
@@ -12652,7 +12652,7 @@ const MANIFEST = JSON.stringify({
   display: "standalone",
   background_color: "#ffffff",
   theme_color: "#ffffff",
-  icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }]
+  icons: [{ src: "/icon-v2.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }]
 });
 
 /* The whole of the service worker. It exists only to receive pushes and to
@@ -12700,8 +12700,16 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/icon.png") return iconResponse();
-    if (url.pathname === "/logo.png") return logoResponse();
+    /* The bytes behind these paths changed but the paths did not, so browsers
+       went on serving a week-old cached copy and an installed app went on
+       showing the icon it was installed with. Both are answered under a
+       versioned name now: bump the token in APP_HTML, the manifest and here
+       together whenever an asset is replaced, and every cache misses at once
+       because it is a different URL rather than the same URL with different
+       contents. The bare names stay answerable for anything already pointing
+       at them. */
+    if (/^\/icon(-v\d+)?\.png$/.test(url.pathname)) return iconResponse();
+    if (/^\/logo(-v\d+)?\.png$/.test(url.pathname)) return logoResponse();
     /* Anything under /fonts/ is answered here or not at all. Falling through
        handed a missing face the app's own HTML with a 200 on it, which a
        browser then tried to parse as a font. */
@@ -12723,7 +12731,11 @@ export default {
 
     if (url.pathname === "/manifest.webmanifest") {
       return new Response(MANIFEST, {
-        headers: { "Content-Type": "application/manifest+json", "Cache-Control": "public, max-age=86400" }
+        /* Short, because the manifest is what names the icon. Held for a day,
+           a device kept pointing at the previous icon for a day after the
+           icon had already been replaced. The file is tiny; the revalidation
+           costs less than the staleness did. */
+        headers: { "Content-Type": "application/manifest+json", "Cache-Control": "public, max-age=3600" }
       });
     }
 
