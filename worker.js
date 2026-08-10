@@ -138,8 +138,11 @@ const APP_HTML = `<!DOCTYPE html>
   --ink:#000000; --ink-muted:#3d3733; --border:#d6af87; --border-light:#ead9c2;
   --accent:#c1633c; --accent-dark:#a24e2c; --accent-soft:#f7e4d8; --accent-line:#e8c9b4;
   --sage:#8a9a7b; --sage-dark:#6e7e60; --sage-soft:#edf1e8; --sage-line:#cbd6c0;
-  /* Stars are sage: a rating is a quiet mark, not an alarm. */
-  --star:#8a9a7b;
+  /* Stars are terracotta: a rating is the brand's own mark on a recipe, and
+     a sage star sat apart from every other thing the app paints in the
+     house colour. Empty stars are the same hue, drawn as an outline, so a
+     three-out-of-five reads as one row rather than two colours. */
+  --star:#c1633c;
   --gold:#c8850f; --green:#6e7e60;
   /* Destructive work keeps a red of its own. Terracotta is the brand now, so
      a Delete painted in it would read as any other button on the screen -
@@ -332,7 +335,12 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .header{ padding:22px 0 16px; }
 /* Centred on its own line. Only the mark moves - the name and the
    notification row underneath stay where they were, left-aligned. */
-.header-brand{ display:flex; flex-direction:column; align-items:center; gap:11px; }
+.header-brand{ position:relative; display:flex; flex-direction:column; align-items:center; gap:11px; }
+/* Taken out of the flow on purpose: the logo is centred on the row, and a
+   button sitting beside it in flow would centre the pair instead and shift
+   the mark left by half a button. */
+.header-menu-btn{ position:absolute; top:0; right:0; border:none; background:none;
+  color:var(--ink); cursor:pointer; padding:6px; display:flex; align-items:center; }
 .header-brand h1{ font-size:26px; margin:0; }
 .app-icon{ width:34px; height:34px; border-radius:8px; flex-shrink:0; display:block; }
 /* The logo says the name, so the heading beside it would be saying it twice.
@@ -441,7 +449,7 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .stars{ display:inline-flex; align-items:center; gap:4px; font-size:12.5px; color:var(--ink-muted); }
 .stars svg{ width:14px; height:14px; }
 .star-filled{ fill:var(--star); stroke:var(--star); }
-.star-empty{ fill:none; stroke:var(--tan); }
+.star-empty{ fill:none; stroke:var(--star); }
 .no-rating{ color:var(--ink-muted); font-size:12.5px; }
 
 .pill{ display:inline-flex; align-items:center; gap:5px; font-size:11.5px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); background:var(--card); color:var(--ink-muted); cursor:pointer; }
@@ -458,6 +466,11 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
    because the glyph carries itself; Cook mode is labelled because a flame on
    its own would be a guess. */
 .detail-top-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+/* Cook wears the same quiet outline as Schedule until it is switched on:
+   three buttons in a row on a recipe, only one of which was painted as the
+   thing to press, read as an instruction rather than a choice. Lit, it is
+   the darker terracotta, which is the one state in the app that means
+   something is actively running. */
 .cook-btn.on{ color:#fff; border-color:var(--accent-dark); background:var(--accent-dark); }
 /* A private recipe has no link to hand out. The button stays where it is and
    greys rather than vanishing, so the corner does not reshuffle between one
@@ -540,9 +553,14 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .log-header h2{ font-size:16.5px; margin:0; }
 .log-item{ display:flex; justify-content:space-between; gap:10px; padding:11px 0; border-bottom:1px solid var(--border-light); }
 .log-item:last-child{ border-bottom:none; }
-.log-user{ font-size:14.5px; font-weight:600; }
-.log-date{ font-size:12.5px; color:var(--ink-muted); }
-.log-notes{ font-size:13.5px; color:var(--ink-muted); margin:4px 0 0; line-height:1.45; }
+/* The log is read, not scanned: who cooked it, when, and what they said
+   about it are the whole point of the section, and they were set smaller
+   than the ingredients above them. The heading keeps its own size - it is a
+   label for the block, not part of what you read. */
+.log-user{ font-size:16px; font-weight:600; }
+.log-date{ font-size:14px; color:var(--ink-muted); }
+.log-notes{ font-size:15px; color:var(--ink-muted); margin:4px 0 0; line-height:1.45; }
+.log-section .helper-text{ font-size:14.5px; }
 .log-right{ display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
 .show-all-btn{ background:none; border:none; color:var(--accent); font-size:13.5px; padding:8px 0 0; cursor:pointer; }
 
@@ -714,6 +732,30 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .modal-head h3{ margin:0; font-size:19px; }
 .modal-close{ border:none; background:none; color:var(--sage); cursor:pointer; padding:4px; }
+
+/* The menu is the same overlay as every other sheet - same grey, same
+   scroll lock, same tap-outside-to-close - hung off the right edge and run
+   the full height instead of centred. A third of the screen is the shape
+   asked for, but a third of a phone is 130px and a tile with a word under
+   an icon does not fit in it, so the third has a floor and a ceiling. */
+.drawer-overlay{ align-items:stretch; justify-content:flex-end; padding:0; }
+.drawer-panel{ position:relative; background:var(--card); height:100%;
+  width:min(320px, max(33vw, 240px)); overflow-y:auto; overscroll-behavior:contain;
+  border-left:1px solid var(--border);
+  padding:calc(16px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom));
+  animation:drawer-in .18s ease both; }
+@keyframes drawer-in{ from{ transform:translateX(100%); } to{ transform:translateX(0); } }
+@media (prefers-reduced-motion: reduce){ .drawer-panel{ animation:none; } }
+/* Two to a row, whatever the drawer's width turns out to be. The icon leads
+   and the word sits under it, so a tile is a target rather than a line of
+   text with a glyph in front of it. */
+.tile-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.tile{ position:relative; display:flex; flex-direction:column; align-items:center;
+  justify-content:flex-start; gap:7px; padding:13px 5px; border-radius:11px;
+  border:1px solid var(--border-light); background:var(--card-alt); color:inherit;
+  font:inherit; font-size:12.5px; line-height:1.25; text-align:center; cursor:pointer; }
+.tile svg{ color:var(--accent); }
+.tile:active{ border-color:var(--accent); background:var(--accent-soft); }
 
 .helper-text{ font-size:13px; color:var(--ink-muted); margin-bottom:14px; line-height:1.5; }
 .help-list{ margin:0 0 4px; padding-left:18px; font-size:13.5px; line-height:1.55; color:var(--ink-muted); }
@@ -1253,11 +1295,13 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .mark{ border:1px solid var(--tan); background:var(--card); color:var(--ink-muted); border-radius:8px;
   padding:5px 7px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; line-height:0; }
 .mark span{ font-size:12.5px; line-height:1.15; }
-/* A mark that is on is terracotta - icon, border and a light terracotta
-   fill behind it. The three marks answer the same question, so they answer
-   it in the same colour rather than sorting themselves into two. */
+/* A mark that is on is a solid terracotta tile with a white ring and white
+   contents. The tinted fill it replaces sat too close to the unlit button
+   next to it to be read at a glance on a card. The three marks answer the
+   same question, so they answer it in the same colour rather than sorting
+   themselves into two, and they look the same on a card as on the recipe. */
 .mark-star.on, .mark-later.on, .mark-pin.on{
-  color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+  color:#fff; border-color:#fff; background:var(--accent); }
 /* No on/off to it - the calendar button opens a frame rather than setting a
    flag - so it only ever shows the pressed state its neighbours share. */
 .mark-cal:active{ color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
@@ -1439,7 +1483,14 @@ const ICONS = {
   checklist: '<rect x="3" y="3.5" width="5.5" height="5.5" rx="1.4"/><polyline points="4.4 6.3 5.5 7.4 7.4 4.9"/><rect x="3" y="9.25" width="5.5" height="5.5" rx="1.4"/><rect x="3" y="15" width="5.5" height="5.5" rx="1.4"/><line x1="11" y1="6.25" x2="21" y2="6.25"/><line x1="11" y1="12" x2="21" y2="12"/><line x1="11" y1="17.75" x2="21" y2="17.75"/>',
   /* The three dots you drag a shopping line by. */
   undo: '<path d="M3 8h11a5.5 5.5 0 0 1 0 11h-6"/><polyline points="7 4 3 8 7 12"/>',
-  grip: '<circle cx="12" cy="6" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="1.35" fill="currentColor" stroke="none"/>'
+  grip: '<circle cx="12" cy="6" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="1.35" fill="currentColor" stroke="none"/>',
+  /* The cog everyone already reads as Settings. A padlock was doing that job
+     and saying the wrong thing: the sheet behind it is a name, an email and
+     notification switches, not a security screen. Eight teeth around a hub,
+     which is the shape that still reads as a cog at 16px. */
+  gear: '<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0V21a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/>',
+  /* Three bars. The one glyph that has never meant anything but "more". */
+  menu: '<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>'
 };
 function icon(name, size, extra) {
   size = size || 18;
@@ -3588,7 +3639,10 @@ function ResultsSectionHTML() {
 }
 
 function LibraryViewHTML() {
-  const alerts = state.incoming.length + unreadNotifications().length;
+  /* The bell answers for notifications alone now. Waiting friend requests
+     are counted on the Friends tile in the menu, where the button that
+     opens them lives. */
+  const unread = unreadNotifications().length;
   const sortOptions = [["newest", "Newest first"], ["oldest", "Oldest first"], ["cooked", "Most cooked"],
     ["rated", "Highest rated"], ["az", "Title A–Z"], ["za", "Title Z–A"]]
     .map(o => '<option value="' + o[0] + '"' + (state.sort === o[0] ? " selected" : "") + '>' + o[1] + '</option>').join("");
@@ -3598,14 +3652,19 @@ function LibraryViewHTML() {
         '<div class="header-brand">' +
           '<img class="brand-logo" src="/logo-v2.png" alt="Kindred Cupboard" />' +
           '<h1 class="sr-only">Kindred Cupboard</h1>' +
+          '<button class="header-menu-btn" title="Menu" aria-label="Menu" ' +
+            'onclick="Actions.openModal(\\'menu\\')">' + icon("menu", 24) + '</button>' +
         '</div>' +
         '<div class="header-row2">' +
           '<p class="header-who"><b>' + esc(state.session.username) + '</b> · ' +
             state.recipes.length + ' recipe' + (state.recipes.length === 1 ? "" : "s") + ' on the shelf</p>' +
+          /* The two things you do most from here: read what has come in, and
+             put something new on the shelf. Everything else moved into the
+             menu, which is where the Actions button used to send you. */
           '<div class="header-btns">' +
-            '<button class="btn bell" title="Friends and notifications" onclick="Actions.openFriends()">' + icon("users", 16) +
-              (alerts ? '<span class="dot-badge">' + alerts + '</span>' : "") + '</button>' +
-            '<button class="btn" onclick="Actions.openModal(\\'actions\\')">Actions</button>' +
+            '<button class="btn bell" title="Notifications" onclick="Actions.openNotifications()">' + icon("bell", 16) +
+              (unread ? '<span class="dot-badge">' + unread + '</span>' : "") + '</button>' +
+            '<button class="btn" title="New recipe" aria-label="New recipe" onclick="Actions.openNew()">' + icon("plus", 16) + '</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -4720,12 +4779,14 @@ function DetailViewHTML(r) {
   if (!r) return '<div class="wrap"><p style="padding-top:30px">That recipe is no longer in your box.</p>' +
     '<button class="btn" onclick="Actions.backToLibrary()">Back to the cupboard</button></div>';
   const st = statsFor(r.recipeId);
+  /* Share sits last, past Edit. The two that change the recipe are kept
+     together and the one that sends it somewhere else closes the row. */
   const action = '<div class="detail-top-actions">' +
     CookModeButtonHTML() +
-    ShareButtonHTML(r.recipeId, r.visibility) +
     (r.ours
       ? '<button class="btn btn-sm" onclick="Actions.openEdit(\\'' + r.recipeId + '\\')">' + icon("pencil", 14) + ' Edit</button>'
       : "") +
+    ShareButtonHTML(r.recipeId, r.visibility) +
     '</div>';
   /* Who and how well it went, straight under the name. Where the recipe came
      from a cookbook we are not linked to - a pin taken from a share link -
@@ -4855,9 +4916,18 @@ function StepRowHTML(s, idx, total) {
    bulk JSON reader. One button opens the menu; the menu swaps the sheet's
    own body for whichever one you pick, with a way back. */
 const IMPORT_ORDER = ["url", "text", "photo", "chat", "json"];
-function ImportButtonsHTML() {
-  return '<button class="btn btn-sm" onclick="Actions.openImportPrompt()">' +
-    icon("upload", 14) + ' Import</button>';
+/* Asked before the form opens rather than offered from inside it. The two
+   are weighed the same: one fills the form in from something you already
+   have, the other hands you an empty one. */
+function NewRecipeModalHTML() {
+  return modalShell("New recipe",
+    '<p class="helper-text">Where is this one coming from?</p>' +
+    '<div style="display:flex; flex-direction:column; gap:8px;">' +
+      '<button class="btn btn-block" onclick="Actions.openImportPrompt()">' +
+        icon("upload", 16) + ' Import Recipe</button>' +
+      '<button class="btn btn-primary btn-block" onclick="Actions.startBlankRecipe()">' +
+        icon("pencil", 16) + ' Write my Own Recipe</button>' +
+    '</div>');
 }
 function ImportMenuHTML() {
   return '<p class="helper-text">Where is the recipe coming from? Everything here fills in the ' +
@@ -4914,8 +4984,11 @@ function EditViewHTML() {
       '<div class="detail-top">' +
         '<button class="back-link" onclick="Actions.cancelEdit()">' + icon("chevronLeft", 18) + ' Cancel</button>' +
         '<div class="edit-actions">' +
+          /* Nothing on a new recipe: importing is asked about before the
+             form opens, and a button that would overwrite everything typed
+             so far has no business sitting next to Save. */
           (isNew
-            ? ImportButtonsHTML()
+            ? ""
             : '<button class="btn btn-ghost btn-sm" onclick="Actions.deleteRecipe()">' + icon("trash", 14) + ' Delete</button>') +
           '<button class="btn btn-primary btn-sm" onclick="Actions.saveRecipeForm()">' + icon("check", 14) + ' Save recipe</button>' +
         '</div>' +
@@ -6155,24 +6228,47 @@ function ShareButtonHTML(recipeId, visibility) {
 function CookModeButtonHTML() {
   if (!wakeLockSupported()) return "";
   const on = !!state.cookMode;
-  return '<button class="btn btn-sm cook-btn' + (on ? " on" : "") + '" title="' +
+  return '<button class="mark cook-btn' + (on ? " on" : "") + '" title="' +
     (on ? "Cook mode on - the screen will not dim or lock" :
           "Cook mode - keep the screen awake while you cook") + '" ' +
-    'onclick="Actions.toggleCookMode()">' + icon("flame", 14) + ' <span>Cook</span></button>';
+    'onclick="Actions.toggleCookMode()">' + icon("flame", 15) + '<span>Cook</span></button>';
 }
 
-function ActionsModalHTML() {
-  const alerts = state.incoming.length + unreadNotifications().length;
-  return modalShell("Actions",
-    '<div style="display:flex; flex-direction:column; gap:8px;">' +
-      '<button class="btn btn-primary btn-block" onclick="Actions.closeModal(); Actions.openNew();">' + icon("plus", 16) + ' New recipe</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openFriends();">' + icon("users", 16) + ' Friends/Notifications' + (alerts ? " (" + alerts + ")" : "") + '</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.exportAll();">' + icon("download", 16) + ' Export ' + (hasActiveFilter() ? "selected" : "all") + '</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.reload();">' + icon("sync", 16) + ' Reload from server</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'shareApp\\');">' + icon("share", 16) + ' Share App</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'account\\');">' + icon("lock", 16) + ' Settings</button>' +
-      '<button class="btn btn-block" onclick="Actions.closeModal(); Actions.openModal(\\'contact\\');">' + icon("info", 16) + ' Contact Info</button>' +
-    '</div>');
+/* The menu behind the three bars in the header. Everything that used to be
+   a stack of full-width buttons in the Actions sheet, laid out as tiles: an
+   icon with its name under it, two to a row. New recipe stays on it even
+   though the header carries a plus of its own - the menu is the list of
+   everything there is to do, and leaving one thing off it because there is
+   a shortcut elsewhere makes the list less answerable, not shorter. */
+const MENU_TILES = [
+  ["plus", "New recipe", "Actions.openNew()", "none"],
+  ["users", "Friends", "Actions.openFriends()", "requests"],
+  ["bell", "Notifications", "Actions.openNotifications()", "unread"],
+  ["sync", "Refresh", "Actions.reload()", "none"],
+  ["share", "Share App", "Actions.openModal(\\'shareApp\\')", "none"],
+  ["gear", "Settings", "Actions.openModal(\\'account\\')", "none"],
+  ["info", "Contact Info", "Actions.openModal(\\'contact\\')", "none"]
+];
+function menuTileCount(kind) {
+  if (kind === "requests") return state.incoming.length;
+  if (kind === "unread") return unreadNotifications().length;
+  return 0;
+}
+function MenuDrawerHTML() {
+  const tiles = MENU_TILES.map(function (t) {
+    const n = menuTileCount(t[3]);
+    return '<button class="tile" onclick="Actions.closeModal(); ' + t[2] + ';">' +
+      icon(t[0], 26) +
+      '<span>' + t[1] + '</span>' +
+      (n ? '<span class="dot-badge">' + n + '</span>' : "") +
+    '</button>';
+  }).join("");
+  return '<div class="modal-overlay drawer-overlay" onclick="if(event.target===this)Actions.closeModal()">' +
+    '<div class="drawer-panel">' +
+      '<div class="modal-head"><h3 class="font-display">Menu</h3>' +
+      '<button class="modal-close" onclick="Actions.closeModal()">' + icon("x", 20) + '</button></div>' +
+      '<div class="tile-grid">' + tiles + '</div>' +
+    '</div></div>';
 }
 
 /* Nothing left to pin. The page beneath cannot move while a modal is up
@@ -6297,7 +6393,9 @@ function renderModal() {
   else if (state.modal === "visibility") root.innerHTML = VisibilityModalHTML();
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
   else if (state.modal === "filters") { root.innerHTML = FiltersModalHTML(); updateFilterScrollHint(); }
-  else if (state.modal === "actions") root.innerHTML = ActionsModalHTML();  else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
+  else if (state.modal === "menu") root.innerHTML = MenuDrawerHTML();
+  else if (state.modal === "newRecipe") root.innerHTML = NewRecipeModalHTML();
+  else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
   else if (state.modal === "calDay") root.innerHTML = CalDayModalHTML();
   else if (state.modal === "confirmDeleteList") root.innerHTML = ConfirmDeleteListModalHTML();
   else if (state.modal === "addGroceryItem") root.innerHTML = AddGroceryItemModalHTML();
@@ -6605,6 +6703,14 @@ Actions.backToLibrary = function() {
 Actions.openFriends = function() {
   state.view = "friends";
   state.friendsTab = "friends";           /* Friends is the default face of it */
+  setWatch(null);
+  renderApp();
+};
+/* The same page, opened on its other face. The bell in the header and the
+   Notifications tile in the menu both land here rather than on Friends. */
+Actions.openNotifications = function() {
+  state.view = "friends";
+  state.friendsTab = "notifications";
   setWatch(null);
   renderApp();
 };
@@ -7442,7 +7548,13 @@ Actions.loadPastedResponse = function() {
 };
 
 /* --- editing --- */
-Actions.openNew = function() {
+/* Two ways to start a recipe, asked before the form rather than from a
+   button tucked into its corner. Importing rewrites the draft the moment it
+   lands, so offering both at once meant a half-typed recipe could be thrown
+   away by a button sitting next to Save. */
+Actions.openNew = function() { Actions.openModal("newRecipe"); };
+Actions.startBlankRecipe = function() {
+  state.modal = null;
   state.editDraft = blankDraft();
   state.editIsNew = true;
   state.editingId = null;
