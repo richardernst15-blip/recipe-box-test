@@ -130,6 +130,12 @@ const APP_HTML = `<!DOCTYPE html>
      too saturated to read body text against, so it is kept for borders and
      accents and the surfaces are lightened out of it. */
   --bg:#ffffff; --card:#f5eadb; --card-alt:#efe1cd; --field:#fdf9f3;
+  /* The palest of the warm neutrals, and the one that turned out to sit
+     best under content: light enough that black text and terracotta
+     headings both hold, warm enough not to read as a hole in the page.
+     Same value as --field, kept separate because one names a surface and
+     the other names what you type into. */
+  --tile:#fdf9f3;
   --tan:#d6af87; --tan-deep:#c39a6c;
   /* Black, not a warm near-black. Every surface in the app is a tint now,
      and a softened ink on a tinted card is the thing that reads as faded.
@@ -446,7 +452,7 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .grid-recipes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:14px; }
 .load-more{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:22px 0 6px; }
 .load-more-count{ margin:0; font-size:12.5px; color:var(--ink-muted); }
-.rcard{ text-align:left; background:var(--card); border:1px solid var(--tan); border-radius:13px; padding:16px; cursor:pointer; display:flex; flex-direction:column; gap:8px; transition:border-color .15s, box-shadow .15s; }
+.rcard{ text-align:left; background:var(--tile); border:1px solid var(--tan); border-radius:13px; padding:16px; cursor:pointer; display:flex; flex-direction:column; gap:8px; transition:border-color .15s, box-shadow .15s; }
 .rcard:hover{ border-color:var(--accent); box-shadow:0 3px 12px rgba(42,35,32,.10); }
 .rcard h3{ font-size:18px; margin:0; line-height:1.28; color:var(--accent); }
 .rcard .desc{ font-size:13px; color:var(--ink-muted); margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -455,7 +461,10 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
    enough to take white; every lighter fill in the app takes black. */
 .tag{ font-size:11px; background:var(--accent); color:#fff; padding:3px 9px; border-radius:999px; display:inline-block; }
 .tag-row{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
-.owner-badge{ font-size:11px; color:var(--ink); background:var(--accent-soft); border-radius:999px; padding:3px 9px; display:inline-block; }
+/* Ringed in the full terracotta rather than left as a bare tint: on the
+   new tile colour the soft fill alone was close enough to the card behind
+   it that the name stopped reading as a badge at all. */
+.owner-badge{ font-size:11px; color:var(--ink); background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px; padding:3px 9px; display:inline-block; }
 .card-foot{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
 .cooked-count{ font-size:12.5px; color:var(--ink-muted); }
 /* Sits under the credit line on your own recipes only. Muted on purpose:
@@ -755,6 +764,10 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
   background:rgba(34,31,28,.5); }
 .modal-box{ position:relative; background:var(--card); width:100%; max-width:560px; max-height:100%; overflow-y:auto;
   overscroll-behavior:contain; border-radius:16px; padding:22px; }
+/* The two sheets that are a list of things to pick from rather than a form
+   to fill in. They read as an extension of the shelf behind them, so they
+   take the shelf's own surface. */
+.modal-box.modal-tile{ background:var(--tile); }
 .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .modal-head h3{ margin:0; font-size:19px; }
 .modal-close{ border:none; background:none; color:var(--sage); cursor:pointer; padding:4px; }
@@ -837,7 +850,7 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .cal-scroll{ height:calc(3 * 92px + 2 * 3px); overflow-y:auto; overscroll-behavior:contain;
   border:1px solid var(--border-light); border-radius:12px; padding:3px; background:var(--card-alt); }
 .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
-.cal-cell{ height:92px; background:var(--card); border:1px solid var(--border-light); border-radius:8px;
+.cal-cell{ height:92px; background:var(--tile); border:1px solid var(--border-light); border-radius:8px;
   padding:3px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; gap:2px; text-align:left; }
 .cal-cell:active{ background:var(--card-alt); }
 .cal-cell.cal-dim{ background:var(--card-alt); color:var(--ink-muted); }
@@ -846,11 +859,15 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .cal-today .cal-num{ color:var(--accent); }
 .cal-mon{ font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--accent); }
 .cal-chips{ display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+/* Each pill is ringed in the darker end of whatever colour it already
+   wears: a scheduled recipe in sage, a meal dish in terracotta. On the
+   paler day cell the soft fills alone had stopped holding their edges, and
+   two stacked pills were reading as one block. */
 .cal-chip{ display:block; width:100%; text-align:left; font-size:9.5px; line-height:1.25; padding:2px 3px;
-  border:0; border-radius:4px; background:var(--sage-soft); color:var(--ink); cursor:pointer;
+  border:1px solid var(--sage-dark); border-radius:4px; background:var(--sage-soft); color:var(--ink); cursor:pointer;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cal-chip.cal-chip-orphan{ background:var(--border-light); color:var(--ink-muted); }
-.cal-chip.cal-chip-meal{ background:var(--meal-soft); color:var(--meal-dark); }
+.cal-chip.cal-chip-orphan{ background:var(--border-light); border-color:var(--ink-muted); color:var(--ink-muted); }
+.cal-chip.cal-chip-meal{ background:var(--meal-soft); border-color:var(--meal-dark); color:var(--meal-dark); }
 .cal-more{ font-size:9px; color:var(--ink-muted); padding-left:3px; }
 .cal-tools{ display:flex; align-items:center; gap:8px; margin:10px 0 0; }
 
@@ -867,22 +884,33 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .source-credit{ margin-top:16px; padding-top:12px; border-top:1px solid var(--border-light); }
 .source-credit .small-label{ margin-bottom:4px; }
 .source-credit a{ font-size:12.5px; color:var(--ink-muted); word-break:break-all; }
-.meal-tile{ border:1px solid var(--meal-line); border-radius:12px; background:var(--card);
+.meal-tile{ border:1px solid var(--meal-line); border-radius:12px; background:var(--tile);
   margin-bottom:10px; overflow:hidden; }
 .meal-tile.meal-mine{ border-color:var(--meal); }
 .meal-tile.meal-focus{ box-shadow:0 0 0 2px var(--meal); }
-.meal-head{ background:var(--meal-soft); padding:10px 12px; border-bottom:1px solid var(--meal-line); }
-.meal-title{ font-size:15.5px; font-weight:700; color:var(--ink); margin:0 0 2px;
+/* The header is the meal itself - what it is, when, and whose - so it is
+   given the whole terracotta rather than a tint of it, and everything in
+   the bar is white. The tint it replaces sat only a shade off the tile
+   below and the two ran together into one block of cream. */
+.meal-head{ background:var(--meal); padding:10px 12px; border-bottom:1px solid var(--meal-line); color:#fff; }
+.meal-head svg{ color:#fff; }
+.meal-title{ font-size:15.5px; font-weight:700; color:#fff; margin:0 0 2px;
   display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
-.meal-when{ font-size:12.5px; color:var(--ink); opacity:.85; }
-.meal-host{ font-size:12px; color:var(--ink-muted); margin-top:2px; }
+.meal-when{ font-size:12.5px; color:#fff; opacity:.92; }
+.meal-host{ font-size:12px; color:#fff; opacity:.85; margin-top:2px; }
+/* The dish search sits on the pale tile, so it steps down to the old card
+   colour rather than up: a field you type into should not be the lightest
+   thing in the box. */
+.meal-tile .search-field input{ background:var(--card); }
 .meal-body{ padding:10px 12px; }
 .meal-sec{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted);
   margin:0 0 5px; }
 .meal-sec + .meal-sec{ margin-top:12px; }
 .meal-guests{ display:flex; flex-wrap:wrap; gap:5px; margin:0 0 12px; }
+/* Every name in a meal is ringed the same way the author of a recipe is,
+   so a person reads as a person wherever they turn up. */
 .meal-guest{ display:inline-flex; align-items:center; gap:4px; font-size:12.5px;
-  padding:3px 8px; border-radius:20px; background:var(--border-light); color:var(--ink); }
+  padding:3px 8px; border-radius:20px; border:1px solid var(--meal); background:var(--border-light); color:var(--ink); }
 .meal-guest.on{ background:var(--meal-soft); color:var(--ink); }
 .meal-guest.waiting{ color:var(--ink-muted); font-style:italic; }
 .meal-guest button{ border:0; background:none; padding:0; margin-left:2px; cursor:pointer;
@@ -899,6 +927,11 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
    to rather than wrapping underneath it. */
 .meal-dish-who{ margin-left:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:2px;
   font-size:12px; color:var(--ink-muted); }
+/* Only on a real tile, where this box holds a person. The same box in the
+   draft sheet holds "4 servings", which is not a name and gets no ring. */
+.meal-tile .meal-dish-who{ border:1px solid var(--meal); border-radius:20px;
+  padding:2px 8px; color:var(--ink); }
+.meal-tile .meal-dish-who .icon-btn{ padding:0 0 0 2px; }
 .meal-dish-who .icon-btn{ flex-shrink:0; }
 .meal-dish .lots{ color:var(--gold); font-size:11.5px; flex-shrink:0; }
 .meal-none{ font-size:13px; color:var(--ink-muted); margin:0 0 12px; }
@@ -918,9 +951,9 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .meal-invite-acts .btn{ flex:1; justify-content:center; }
 /* The two lines a meal can carry beyond its name. Both are optional, so
    neither leaves a gap when it is not there. */
-.meal-note{ font-size:12.5px; color:var(--meal-dark); opacity:.9; margin:4px 0 0; }
+.meal-note{ font-size:12.5px; color:#fff; opacity:.88; margin:4px 0 0; }
 .meal-where{ display:flex; align-items:flex-start; gap:5px; font-size:12.5px;
-  color:var(--meal-dark); opacity:.9; margin-top:3px; }
+  color:#fff; opacity:.88; margin-top:3px; }
 .meal-where svg{ flex-shrink:0; margin-top:1px; }
 .btn-meal{ background:var(--meal); border-color:var(--meal); color:#fff; }
 .btn-meal:active{ background:var(--meal-dark); }
@@ -1225,7 +1258,7 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .pill-select{ background:var(--meal-soft); border-color:var(--meal-line); color:var(--meal-dark); }
 /* The author's name, when tapping it would do something. Reads as the same
    badge either way; only the pointer and the small plus say it is live. */
-.owner-badge-btn{ cursor:pointer; border:1px solid var(--border-light); }
+.owner-badge-btn{ cursor:pointer; border:1px solid var(--accent); }
 .owner-badge-btn svg{ vertical-align:-1px; margin-left:2px; }
 /* The offer of an account, shown to somebody reading a link with none. */
 .link-join{ background:var(--card); border:1px solid var(--border-light);
@@ -4448,8 +4481,7 @@ function FriendsViewHTML() {
   const tab = state.friendsTab === "notifications" ? "notifications" : "friends";
 
   const friendsPanel =
-    '<p class="helper-text">Friendships link whole cookbooks. Add one person and you are linked to everyone who shares their cookbook, and they to everyone in yours. Recipes set to ' +
-      esc(privateLabel()) + ' stay hidden either way.</p>' +
+    '<p class="helper-text">Friendships link whole cookbooks. Add one person and you are linked to everyone who shares their cookbook, and they to everyone in yours. Recipes set to Private remain hidden.</p>' +
     '<div class="add-friend-row">' +
       '<input type="text" id="friend-name" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Their username" value="' + esc(state.friendPrefill || "") + '" />' +
       '<button class="btn btn-primary" onclick="Actions.sendFriendRequest()">' + icon("userPlus", 16) + ' Add</button>' +
@@ -4491,7 +4523,6 @@ function FriendsViewHTML() {
    whoever scans it. */
 function FriendQrModalHTML() {
   return modalShell("Add by QR",
-    '<p class="helper-text">Have them point a camera at this.</p>' +
     '<div class="qr-side">' +
       '<div class="qr-holder">' + friendQrHTML(state.session.username, 126) + '</div>' +
       '<div class="qr-side-text">' +
@@ -4978,8 +5009,8 @@ function NewRecipeModalHTML() {
     '</div>');
 }
 function ImportMenuHTML() {
-  return '<p class="helper-text">Where is the recipe coming from? Everything here fills in the ' +
-    'form below so you can check it before it saves.</p>' +
+  return '<p class="helper-text">Where is the recipe coming from? Whichever you pick fills in the ' +
+    'new-recipe form, so you can check it over before it saves.</p>' +
     '<div class="import-menu">' +
     IMPORT_ORDER.map(function (mode) {
       const s = IMPORT_SOURCES[mode];
@@ -5165,7 +5196,8 @@ function OwnerModalHTML() {
   return modalShell("Whose recipes",
     '<input type="text" id="pick-search" autocomplete="off" placeholder="Search friends..." ' +
       'value="' + esc(state.pickSearch || "") + '" oninput="Actions.pickSearch(this.value)" />' +
-    '<div class="pick-list">' + (rows.join("") || '<p class="helper-text">No one by that name.</p>') + '</div>');
+    '<div class="pick-list">' + (rows.join("") || '<p class="helper-text">No one by that name.</p>') + '</div>',
+    "modal-tile");
 }
 
 /* A stable key per panel so the open/closed shape of the menu survives a
@@ -5253,7 +5285,8 @@ function FiltersModalHTML() {
     '<div class="edit-actions">' +
       '<button class="btn" onclick="Actions.clearFilters()">Clear selected tags</button>' +
       '<button class="btn btn-primary" onclick="Actions.closeModal()">Done</button>' +
-    '</div>');
+    '</div>',
+    "modal-tile");
   state._filterList = flat;
   state._panelKeys = panels;
   state._badgeList = badges;
@@ -5346,8 +5379,9 @@ function TagPickerHTML(d) {
     '<p class="helper-text">Tags come from a set list, so a filter finds every recipe that fits.</p></div>';
 }
 
-function modalShell(title, inner) {
-  return '<div class="modal-overlay" onclick="if(event.target===this)Actions.closeModal()"><div class="modal-box">' +
+function modalShell(title, inner, cls) {
+  return '<div class="modal-overlay" onclick="if(event.target===this)Actions.closeModal()"><div class="modal-box' +
+    (cls ? " " + cls : "") + '">' +
     '<div class="modal-head"><h3 class="font-display">' + title + '</h3>' +
     '<button class="modal-close" onclick="Actions.closeModal()">' + icon("x", 20) + '</button></div>' +
     (state.modalError ? '<div class="modal-error">' + esc(state.modalError) + '</div>' : "") +
@@ -7441,7 +7475,7 @@ Actions.removeFriend = async function(name) {
   const linked = state.friends.reduce((a, f) => a.concat(f.members), [])
     .concat(state.outgoing.reduce((a, f) => a.concat(f.members), []));
   const alsoNames = linked.filter(n => n !== name);
-  const warn = "Remove " + name + "? You will stop seeing each other's recipes." +
+  const warn = "Remove " + name + "?" +
     (alsoNames.length ? " Anyone who shares their cookbook goes too." : "");
   if (!confirm(warn)) return;
   try {
