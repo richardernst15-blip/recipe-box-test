@@ -371,7 +371,7 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
    at 10px is not a contrast anyone should have to squint through. */
 .dot-badge{ position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 4px;
   border-radius:9px; background:var(--sage); border:1.5px solid var(--sage-dark); box-sizing:border-box;
-  color:var(--ink); font-weight:700; font-size:10px; line-height:13px; text-align:center; }
+  color:#fff; font-weight:700; font-size:10px; line-height:13px; text-align:center; }
 
 /* search + filters */
 .search-wrap{ position:relative; margin-bottom:10px; }
@@ -445,7 +445,8 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
   .btn-ghost:hover{ background:transparent; border-color:transparent; color:var(--ink-muted); }
   .btn-ok:hover{ background:var(--sage); border-color:var(--sage); }
   .btn-no:hover{ background:var(--danger); border-color:var(--danger); }
-  .notif.read .btn:hover{ background:var(--sage); border-color:var(--sage); }
+  .notif .btn:hover{ background:var(--sage-dark); border-color:var(--sage-dark); }
+  .notif.read .btn:hover{ background:var(--sage-soft); border-color:var(--sage-line); color:var(--ink); }
 }
 
 /* recipe grid / cards */
@@ -1274,25 +1275,35 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 
 /* notifications */
 .notif-tools{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-.notif{ display:flex; gap:11px; align-items:flex-start; background:var(--card);
-  border:1px solid var(--border-light); border-left:3px solid var(--accent);
+/* Unread is loud and read is quiet, and the two use the same two colours to
+   say it. Unread: the whole terracotta field with white on it, ringed and
+   dotted in dark sage, and the way in filled dark sage too. Read: the same
+   arrangement in every colour's pale variant, with the text back to black.
+   Nothing moves between the two states and nothing is added or taken away,
+   so a tile changing is read as the same tile going quiet rather than as
+   something new arriving. */
+.notif{ display:flex; gap:11px; align-items:flex-start; background:var(--accent); color:#fff;
+  border:1px solid var(--sage-dark); border-left:3px solid var(--sage-dark);
   border-radius:10px; padding:12px 13px; margin-bottom:9px; cursor:pointer;
   -webkit-tap-highlight-color:transparent; }
-.notif:active{ background:var(--card-alt); }
-/* Read is sage, all the way round: a light sage field inside the full sage
-   border, and the button on it filled in the same colour. Grey said
-   "finished with" where sage says "seen" - and the tile is still a switch,
-   so it has to look like something rather than like nothing. */
-.notif.read{ background:var(--sage-soft); border-color:var(--sage); border-left-color:var(--sage); }
-.notif.read .btn{ background:var(--sage); border-color:var(--sage); color:#fff; }
-.notif.read .btn:hover{ background:var(--sage-dark); border-color:var(--sage-dark); }
-.notif-dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex-shrink:0; margin-top:5px; }
-.notif.read .notif-dot{ background:transparent; border:1px solid var(--sage); }
+/* Pressing does not swap the fill - on a solid tile that read as a state
+   change rather than as a tap. */
+.notif:active{ opacity:.9; }
+.notif .btn{ background:var(--sage-dark); border-color:var(--sage-dark); color:#fff; }
+.notif .btn:hover{ background:var(--sage); border-color:var(--sage); }
+.notif-dot{ width:9px; height:9px; border-radius:50%; background:var(--sage-dark); flex-shrink:0; margin-top:5px; }
 .notif-body{ flex:1; min-width:0; }
-.notif-line{ font-size:14px; margin:0 0 3px; }
-.notif.read .notif-line{ color:var(--ink-muted); }
-.notif-when{ font-size:11.5px; color:var(--ink-muted); font-variant-numeric:tabular-nums; }
+.notif-line{ font-size:14px; margin:0 0 3px; color:#fff; }
+.notif-when{ font-size:11.5px; color:#fff; opacity:.85; font-variant-numeric:tabular-nums; }
 .notif-acts{ display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
+
+.notif.read{ background:var(--accent-soft); color:var(--ink);
+  border-color:var(--sage-line); border-left-color:var(--sage-line); }
+.notif.read .notif-dot{ background:var(--sage-line); }
+.notif.read .notif-line{ color:var(--ink); }
+.notif.read .notif-when{ color:var(--ink); opacity:.7; }
+.notif.read .btn{ background:var(--sage-soft); border-color:var(--sage-line); color:var(--ink); }
+.notif.read .btn:hover{ background:var(--sage-line); border-color:var(--sage-line); color:var(--ink); }
 
 /* The tag strip on a recipe, three rows then a scroll - the same rule the
    library's chip row follows. Both caps are the row height times three plus
