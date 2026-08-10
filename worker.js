@@ -1407,6 +1407,13 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
   border:1px solid var(--border-light); background:var(--card); border-radius:9px; margin-bottom:6px;
   cursor:pointer; color:inherit; }
 .pick-row.on{ border-color:var(--accent); background:var(--accent-soft); font-weight:600; }
+/* The two share pickers paint a ticked friend in the house colour at full
+   strength rather than the wash the guest list uses. On those sheets the tick
+   is a grant of access to something of yours, and it reads better as a solid
+   statement than as a tint. The sub-line has to be lifted off the terracotta
+   with it, or it goes to mud. */
+.pick-row-solid.on{ background:var(--accent); border-color:var(--accent); color:#ffffff; }
+.pick-row-solid.on .friend-sub{ color:rgba(255,255,255,.85); }
 .share-row{ display:flex; align-items:center; gap:8px; padding:7px 0; }
 </style>
 <script>
@@ -1841,6 +1848,10 @@ const state = {
   shares: {},
   /* Which friends are ticked in the visibility sheet, while it is open. */
   visDraft: [],
+  /* What is typed into the friend search on either of the two Selective
+     share pickers. One field for both, because only one of them is ever on
+     screen, and it is cleared whenever either is opened fresh. */
+  shareFriendSearch: "",
   /* A recipe arrived at by share link. Held apart from state.recipes because
      it is not in this cookbook and may never be - the library is what you
      own or were given, and this is neither until it is pinned. */
@@ -5372,18 +5383,46 @@ function ShareAppModalHTML() {
    one you share with a best friend and nobody else. Targets are cookbooks,
    so a household gets it together. */
 function PrivateShareHTML(d) {
-  const chosen = d._shareWith || [];
   if (!state.friends.length) {
     return '<p class="helper-text">Only your cookbook can see this. Add a friend and you will be able to hand it to them individually.</p>';
   }
-  const rows = state.friends.map(function (f, i) {
-    const key = (f.members[0] || "");
-    const on = chosen.indexOf(key) >= 0;
-    return '<label class="share-row"><input type="checkbox"' + (on ? " checked" : "") +
-      ' onchange="Actions.toggleShare(' + i + ')" /> ' + esc(f.label) + '</label>';
-  }).join("");
   return '<p class="helper-text" style="margin-top:10px">Only your cookbook and the friends you tick here. They can open it by link or code.</p>' +
-    '<div>' + rows + '</div>';
+    ShareFriendPickerHTML(d._shareWith || [], "Actions.toggleShare",
+      "Actions.shareSearchForm", "share-form");
+}
+
+/* The friend list both Selective share pickers draw, lifted from the meal
+   guest list: a search field over three rows of scroller, everybody you have
+   already ticked collected at the top so a long list does not leave you
+   scrolling to check who is on. The index handed to the toggle is the index
+   into state.friends, not into the sorted rows, so reordering the list never
+   changes who a tap picks. */
+function ShareFriendPickerHTML(chosen, toggleCall, searchCall, idbase) {
+  const q = (state.shareFriendSearch || "").trim().toLowerCase();
+  const picked = {};
+  (chosen || []).forEach(function (k) { picked[String(k).toLowerCase()] = 1; });
+  const isOn = function (f) { return !!picked[(f.members[0] || "").toLowerCase()]; };
+  const ordered = state.friends.map(function (f, i) { return { f: f, i: i }; })
+    .sort(function (a, b) {
+      return ((isOn(a.f) ? 0 : 1) - (isOn(b.f) ? 0 : 1)) ||
+        a.f.label.localeCompare(b.f.label, undefined, { sensitivity: "base" });
+    });
+  const rows = ordered.map(function (o) {
+    const key = o.f.members[0] || "";
+    if (!key) return "";
+    if (q && o.f.label.toLowerCase().indexOf(q) < 0) return "";
+    return '<button class="pick-row pick-row-solid' + (isOn(o.f) ? " on" : "") + '" ' +
+      'onclick="' + toggleCall + '(' + o.i + ')">' +
+      esc(o.f.label) +
+      (o.f.members.length > 1
+        ? '<div class="friend-sub">One cookbook — all of them can see it</div>' : "") +
+    '</button>';
+  }).join("");
+  return '<input type="text" id="' + idbase + '-search" autocomplete="off" ' +
+      'placeholder="Search friends..." value="' + esc(state.shareFriendSearch || "") + '" ' +
+      'oninput="' + searchCall + '(this.value)" />' +
+    '<div class="pick-list pick-list-3" id="' + idbase + '-list">' +
+      (rows || '<p class="helper-text">No one by that name.</p>') + '</div>';
 }
 
 function TagPickerHTML(d) {
@@ -6177,22 +6216,19 @@ function VisibilityModalHTML() {
       '<div class="vis-row-sub">' + blurb + '</div>' +
     '</button>';
   };
-  const chosen = state.visDraft || [];
   const picker = v !== "selective" ? "" :
     (!state.friends.length
       ? '<p class="helper-text">No friends yet, so there is nobody to hand it to. It stays inside your cookbook until you add one.</p>'
       : '<div class="section-label">Hand it to</div>' +
-        '<div>' + state.friends.map(function (f, i) {
-          const on = chosen.indexOf(f.members[0] || "") >= 0;
-          return '<label class="share-row"><input type="checkbox"' + (on ? " checked" : "") +
-            ' onchange="Actions.toggleVisShare(' + i + ')" /> ' + esc(f.label) + '</label>';
-        }).join("") + '</div>');
+        ShareFriendPickerHTML(state.visDraft || [], "Actions.toggleVisShare",
+          "Actions.shareSearchSheet", "vis-share"));
   return modalShell("Who can see this",
     '<div class="vis-rows">' +
       row("private", "Only your cookbook. No link and no code — this one does not leave the house.") +
       row("selective", "Your cookbook, plus the friends you tick. Can be handed out by link or code.") +
       row("friends", "Every friend of your cookbook. Can be handed out by link or code.") +
-    '</div>' + picker);
+    '</div>' + picker,
+    "modal-tile");
 }
 
 /* A recipe somebody was sent. Readable with no account at all, which is the
@@ -6545,6 +6581,7 @@ function renderAppInner() {
     app.innerHTML = LinkRecipeViewHTML();
     renderTabBar();
     renderModal();
+    topOnNewRecipe();
     return;
   }
   if (!state.session) { app.innerHTML = WelcomeViewHTML(); renderTabBar(); renderModal(); return; }
@@ -6566,6 +6603,28 @@ function renderAppInner() {
   renderModal();
   if (state.view === "calendar") placeCalendarScroll();
   placeSchedStrip();
+  topOnNewRecipe();
+}
+
+/* Which recipe the page is currently showing, so a repaint can be told apart
+   from an arrival. Null whenever the view is not a recipe at all. */
+let shownRecipeKey = null;
+/* A recipe opened out of a library you had scrolled halfway down used to be
+   drawn under the same offset, so it arrived at its own middle rather than at
+   its title. Only an arrival scrolls: scaling the portions, ticking a mark or
+   the body landing from the network all redraw the same recipe, and any of
+   those throwing the page back to the top would be worse than the bug. Run
+   after renderModal, because closing a dialog on the way in puts back the
+   offset it was holding for the page underneath. */
+function topOnNewRecipe() {
+  let key = null;
+  if (state.view === "detail") key = "d:" + String(state.activeId || "");
+  else if (state.view === "link") {
+    key = "l:" + String((state.linkRecipe && state.linkRecipe.recipeId) || "");
+  }
+  const arrived = key !== null && key !== shownRecipeKey;
+  shownRecipeKey = key;
+  if (arrived) scrollToY(0);
 }
 
 /* The three-week box opens on this week, which is row calBack of the window.
@@ -7144,7 +7203,48 @@ Actions.toggleShare = function(i) {
   d._shareWith = d._shareWith || [];
   const at = d._shareWith.indexOf(key);
   if (at >= 0) d._shareWith.splice(at, 1); else d._shareWith.push(key);
-  renderApp();
+  withShareListScroll("share-form", renderApp);
+};
+/* Redrawing either surface rebuilds the three-row scroller from scratch,
+   which throws it back to the top - so ticking somebody halfway down a long
+   friend list used to lose your place in it. The offset is read before the
+   redraw and put back after. Same idea as withMealSheetScroll, kept separate
+   because one of these two lives in a sheet and the other in a full page. */
+function withShareListScroll(idbase, fn) {
+  const find = function () {
+    return typeof document !== "undefined" && document.getElementById
+      ? document.getElementById(idbase + "-list") : null;
+  };
+  const sheet = function () {
+    return typeof document !== "undefined" && document.querySelector
+      ? document.querySelector(".modal-box") : null;
+  };
+  const before = find(), boxBefore = sheet();
+  const at = before ? (before.scrollTop || 0) : 0;
+  const boxAt = boxBefore ? (boxBefore.scrollTop || 0) : 0;
+  fn();
+  const after = find(), boxAfter = sheet();
+  if (after && at) after.scrollTop = at;
+  if (boxAfter && boxAt) boxAfter.scrollTop = boxAt;
+}
+/* Typing replaces the field underneath the cursor, so the caret is put back
+   where it was. The form has to be read out of the DOM first or a title typed
+   before the search would be lost; the sheet has no form to lose. */
+function shareSearch(v, idbase, redraw) {
+  state.shareFriendSearch = v;
+  withShareListScroll(idbase, redraw);
+  const el = document.getElementById(idbase + "-search");
+  if (el && el.focus) {
+    el.focus();
+    if (el.setSelectionRange) el.setSelectionRange(v.length, v.length);
+  }
+}
+Actions.shareSearchForm = function(v) {
+  syncDraftFromDOM();
+  shareSearch(v, "share-form", renderApp);
+};
+Actions.shareSearchSheet = function(v) {
+  shareSearch(v, "vis-share", renderModal);
 };
 /* Setting a mark is one tap and costs nothing. Taking one off can lose you a
    recipe you no longer have any other route back to - an unpinned recipe from
@@ -7294,6 +7394,9 @@ Actions.openModal = function(name) {
   state.modal = name;
   state.modalError = "";
   state._acctBusy = false;
+  /* A word left in the friend search from last time would hide most of the
+     list the moment the sheet opened. */
+  if (name === "visibility") state.shareFriendSearch = "";
   if (name === "import") { state.importParsed = []; state.importErrors = []; state.importFileName = null; state.importVisibility = ""; }
   if (name === "urlToRecipe") {
     state.urlToRecipe = { mode: state._nextImportMode || "", url: "", text: "", prompt: "", generated: false };
@@ -7641,6 +7744,8 @@ Actions.loadPastedResponse = function() {
   if (!draft.ingredients.length) draft.ingredients = [normalizeBody({ ingredients: [{}] }).ingredients[0]];
   if (!draft.steps.length) draft.steps = [normalizeBody({ steps: [{}] }).steps[0]];
   state.editDraft = draft;
+  /* A fresh form starts with the whole friend list showing. */
+  state.shareFriendSearch = "";
   state.editIsNew = true;
   state.editingId = null;
   state.editBaseUpdatedAt = null;
@@ -7661,6 +7766,8 @@ Actions.openNew = function() { Actions.openModal("newRecipe"); };
 Actions.startBlankRecipe = function() {
   state.modal = null;
   state.editDraft = blankDraft();
+  /* A fresh form starts with the whole friend list showing. */
+  state.shareFriendSearch = "";
   state.editIsNew = true;
   state.editingId = null;
   state.editBaseUpdatedAt = null;
@@ -7709,6 +7816,8 @@ Actions.openEdit = async function(id, takeover) {
   if (!d.ingredients.length) d.ingredients = [{ name: "", metricValue: "", metricUnit: "g", customaryValue: "", customaryUnit: "cup", notes: "" }];
   if (!d.steps.length) d.steps = [{ text: "", timerMinutes: "" }];
   state.editDraft = d;
+  /* A fresh form starts with the whole friend list showing. */
+  state.shareFriendSearch = "";
   state.editIsNew = false;
   state.editingId = id;
   state.editBaseUpdatedAt = r.updatedAt;
@@ -7934,7 +8043,7 @@ Actions.toggleVisShare = async function(i) {
   const at = list.indexOf(key);
   if (at >= 0) list.splice(at, 1); else list.push(key);
   state.visDraft = list;
-  renderModal();
+  withShareListScroll("vis-share", renderModal);
   try {
     await API("recipe/share", { recipeId: r.recipeId, usernames: list });
     await refreshLibrary(false);
