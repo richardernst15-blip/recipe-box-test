@@ -8270,12 +8270,17 @@ Actions.openScheduled = function(entryId) {
    scrolling to the very bottom means the results stay in view as they grow,
    instead of pushing themselves back off the end. Repeated because iOS
    raises the keyboard and re-lays out the viewport after the focus event,
-   which undoes a single scroll set before it. */
+   which undoes a single scroll set before it.
+   Skipped entirely while the block is already sitting in clear view. Hauling
+   a dialog you were reading up to the top the moment you touch its search
+   field is movement for its own sake; the repeats mean the pin still happens
+   the moment the keyboard rises far enough to cover it. */
 function pinBlockIntoView(blockId) {
   const pin = function () {
     const box = document.querySelector(".modal-box");
     const blk = document.getElementById(blockId);
     if (!box || !blk || !box.getBoundingClientRect) return;
+    if (fieldInView(blk, visibleBand())) return;
     const b = box.getBoundingClientRect(), t = blk.getBoundingClientRect();
     box.scrollTop = box.scrollTop + (t.top - b.top) - 8;
   };
@@ -8758,10 +8763,33 @@ function scrollParents(el) {
   }
   return out;
 }
+/* How much clear space a field needs above and below it before it counts as
+   properly on screen. Without a little slack a field flush against the
+   keyboard line counts as visible and then gets covered by the next pixel of
+   keyboard. */
+const IN_VIEW_MARGIN = 8;
+/* Whether the field can already be seen and typed into. A field taller than
+   the room left can never sit inside the band, so that one is judged on its
+   first line: if you can see where the cursor is, nothing needs to move. */
+function fieldInView(el, band) {
+  if (!el || !el.getBoundingClientRect || !band.height) return false;
+  const r = el.getBoundingClientRect();
+  const top = band.top + IN_VIEW_MARGIN;
+  const bottom = band.top + band.height - IN_VIEW_MARGIN;
+  if (r.height > band.height - (IN_VIEW_MARGIN * 2)) {
+    return r.top >= band.top - IN_VIEW_MARGIN && r.top <= bottom;
+  }
+  return r.top >= top && r.bottom <= bottom;
+}
 /* Tapping a field halfway down a long page puts the keyboard over the thing
    you just tapped, and the browser's own scroll correction fires before the
    keyboard has finished coming up, so the field lands wherever the page
    happened to be. This puts it in the middle of whatever room is left.
+   Only when it has to. A field you can already see is left exactly where it
+   is: recentring one that was fine where it was moves the whole page out
+   from under you, and adding twenty tags one at a time meant twenty of
+   those. The check runs again on the second pass, so a field the keyboard
+   goes on to cover is still rescued.
    Done by hand rather than with scrollIntoView, which centres in the layout
    viewport and so aims at a point underneath the keys. Each pass measures
    again and hands what is left to the next box out, so a field inside a
@@ -8774,6 +8802,7 @@ function bringIntoView(el) {
   if (!el.getBoundingClientRect) { if (el.scrollIntoView) el.scrollIntoView(); return; }
   const band = visibleBand();
   if (!band.height) { if (el.scrollIntoView) el.scrollIntoView(); return; }
+  if (fieldInView(el, band)) return;
   const boxes = scrollParents(el);
   for (let i = 0; i <= boxes.length; i++) {
     const r = el.getBoundingClientRect();
