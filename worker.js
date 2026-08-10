@@ -7951,6 +7951,14 @@ Actions.saveRecipeForm = async function() {
     state.view = "detail";
     state.scale = 1;
     await refreshLibrary(false);
+    /* The library carries no bodies, and the sync just dropped the cached one
+       - the save moved the recipe's stamp, which is exactly what tells the
+       cache it is looking at a version that no longer exists. Without this
+       the recipe you just saved lands on its own page saying it is loading
+       and never finishes, because nothing else was ever going to ask for it.
+       Fetched rather than kept from the form, so the cook log comes back with
+       it and the cached stamp is the server's own. */
+    await loadBodyInto(res.recipeId);
     setWatch(res.recipeId);
     toast("Recipe saved");
   } catch (e) {
@@ -8163,6 +8171,10 @@ Actions.mergeRecipe = async function(id) {
     state.view = "detail";
     renderApp();
     toast("Copied into your cookbook");
+    /* A brand new recipe id, so there is nothing cached under it. Same hole
+       as saving an edit: without this the copy sits on its own page saying it
+       is loading and nothing ever asks for the rest of it. */
+    await loadBodyInto(res.recipeId);
   } catch (e) { toast(e.message); }
 };
 
