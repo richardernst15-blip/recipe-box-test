@@ -1295,6 +1295,10 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .notif-body{ flex:1; min-width:0; }
 .notif-line{ font-size:14px; margin:0 0 3px; color:#fff; }
 .notif-when{ font-size:11.5px; color:#fff; opacity:.85; font-variant-numeric:tabular-nums; }
+/* What they said about the cook. Held a step back from the line above it by
+   opacity rather than by a colour of its own, so it stays legible on both
+   fills instead of picking one and failing on the other. */
+.notif-said{ color:#fff; opacity:.85; }
 .notif-acts{ display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
 
 .notif.read{ background:var(--accent-soft); color:var(--ink);
@@ -1302,6 +1306,7 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
 .notif.read .notif-dot{ background:var(--sage-line); }
 .notif.read .notif-line{ color:var(--ink); }
 .notif.read .notif-when{ color:var(--ink); opacity:.7; }
+.notif.read .notif-said{ color:var(--ink); opacity:.75; }
 .notif.read .btn{ background:var(--sage-soft); border-color:var(--sage-line); color:var(--ink); }
 .notif.read .btn:hover{ background:var(--sage-line); border-color:var(--sage-line); color:var(--ink); }
 
@@ -4583,8 +4588,11 @@ function NotificationsPanelHTML() {
         (n.when ? ' on ' + esc(shortDate(n.when)) : "");
       open = openBtn("Open meal");
     } else {
+      /* The comment is set as a class rather than an inline colour so it
+         follows the tile: white on an unread terracotta field, black once
+         the tile has gone pale. A fixed grey read as neither. */
       line = '<b>' + esc(n.who) + '</b> cooked your <b>' + esc(n.title) + '</b>' +
-        (n.comment ? '<br><span style="color:var(--ink-muted)">' + esc(n.comment) + '</span>' : "");
+        (n.comment ? '<br><span class="notif-said">' + esc(n.comment) + '</span>' : "");
       open = openBtn("Open cook log");
     }
     return '<div class="notif' + (n.read ? " read" : "") + '" role="button" tabindex="0" ' +
