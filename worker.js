@@ -424,6 +424,24 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .btn-no{ background:var(--danger); border-color:var(--danger); color:#fff; }
 .btn-no:hover{ background:var(--danger-dark); border-color:var(--danger-dark); }
 
+/* A button is something you press, not something you read, and a second tap
+   landing on one was selecting the word under it - which on the import menu
+   left "From Pasted Text" looking half-picked before anything was picked. */
+.btn, .mark, .tile, .chip, .scale-btn, .import-choice{
+  -webkit-user-select:none; user-select:none; }
+/* Where there is no pointer to hover with, the darkened state is not a
+   preview of what you are about to press - it is what the last thing you
+   pressed keeps wearing until you press something else. On the import menu
+   that read as a choice already made. Nothing here changes on a desktop. */
+@media (hover: none){
+  .btn:hover{ background:var(--accent); border-color:var(--accent); }
+  .btn-primary:hover{ background:var(--accent); }
+  .btn-ghost:hover{ background:transparent; border-color:transparent; color:var(--ink-muted); }
+  .btn-ok:hover{ background:var(--sage); border-color:var(--sage); }
+  .btn-no:hover{ background:var(--danger); border-color:var(--danger); }
+  .notif.read .btn:hover{ background:var(--sage); border-color:var(--sage); }
+}
+
 /* recipe grid / cards */
 .grid-recipes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:14px; }
 .load-more{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:22px 0 6px; }
@@ -465,13 +483,16 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 /* Cook mode, Share and Edit share the right-hand corner. Share is icon-only
    because the glyph carries itself; Cook mode is labelled because a flame on
    its own would be a guess. */
-.detail-top-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+/* Stretched rather than each sized on its own: Cook wears the mark's
+   padding and Edit the button's, which came out two pixels apart and read
+   as a misalignment. The tallest sets the row and the rest come up to it. */
+.detail-top-actions{ display:flex; align-items:stretch; gap:6px; flex-shrink:0; }
 /* Cook wears the same quiet outline as Schedule until it is switched on:
    three buttons in a row on a recipe, only one of which was painted as the
    thing to press, read as an instruction rather than a choice. Lit, it is
-   the darker terracotta, which is the one state in the app that means
-   something is actively running. */
-.cook-btn.on{ color:#fff; border-color:var(--accent-dark); background:var(--accent-dark); }
+   the same terracotta as Favorite and Pin - one colour for "this is on",
+   rather than a second shade that had to be learned separately. */
+.cook-btn.on{ color:#fff; border-color:#fff; background:var(--accent); }
 /* A private recipe has no link to hand out. The button stays where it is and
    greys rather than vanishing, so the corner does not reshuffle between one
    recipe and the next. */
@@ -500,8 +521,13 @@ h1, h2, h3, .font-display, .modal-head h3, .col-title, .empty-state p.title{
 .panel{ flex:1; min-width:250px; background:var(--card); border:1px solid var(--tan); border-radius:13px; padding:15px 16px; }
 .panel-label{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; }
 
-.scale-row{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
-.scale-btn{ padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--card); font-size:14px; cursor:pointer; white-space:nowrap; }
+/* The chips fill the box rather than huddling at its left edge. Growing
+   from their natural width means the short labels - 1x, 2x, 4x - take the
+   larger share of what is going spare and end up closer in size to Custom
+   beside them, instead of every chip being padded out equally and the row
+   staying as lopsided as it started. */
+.scale-row{ display:flex; flex-wrap:wrap; gap:5px; align-items:stretch; }
+.scale-btn{ flex:1 1 auto; justify-content:center; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--card); font-size:14px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; }
 .scale-btn.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
 /* The chip asks rather than answers: typing a multiplier into a control this
    small never worked on a phone, so the chip opens a box and reads back
@@ -877,6 +903,10 @@ body.tabs-down .tabbar{ transform:translateY(calc(100% + 1px)); }
 .meal-dish .lots{ color:var(--gold); font-size:11.5px; flex-shrink:0; }
 .meal-none{ font-size:13px; color:var(--ink-muted); margin:0 0 12px; }
 .meal-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+/* Calling the whole thing off is not one of the three things you might do
+   next - it is the one you do instead. Pushed to the far end so it is not
+   sitting under your thumb next to Edit. */
+.meal-cancel{ margin-left:auto; }
 /* An invitation is a question and two answers, stacked: the asking on its own
    line, then Accept and Decline side by side underneath. Side by side with
    the question they were being squeezed to a third of the width each. */
@@ -1216,9 +1246,15 @@ body.tabs-down .toast{ bottom:calc(16px + var(--tab-pad-b,20px)); }
   border-radius:10px; padding:12px 13px; margin-bottom:9px; cursor:pointer;
   -webkit-tap-highlight-color:transparent; }
 .notif:active{ background:var(--card-alt); }
-.notif.read{ background:var(--card-alt); border-left-color:var(--border); }
+/* Read is sage, all the way round: a light sage field inside the full sage
+   border, and the button on it filled in the same colour. Grey said
+   "finished with" where sage says "seen" - and the tile is still a switch,
+   so it has to look like something rather than like nothing. */
+.notif.read{ background:var(--sage-soft); border-color:var(--sage); border-left-color:var(--sage); }
+.notif.read .btn{ background:var(--sage); border-color:var(--sage); color:#fff; }
+.notif.read .btn:hover{ background:var(--sage-dark); border-color:var(--sage-dark); }
 .notif-dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex-shrink:0; margin-top:5px; }
-.notif.read .notif-dot{ background:transparent; border:1px solid var(--border); }
+.notif.read .notif-dot{ background:transparent; border:1px solid var(--sage); }
 .notif-body{ flex:1; min-width:0; }
 .notif-line{ font-size:14px; margin:0 0 3px; }
 .notif.read .notif-line{ color:var(--ink-muted); }
@@ -3639,9 +3675,8 @@ function ResultsSectionHTML() {
 }
 
 function LibraryViewHTML() {
-  /* The bell answers for notifications alone now. Waiting friend requests
-     are counted on the Friends tile in the menu, where the button that
-     opens them lives. */
+  /* The bell answers for notifications and the friends button for waiting
+     requests, each carrying its own count. */
   const unread = unreadNotifications().length;
   const sortOptions = [["newest", "Newest first"], ["oldest", "Oldest first"], ["cooked", "Most cooked"],
     ["rated", "Highest rated"], ["az", "Title A–Z"], ["za", "Title Z–A"]]
@@ -3658,10 +3693,12 @@ function LibraryViewHTML() {
         '<div class="header-row2">' +
           '<p class="header-who"><b>' + esc(state.session.username) + '</b> · ' +
             state.recipes.length + ' recipe' + (state.recipes.length === 1 ? "" : "s") + ' on the shelf</p>' +
-          /* The two things you do most from here: read what has come in, and
-             put something new on the shelf. Everything else moved into the
-             menu, which is where the Actions button used to send you. */
+          /* Three ways out of the header: who you cook with, what has come
+             in, and something new on the shelf. Friends sits first because
+             it is the one the other two are about. */
           '<div class="header-btns">' +
+            '<button class="btn bell" title="Friends" aria-label="Friends" onclick="Actions.openFriends()">' + icon("users", 16) +
+              (state.incoming.length ? '<span class="dot-badge">' + state.incoming.length + '</span>' : "") + '</button>' +
             '<button class="btn bell" title="Notifications" onclick="Actions.openNotifications()">' + icon("bell", 16) +
               (unread ? '<span class="dot-badge">' + unread + '</span>' : "") + '</button>' +
             '<button class="btn" title="New recipe" aria-label="New recipe" onclick="Actions.openNew()">' + icon("plus", 16) + '</button>' +
@@ -4220,7 +4257,7 @@ function MealTileHTML(m) {
           icon("userPlus", 14) + ' Invite more</button>' +
         '<button class="btn btn-sm" onclick="Actions.openEditMeal(\\'' + m.mealId + '\\')">' +
           icon("pencil", 14) + ' Edit</button>' +
-        '<button class="btn btn-sm btn-no" onclick="Actions.cancelMeal(\\'' + m.mealId + '\\')">' +
+        '<button class="btn btn-sm btn-no meal-cancel" onclick="Actions.cancelMeal(\\'' + m.mealId + '\\')">' +
           icon("trash", 14) + ' Cancel meal</button>'
       : '<button class="btn btn-sm btn-ghost" onclick="Actions.leaveMeal(\\'' + m.mealId + '\\')">' +
           icon("x", 14) + ' Leave</button>') +
@@ -4416,14 +4453,11 @@ function FriendsViewHTML() {
     '<div class="add-friend-row">' +
       '<input type="text" id="friend-name" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Their username" value="' + esc(state.friendPrefill || "") + '" />' +
       '<button class="btn btn-primary" onclick="Actions.sendFriendRequest()">' + icon("userPlus", 16) + ' Add</button>' +
-    '</div>' +
-    '<div class="section-label">Or have them scan this</div>' +
-    '<div class="qr-side">' +
-      '<div class="qr-holder">' + friendQrHTML(state.session.username, 126) + '</div>' +
-      '<div class="qr-side-text">' +
-        '<p class="helper-text" style="margin:0">Opens Kindred Cupboard, sets them up with a cookbook if they need one, and then asks them to confirm sending <b>' +
-          esc(state.session.username) + '</b> a friend request. You still have to accept it.</p>' +
-      '</div>' +
+      /* The code is the other half of the same row: type their name, or
+         hold the phone up. It lives behind a button rather than sitting
+         open, because it was taking a third of the page to say something
+         you only need when somebody is standing in front of you. */
+      '<button class="btn qr-open" onclick="Actions.openModal(\\'friendQr\\')">' + icon("qr", 15) + ' By QR</button>' +
     '</div>' +
     (mates ? '<div class="section-label">In your cookbook</div>' + mates : "") +
     '<div class="section-label">Requests for you</div>' + incoming +
@@ -4452,6 +4486,21 @@ function FriendsViewHTML() {
 /* Two things get reported: a friend putting up a recipe you can now see, and
    somebody cooking one of yours. Each carries when it happened and a way
    straight to the thing it is about. */
+/* What used to sit open under the add-friend row. Nothing about it changed
+   except where it lives: the code, and the sentence saying what happens to
+   whoever scans it. */
+function FriendQrModalHTML() {
+  return modalShell("Add by QR",
+    '<p class="helper-text">Have them point a camera at this.</p>' +
+    '<div class="qr-side">' +
+      '<div class="qr-holder">' + friendQrHTML(state.session.username, 126) + '</div>' +
+      '<div class="qr-side-text">' +
+        '<p class="helper-text" style="margin:0">Opens Kindred Cupboard, sets them up with a cookbook if they need one, and then asks them to confirm sending <b>' +
+          esc(state.session.username) + '</b> a friend request. You still have to accept it.</p>' +
+      '</div>' +
+    '</div>');
+}
+
 function NotificationsPanelHTML() {
   const list = allNotifications();
   if (!list.length) {
@@ -4504,11 +4553,10 @@ function NotificationsPanelHTML() {
         '<p class="notif-line">' + line + '</p>' +
         '<div class="notif-when">' + esc(fmtWhen(n.at)) + '</div>' +
       '</div>' +
-      '<div class="notif-acts">' + open +
-        '<button class="btn btn-sm btn-ghost" onclick="' + guard +
-          'Actions.toggleNotificationRead(\\'' + esc(n.id) + '\\')">' +
-          (n.read ? "Unread" : "Read") + '</button>' +
-      '</div>' +
+      /* No Read/Unread label: the whole tile has always been the switch,
+         and a button repeating what the colour already says was the third
+         thing competing for the same corner. */
+      '<div class="notif-acts">' + open + '</div>' +
     '</div>';
   }).join("");
   return tools + rows;
@@ -6394,6 +6442,7 @@ function renderModal() {
   else if (state.modal === "owner") root.innerHTML = OwnerModalHTML();
   else if (state.modal === "filters") { root.innerHTML = FiltersModalHTML(); updateFilterScrollHint(); }
   else if (state.modal === "menu") root.innerHTML = MenuDrawerHTML();
+  else if (state.modal === "friendQr") root.innerHTML = FriendQrModalHTML();
   else if (state.modal === "newRecipe") root.innerHTML = NewRecipeModalHTML();
   else if (state.modal === "schedule") root.innerHTML = ScheduleModalHTML();
   else if (state.modal === "calDay") root.innerHTML = CalDayModalHTML();
@@ -7186,6 +7235,9 @@ Actions.openShare = function (recipeId) {
 
 Actions.openModal = function(name) {
   setTabsDown(false);
+  /* A word left highlighted by the tap that got here would otherwise sit on
+     whatever lands in the same place in the new sheet. */
+  clearTextSelection();
   state.modal = name;
   state.modalError = "";
   state._acctBusy = false;
@@ -8854,6 +8906,15 @@ Actions.confirmDeleteList = async function() {
    tabs and a label are about 60px that is only wanted at the moment you go
    looking for it. */
 let tabScrollAt = 0, tabsAreDown = false;
+/* Guarded on every step: this runs in a stripped-down window under test,
+   and a browser that will not tell us about its selection is not a reason
+   to stop opening the sheet. */
+function clearTextSelection() {
+  try {
+    const sel = typeof window !== "undefined" && window.getSelection ? window.getSelection() : null;
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+  } catch (e) {}
+}
 function setTabsDown(down) {
   if (tabsAreDown === down) return;
   tabsAreDown = down;
